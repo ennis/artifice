@@ -1,0 +1,12 @@
+[workspace]
+members = [
+    "artifice", # main library
+    "artifice-main", # executable
+    "kyute",    # the user interface library
+    "kyute/miniqt-sys",    # lightweight Qt wrapper
+    "veda",     # state management store library
+    "veda/macros", # macros for veda
+]
+
+[profile.release]
+debug = true

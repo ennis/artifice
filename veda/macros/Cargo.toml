@@ -1,0 +1,18 @@
+[package]
+name = "veda-macros"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+log ="0.4.8"
+quote ="1.0.2"
+syn ="1.0.11"
+darling = "0.10.2"
+proc-macro2 ="1.0.6"
+
+[dev-dependencies]
+veda = { path = "../"}
+
+[lib]
+proc-macro = true
