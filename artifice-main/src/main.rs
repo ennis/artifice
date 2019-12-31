@@ -1,59 +1,53 @@
-use veda::db::{Append, Database, Replace, View, Change};
-use veda::lens::{Lens, LensCompose, PartialPath};
-use veda::lens::{LensExt, LensIndexExt};
-use kyute::application::{Application, ensure_qt_initialized};
-use kyute::miniqt_sys::*;
-use std::marker::PhantomData;
-use std::rc::Rc;
-use veda::lens::path::PartialPathSlice;
+#![feature(specialization)]
+use kyute::view::{ ViewExt};
+use veda::lens::LensIndexExt;
+use veda::{Data, Database, Identifiable, Lens};
 
-#[derive(Lens, Clone, Debug)]
+#[derive(Data, Clone, Debug)]
 pub struct NodeInput {
     name: String,
 }
 
-#[derive(Lens, Clone, Debug)]
+impl Identifiable for NodeInput {
+    type Id = String;
+
+    fn id(&self) -> String {
+        self.name.clone()
+    }
+}
+
+#[derive(Data, Clone, Debug)]
 pub struct NodeOutput {
     name: String,
 }
 
-#[derive(Lens, Clone, Debug)]
+#[derive(Data, Clone, Debug)]
 pub struct Node {
     name: String,
     inputs: Vec<NodeInput>,
     outputs: Vec<NodeOutput>,
 }
 
-#[derive(Lens, Clone, Debug)]
+#[derive(Data, Clone, Debug)]
 pub struct Document {
     counter: i32,
     nodes: Vec<Node>,
     connections: Vec<(i32, i32)>,
 }
 
-/*
-    enum Document {
-        Counter,
-        Nodes(Option<Vec::<Node>::Lens>),
-        Connections(Option<Vec::<(i32,i32)>::Lens>),
-    }
-
-    // associated type "Address": (associated to partial lens)
-    // 
-
-*/
-
-pub struct TestView;
+/*pub struct TestView;
 
 impl View<Document> for TestView {
-    fn on_change(&self, path: PartialPathSlice<Document>, change: &Change) {
-        eprintln!("TestView: {:?} ({:?})", path, change);
-        if let Some(path) = path.starts_with(Document::connections) {
-            eprintln!("changed connections");
-            // PathSlice::index<I: Index>(lens) -> Option<(I, PathSlice<...>)> where T:
+    fn on_change(&self, revision: Revision<Document>) {
+        if let Some(rev) = revision.focus(Document::nodes) {
+            eprintln!("changed nodes")
+        } else if let Some(rev) = revision.focus(Document::connections) {
+            eprintln!("changed connections")
+        } else {
+            eprintln!("changed something else")
         }
     }
-}
+}*/
 
 // Lenses are not only "values", but also "patterns"
 // -> like
@@ -72,16 +66,11 @@ fn main() {
     };
 
     let first_output_of_first_node = Document::nodes.index(0).compose(Node::inputs).index(0);
-    // alternate macro-based syntax: lens!(<Document>.nodes[0].inputs[0])
-
-    eprintln!(
-        "first_output_of_first_node: {:?}",
-        first_output_of_first_node.path().partial()
-    );
+    // alternate macro-based syntax: lens!(<Document>.nodes[0].inputs[0]) => Document::Nodes((0, Some(Node::Inputs(0, None))))
 
     let mut db = Database::new(m);
-    let view = Rc::new(TestView);
-    db.add_view(view.clone());
+    //let view = Rc::new(TestView);
+    //db.add_view(view.clone());
 
     db.append(
         Document::nodes,
@@ -94,20 +83,63 @@ fn main() {
 
     db.append(
         Document::nodes.index(0).compose(Node::inputs),
-        NodeInput { name: "input0".to_string() }
+        NodeInput {
+            name: "input0".to_string(),
+        },
     );
 
     db.replace(
-        Document::nodes.index(0).compose(Node::inputs).index(0).compose(NodeInput::name),
-        "input1".to_string()
+        Document::nodes
+            .index(0)
+            .compose(Node::inputs)
+            .index(0)
+            .compose(NodeInput::name),
+        "input1".to_string(),
     );
+
+    db.append(Document::connections, (0, 1));
+
+    use kyute::view as kyv;
+
+    #[derive(Clone, Debug)]
+    enum Action {
+        Clicked(String),
+    }
+
+    let root = kyv::Root::<Document, Action>::new(kyv::Lensed::new(
+        Document::nodes.index(0),
+        kyv::VBox::new(vec![
+            Box::new(kyv::Lensed::new(Node::name, kyv::Label::new())),
+            Box::new(kyv::Lensed::new(
+                Node::inputs,
+                kyv::List::new(|id: String| {
+                    let id = id.clone();
+                    Box::new(kyv::VBox::new(vec![
+                        Box::new(kyv::Lensed::new(
+                            NodeInput::name,
+                            kyv::Button::new("hello").map(move |_| Action::Clicked(id.clone())),
+                        )),
+                        Box::new(kyv::Lensed::new(NodeInput::name, kyv::Label::new())),
+                    ]))
+                }),
+            )),
+        ]),
+    ));
+
+    db.add_watcher(root.clone());
 
     db.append(
-        Document::connections,
-        (0,1)
+        Document::nodes.index(0).compose(Node::inputs),
+        NodeInput {
+            name: "input2".to_string(),
+        },
     );
 
+    while !root.exited() {
+        root.run();
+    }
 
+    eprintln!("exiting");
 
     //dbg!(db.data());
 }

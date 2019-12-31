@@ -1,55 +1,13 @@
-use crate::db::Data;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-pub use veda_macros::Lens;
-
-pub mod path;
-pub mod vec;
-
-pub use path::ComponentIndex;
-pub use path::PartialPath;
-pub use path::Path;
+use crate::data::Data;
 use std::hash::Hash;
 
-/// terminology:
-///
-/// # Object
-/// an object
-///
-/// # Aggregate
-/// An object constituted of one or more sub-objects. This can be a structure, a collection, etc.
-///
-/// # Lens
-/// A lens is an object that represents a way to access a component of some complex aggregate type `U`.
-///
-/// Concretely, a lens over a type `U`, given a reference to an aggregate of type `U`,
-/// provides access to an object of type `V` stored within the aggregate
-/// (and potentially deep within the structure of `U`).
-/// `U` is called the _root type_ and `V` is called the _leaf type_.
-/// For all intents and purposes, you can see lenses as a generic way to represent a sequence of
-/// field accesses, indexing operations, and lookups that access an object
-/// stored arbitrarily deep into an object of type `U`.
-/// (e.g. `.field.collection[42].field2.map[21]`).
-///
-/// The _lens_ term is borrowed from the concept of _functional lenses_ in some languages
-/// (https://www.schoolofhaskell.com/school/to-infinity-and-beyond/pick-of-the-week/basic-lensing).
-/// A possible synonym of lens could be "accessor".
-///
-///
-/// # Lens path
-/// A value that uniquely identifies a lens over a type `U`. If two lenses `K` and `L` over the same
-/// type `U` have equal paths, then they represent access to the same component within `U`.
-/// Lens paths can be decomposed into a sequence of _component indices_, with each index representing one
-/// primitive component access operation (field access, indexing operation, or lookup).
-///
-/// Component indices are u64 integers. Depending on the type of object that the component index
-/// applies to, the index can represent either a structure field, an index in a linear collection,
-/// or a key to access an element in an associative container.
-///
+pub mod vec;
 
-
-//---------------------------------------------------------------------------
+pub use vec::VecAddress;
+pub use vec::VecLens;
 
 /// Trait implemented by "lens" types, which act like a reified accessor for
 /// some part of type U of an object of type T.
@@ -59,7 +17,13 @@ pub trait Lens: Clone + 'static {
 
     /// Returns a value that represents the path from the object to the part
     /// that the lens is watching (i.e. the path from &T to &U)
-    fn path(&self) -> path::Path<Self::Root, Self::Leaf>;
+    fn address(&self) -> Option<<Self::Root as Data>::Address>;
+
+    /// Concatenate addresses.
+    fn concat<L, U>(&self, rhs: L) -> Option<<Self::Root as Data>::Address>
+    where
+        L: Lens<Root = Self::Leaf, Leaf = U>,
+        U: Data;
 
     /// Returns a reference to the object part that the lens is watching.
     fn get<'a>(&self, data: &'a Self::Root) -> &'a Self::Leaf;
@@ -72,6 +36,18 @@ pub trait Lens: Clone + 'static {
 
     /// TODO
     fn try_get_mut<'a>(&self, data: &'a mut Self::Root) -> Option<&'a mut Self::Leaf>;
+
+    fn compose<K>(&self, rhs: K) -> LensCompose<Self, K>
+    where
+        K: Lens<Root = Self::Leaf>,
+    {
+        LensCompose(self.clone(), rhs)
+    }
+
+    fn unprefix(
+        &self,
+        addr: <Self::Root as Data>::Address,
+    ) -> Option<Option<<Self::Leaf as Data>::Address>>;
 }
 
 /// Indexing operations
@@ -80,35 +56,12 @@ pub trait LensIndexExt: Lens {
     fn index(&self, i: usize) -> Self::Output;
 }
 
-pub trait EntityKey: Copy + Clone + Debug + Eq + PartialEq + Hash {
-    fn to_u64(&self) -> u64;
-}
-
-/// Entities
-pub trait Entity: Data {
-    type Key: EntityKey;
-    fn key(&self) -> Self::Key;
-}
-
 /// Key lookup operations
 pub trait LensLookupExt: Lens {
     type Key: Copy + Clone + Debug + Eq + PartialEq + Hash;
     type Output: Lens;
     fn by_key(&self, key: Self::Key) -> Self::Output;
 }
-
-/// Composition
-pub trait LensExt: Lens {
-    fn compose<K>(&self, other: K) -> LensCompose<Self, K>
-    where
-        K: Lens<Root = <Self as Lens>::Leaf>,
-    {
-        LensCompose(self.clone(), other)
-    }
-}
-
-impl<L: Lens> LensExt for L {}
-
 
 /// Identity lens.
 #[derive(Clone, Debug)]
@@ -123,10 +76,6 @@ impl<U: Data> IdentityLens<U> {
 impl<U: Data> Lens for IdentityLens<U> {
     type Root = U;
     type Leaf = U;
-
-    fn path(&self) -> Path<U, U> {
-        Path::identity()
-    }
 
     fn get<'a>(&self, data: &'a U) -> &'a U {
         data
@@ -143,8 +92,23 @@ impl<U: Data> Lens for IdentityLens<U> {
     fn try_get_mut<'a>(&self, data: &'a mut Self::Root) -> Option<&'a mut Self::Root> {
         Some(data)
     }
-}
 
+    fn address(&self) -> Option<U::Address> {
+        None
+    }
+
+    fn concat<L, T>(&self, rhs: L) -> Option<U::Address>
+    where
+        L: Lens<Root = U, Leaf = T>,
+        T: Data,
+    {
+        rhs.address()
+    }
+
+    fn unprefix(&self, addr: U::Address) -> Option<Option<U::Address>> {
+        Some(Some(addr))
+    }
+}
 
 /// Lens composition: combines `Lens<U,V>` and `Lens<V,W>` to `Lens<U,W>`.
 ///
@@ -153,15 +117,24 @@ impl<U: Data> Lens for IdentityLens<U> {
 pub struct LensCompose<L1, L2>(pub L1, pub L2);
 
 impl<L1, L2> Lens for LensCompose<L1, L2>
-    where
-        L1: Lens,
-        L2: Lens<Root = L1::Leaf>,
+where
+    L1: Lens,
+    L2: Lens<Root = L1::Leaf>,
 {
     type Root = L1::Root;
     type Leaf = L2::Leaf;
 
-    fn path(&self) -> Path<Self::Root, Self::Leaf> {
-        self.0.path().append(self.1.path())
+    fn address(&self) -> Option<<L1::Root as Data>::Address> {
+        self.0.concat(self.1.clone())
+    }
+
+    fn concat<L, T>(&self, rhs: L) -> Option<<L1::Root as Data>::Address>
+    where
+        L: Lens<Root = L2::Leaf, Leaf = T>,
+        T: Data,
+    {
+        // XXX what's the complexity of this?
+        self.0.concat(LensCompose(self.1.clone(), rhs.clone()))
     }
 
     fn get<'a>(&self, data: &'a Self::Root) -> &'a Self::Leaf {
@@ -179,8 +152,36 @@ impl<L1, L2> Lens for LensCompose<L1, L2>
     fn try_get_mut<'a>(&self, data: &'a mut Self::Root) -> Option<&'a mut Self::Leaf> {
         self.1.try_get_mut(self.0.try_get_mut(data)?)
     }
+
+    fn compose<K>(&self, rhs: K) -> LensCompose<Self, K>
+    where
+        K: Lens<Root = Self::Leaf>,
+    {
+        LensCompose(self.clone(), rhs)
+    }
+
+    fn unprefix(
+        &self,
+        addr: <L1::Root as Data>::Address,
+    ) -> Option<Option<<L2::Leaf as Data>::Address>> {
+        self.0
+            .unprefix(addr)
+            .and_then(|addr| addr.and_then(|addr| self.1.unprefix(addr)))
+    }
 }
 
+/*
+/// Composition
+pub trait LensExt: Lens {
+    fn compose<K>(&self, other: K) -> LensCompose<Self, K>
+    where
+        K: Lens<Root = <Self as Lens>::Leaf>,
+    {
+        LensCompose(self.clone(), other)
+    }
+}
+
+impl<L: Lens> LensExt for L {}*/
 
 /*
 /// Macro for implementing a lens type that accesses a field of a struct.

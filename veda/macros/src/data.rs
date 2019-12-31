@@ -1,8 +1,8 @@
 //! Mostly stolen from druid-derive
-use proc_macro2::{TokenStream, Span};
+use crate::CRATE;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::spanned::Spanned;
-use crate::CRATE;
 
 pub fn derive(input: &syn::DeriveInput) -> Result<TokenStream, syn::Error> {
     match &input.data {
@@ -19,7 +19,6 @@ pub fn derive(input: &syn::DeriveInput) -> Result<TokenStream, syn::Error> {
 }
 
 fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenStream, syn::Error> {
-
     let ty = &input.ident;
     let vis = &input.vis;
     //let internal_mod_name = syn::Ident::new(&format!("{}_lenses", ty), Span::call_site());
@@ -27,42 +26,69 @@ fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenS
     let fields = match &s.fields {
         syn::Fields::Named(fields_named) => &fields_named.named,
         syn::Fields::Unnamed(fields_unnamed) => &fields_unnamed.unnamed,
-        syn::Fields::Unit => return Err(syn::Error::new(input.ident.span(), "Lens implementations cannot be derived from unit structs"))
+        syn::Fields::Unit => {
+            return Err(syn::Error::new(
+                input.ident.span(),
+                "`Data` implementations cannot be derived from unit structs",
+            ))
+        }
     };
+
+    let addr_enum = syn::Ident::new(&format!("DataAddress_{}", ty), Span::call_site());
 
     let mut decls = Vec::new();
     let mut impls = Vec::new();
     let mut associated_items = Vec::new();
+    let mut addr_variants = Vec::new();
+    let mut addr_variant_debug_arms = Vec::new();
 
     for (i, f) in fields.iter().enumerate() {
-        let name = f.ident.clone().unwrap_or_else(|| syn::Ident::new(&format!("elem_{}", i), Span::call_site()));
+        let name = f
+            .ident
+            .clone()
+            .unwrap_or_else(|| syn::Ident::new(&format!("elem_{}", i), Span::call_site()));
         let lens_ty_name = syn::Ident::new(&format!("{}Lens_{}", ty, name), Span::call_site());
         let lty = &f.ty;
-        let access  = match &f.ident {
+        let access = match &f.ident {
             Some(ident) => {
-                quote!{ #ident }
-            },
+                quote! { #ident }
+            }
             None => {
                 let index = syn::Index::from(i);
-                quote!{ #index }
+                quote! { #index }
             }
         };
 
-        let decl = quote!{
+        let addr_variant = quote! {
+            #name ( Option<<#lty as #CRATE::Data>::Address> )
+        };
+        addr_variants.push(addr_variant);
+
+        let addr_variant_debug = quote! {
+            #addr_enum::#name ( addr ) => {
+                write!(f, stringify!(#name))?;
+                if let Some(addr) = addr {
+                    write!(f, ".{:?}", addr)?;
+                }
+            }
+        };
+        addr_variant_debug_arms.push(addr_variant_debug);
+
+        let decl = quote! {
             #[allow(non_camel_case_types)]
             #[derive(Copy,Clone)]
             #vis struct #lens_ty_name;
         };
         decls.push(decl);
 
-        let lens_impl = quote!{
-            impl #CRATE::lens::Lens for #lens_ty_name {
+        let lens_impl = quote! {
+            impl #CRATE::Lens for #lens_ty_name {
                 type Root = #ty;
                 type Leaf = #lty;
 
-                fn path(&self) -> #CRATE::lens::Path<#ty, #lty> {
+                /*fn path(&self) -> #CRATE::lens::Path<#ty, #lty> {
                     #CRATE::lens::Path::field(#i)
-                }
+                }*/
 
                 fn get<'a>(&self, data: &'a #ty) -> &'a #lty {
                     &data.#access
@@ -79,6 +105,27 @@ fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenS
                 fn try_get_mut<'a>(&self, data: &'a mut #ty) -> Option<&'a mut #lty> {
                     Some(self.get_mut(data))
                 }
+
+                fn address(&self) -> Option<#addr_enum> {
+                    Some(#addr_enum::#name(None))
+                }
+
+                fn concat<L, U>(&self, rhs: L) -> Option<#addr_enum>
+                where
+                    L: #CRATE::Lens<Root=#lty, Leaf=U>,
+                    U: #CRATE::Data
+                {
+                    Some(#addr_enum::#name(rhs.address()))
+                }
+
+                fn unprefix(&self, addr: <#ty as #CRATE::Data>::Address) -> Option<Option<<#lty as #CRATE::Data>::Address>>
+                {
+                    if let #addr_enum::#name(rest) = addr {
+                        Some(rest)
+                    } else {
+                        None
+                    }
+                }
             }
         };
         impls.push(lens_impl);
@@ -91,9 +138,29 @@ fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenS
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
-    let expanded = quote!{
+    let expanded = quote! {
         #(#decls)*
         #(#impls)*
+
+        #[derive(Clone,Eq,PartialEq)]
+        pub enum #addr_enum {
+            #(#addr_variants),*
+        }
+
+        impl std::fmt::Debug for #addr_enum {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                match self {
+                    #(#addr_variant_debug_arms),*
+                }
+                Ok(())
+            }
+        }
+
+
+        #[allow(non_upper_case_globals)]
+        impl #impl_generics #CRATE::Data for #ty #ty_generics #where_clause {
+            type Address = #addr_enum;
+        }
 
         #[allow(non_upper_case_globals)]
         impl #impl_generics #ty #ty_generics #where_clause {

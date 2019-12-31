@@ -1,14 +1,16 @@
+#![feature(specialization)]
+use veda::lens::Data;
 use veda::lens::Lens;
-use veda_macros::Lens;
+//use veda_macros::Data;
 
-#[derive(Clone, Lens)]
+#[derive(Clone, Data)]
 struct Fields {
     a: i32,
     b: f32,
-    c: String
+    c: String,
 }
 
-#[derive(Clone, Lens)]
+#[derive(Clone, Data)]
 struct Tuple(i32, f32, String);
 
 #[test]

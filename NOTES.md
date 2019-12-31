@@ -1,0 +1,263 @@
+
+## veda address/index simplification
+- no lenses?
+    - only the key path value + types
+- Address ~= swift KeyPath 
+- Addressable trait
+- Address<Root,Leaf>: PartialAddress<Root>
+    - <State as Addressable>::get(&self, PartialAddress<Root>) -> &dyn Addressable
+    - <State as Addressable>::get(&self, Address<Root, Leaf>) -> &Leaf
+    - `Address<Root,Leaf>` **always** convertible to `PartialAddress<Root>` 
+- Similar to current lenses, but less syntactical overhead
+- Difference: to access an element of a struct, must match the PartialAddress in Addressable::get
+    - with lenses, it's simply executing the trait method
+        - in practical terms, the offset to the field is encoded in the closure
+    - is this a big problem? probably not
+- Pros:
+    - simplification (only addresses, no more lenses)
+- Cons:
+    - switch lookup to get the reference to the data
+        - in swift, directly contains offsets to the fields (compiler magic)
+
+## veda alternate design
+- typeless
+- no lenses
+- trait Addressable: with path, returns another &Addressable
+- path is optionally-typed 
+- key path can be index or string (what about keys in maps?)
+
+## Options for "property bindings"
+
+```
+View {
+    text = <expression>,
+    contents = <collection-binding>
+}
+```
+
+- things to consider
+    - sorting of data elements according to a predicate
+    - boilerplate code
+    - do we want a generic treatment of properties?
+    - type-erased views/lenses (access data by string keys / type-erased hashes)
+        - external editor
+        - huge simplification
+        - live-reload?
+        
+- Overall goals:
+    - Reduce code duplication
+    - Simple widget implementation
+    - Prefer statically-generated code
+    - Reduce usage of boxed trait objects
+    - Allow reusable components 
+        - i.e. simple to implement a non-primitive view
+    
+- Consider things from the point of view of the implementor and from the user
+    - From the POV of the View:
+        - want properties that are:
+            - scalars
+            - lists of things in a specific order, accessible by index
+            - lists of views
+        - want a clean, easy syntax for specifying the value of those properties in the constructor (or with named accessors)
+    - Two main approaches here:
+        - properties are trait objects that compute a value from the ambient state (S), possibly with hooks
+            - Simpler to implement, more straightforward?
+            - Property bindings are "reified"
+            - basically a lens, but more generic (produces a value instead of returning a reference)
+        - properties are get/set pairs (or equivalent) that are set through external code in the "bindings" wrapper
+            - very easy to implement for the View code (get/set pairs on views)
+            - state management can be done entirely outside of the widget
+                - testing revisions, etc.
+                - "everytime the state changes, run this code on the inner view"
+                - there's no need for "properties", except as syntax sugar
+                - easy to introduce intermediate variables (or even local state!)
+                    - with the binding approach, how to introduce a subexpression shared between multiple properties?
+            - need to rely on external code for clean syntax
+            - for collections: return a mut ref to a collection, then call "update"
+                - issue: View needs to track changes
+    - the trait object approach seems closer to the existing code base
+        - although it is heavy in terms of boxed trait objects
+    - with option two, what's the API for VBox (to add views, etc)?
+        - views().update(...)
+        - views().insert(...)
+        - views().splice(...)
+        - views().sort(...)
+        - views().sync_with(revision, mapper)
+            - if modification of a part of the list, how to decide whether to re-create the view or to update the existing one?
+                - always update the existing one
+        - `views()` returns proxy object that mut-borrows self, watches modifications
+        
+- Option A: binding approach
+    - the internal state of the widget is automatically bound to a function of the ambient state of the view
+    - (-) more restricted
+    - (+) state consistency (binding) is encapsulated in reusable types
+    - (-) allocation overhead
+        - say, list of 1000 items with 3 widgets, each having 6 properties:
+            - 1000 * 3 * 6 = ~18000 small allocations
+        - high pressure on allocator 
+            - maybe, can't really know if it's a problem or not
+- Option B: stateful approach
+    - can access and set the internal state of the widgets
+    - (+) more control
+    - (-) user code (or codegen) must ensure consistency
+
+Alternatively:
+- Option A: code in property objects, inside view
+- Option B: code outside of view
+
+Alternatively:
+- Option A: update in a method, local to the view
+- Option B: non-local update method (same function for a view and the children)
+    - issue: since it's non-local, need knowledge of internal structure
+    - in other frameworks/languages, would simply keep a reference to the widget down the tree
+        - does not work / hard to do in rust because of strict ownership
+            - need Rc
+    - can use lenses for that
+        - when adding an item to a polymorphic collection (dyn Trait), also return a lens that returns the item with 
+            the correct derived type.
+        - this assumes that the view structure hasn't changed in the meantime 
+    - the problem here is type-erasure
+        - once we add stuff to a vbox, the structure is lost (opacified behind dyn View)
+        - key insight: a statically-known vbox of views should have a statically-known type 
+            - swiftUI does this
+        - VBox<(T1,T2,T3,T4)> where T1, T2, T3, T4: View
+            - variadic templates
+        - then, access via element accessors
+            - vbox.content().0.text().update(...)
+        - this means that the whole tree in the macro is encoded in the type
+
+Alternatively:
+- Option A: State type parameter
+- Option B: un-parameterized widgets
+
+- Existing frameworks:
+    - druid: binding (ambient state only)
+    - WPF: DependencyProperty (somewhat similar to bindings)
+    - javafx: properties (bindings, two-way)
+    - swiftui: Option B?
+    - react: reconciliation
+    - flutter: rebuild tree + reconciliation
+    - imgui: full rebuild
+    - Qt: Option B (but low-level)
+    - reactive: binding objects
+
+Challenge with option B: set properties of elements inside (type-erased) containers:
+```
+VBox {
+    HBox {
+        // 1
+        Border {
+            Label(.text = .name)
+        }
+
+        // 2
+        VBox {
+            contents = ForEach in .outputs { 
+                Label(.text = .name)
+            }    
+        }
+    }
+}
+
+// 1
+update(Revision<S>) {
+    rev.focus(name) |rev| {
+        // need to synthesize this access path
+        vbox
+            .contents()
+            .get_mut(0)
+            .downcast_mut::<HBox>()
+            .unwrap()
+            .contents()
+            .get_mut(0)
+            .downcast_mut::<Label>()
+            .unwrap()
+            .text()
+            .update(rev)        // wow
+
+        // ... or save and use a lens
+        LabelLens::get_mut(self.vbox).update(rev)
+        // ... or propagate the change down the line, to the label
+    }
+}
+
+// 2
+rev.focus(outputs) {
+    vbox.get::<HBox>(0).get::<VBox>(1).contents().update_with(rev, S->V) 
+}
+
+```
+
+with Option A, it's easier: the state "trickles down" the widget tree naturally until it reaches the label.
+You can't "look inside" the contents of a view from a higher-level widget.
+
+
+### Option A: `View` has binding trait objects that compute the value of the field from the ambient state `S`  
+- The 'purest' approach (similar to what we do now)
+- No need for the `Binding<...>` wrapper type 
+
+### Option B: `View` has get/set pair for each property
+- get/set_text
+- get/set_contents
+- Issue: collection properties
+    - set_contents takes a parameter that describes a change to a collection
+        - replacement
+        - splice
+        - relayout (sorting)
+- some views may want their own sorting mechanism
+    - e.g. display items, but sort the view according to different criteria
+    
+### Option C: `View` has methods that return `impl Property`, mut-borrows View
+
+
+### Issue: can't trickle a computed expression down the line
+e.g.
+```
+VBox {
+    Label { 
+        text = .name.append("...")
+    }
+}
+```
+-> actually possible, just materialize the expr in the update method.
+    -> also cache and watch changes
+
+
+### What is a view:
+- inner structure (views), hidden from the user in most cases
+- update function that incrementally updates the inner structure given a revision
+- the ambient state, a type parameter that indicates "what the view is viewing"
+
+```
+// Ambient state: Node
+// Has Node.outputs: Vec<Output>
+VBox {      
+    contents = in .outputs {
+        // Ambient state: Output 
+        //  -> contents must be Vec<View<Output>>, 
+        // if contents = Vec<Box<dyn View>>
+        //  -> on update, must downcast to the actual type of the view
+        Label(.name)
+        Checkbox {
+            checked = .enabled
+            label = Label(.name)
+        }
+    }
+}
+```
+
+```rust 
+fn update(&mut self, rev: Revision<Node>) {
+    if let Some(rev) = rev.focus(Node::outputs) {
+        self.contents().update_with(rev, |output| {
+            VBox {
+                Label,
+                Checkbox
+            }
+        }, |view, rev| {
+            // view: &mut T where T is the return type of the closure above 
+            // also have access to the parent revision (of type Node), which is nice
+        })
+    }
+}
+```

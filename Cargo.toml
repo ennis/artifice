@@ -4,6 +4,7 @@ members = [
     "artifice-main", # executable
     "kyute",    # the user interface library
     "kyute/miniqt-sys",    # lightweight Qt wrapper
+    "kyute/macros",    # user interface codegen macros
     "veda",     # state management store library
     "veda/macros", # macros for veda
 ]
