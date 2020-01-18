@@ -18,6 +18,17 @@
 - Cons:
     - switch lookup to get the reference to the data
         - in swift, directly contains offsets to the fields (compiler magic)
+        
+## address simplification
+- return to the untyped addresses made of chains of u64 ids
+- support lenses only on ordered containers and associative containers with Identifiable elements
+- <T as Identifiable>::Key should be convertible to u64
+    - no string identification
+- Precedent: https://github.com/plausiblelabs/lens-rs
+- Q: why?
+    - do we gain anything compared to the current address impl?
+        - maybe less generated code, but that's about it
+        
 
 ## veda alternate design
 - typeless
@@ -191,6 +202,10 @@ rev.focus(outputs) {
 with Option A, it's easier: the state "trickles down" the widget tree naturally until it reaches the label.
 You can't "look inside" the contents of a view from a higher-level widget.
 
+### Problem with property bindings:
+- One property may update with a revision, but also need the value of **other properties** in update.
+    - must be different subtrees
+- Otherwise, just take a single parameter
 
 ### Option A: `View` has binding trait objects that compute the value of the field from the ambient state `S`  
 - The 'purest' approach (similar to what we do now)

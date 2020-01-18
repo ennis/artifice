@@ -170,6 +170,61 @@ where
     }
 }
 
+
+/// Unit lens: returns () always
+#[derive(Copy,Clone,Debug)]
+pub struct UnitLens<T>(PhantomData<T>);
+
+impl<T> UnitLens<T> {
+    pub fn new() -> UnitLens<T> {
+        UnitLens(PhantomData)
+    }
+}
+
+impl<T: Data> Lens for UnitLens<T> {
+    type Root = T;
+    type Leaf = ();
+
+    fn address(&self) -> Option<T::Address> {
+        // No address within T (although there should be one, just not a meaningful one)
+        None
+    }
+
+    fn concat<L, U>(&self, rhs: L) -> Option<T::Address> where
+        L: Lens<Root=(), Leaf=U>,
+        U: Data
+    {
+        None
+    }
+
+    fn get<'a>(&self, data: &'a Self::Root) -> &'a () {
+        static V: () = ();
+        &V
+    }
+
+    fn get_mut<'a>(&self, data: &'a mut Self::Root) -> &'a mut () {
+        static mut V: () = ();
+        // TODO is it safe? (shared mut ref to a ZST)
+        // it works for array refs (special-cased in rustc for &mut []),
+        // but apparently not for custom ZSTs
+        // See also: https://rust-lang.github.io/rfcs/1414-rvalue_static_promotion.html
+        unsafe { &mut V }
+    }
+
+    fn try_get<'a>(&self, data: &'a Self::Root) -> Option<&'a ()> {
+        Some(self.get(data))
+    }
+
+    fn try_get_mut<'a>(&self, data: &'a mut Self::Root) -> Option<&'a mut ()> {
+        Some(self.get_mut(data))
+    }
+
+    fn unprefix(&self, addr: T::Address) -> Option<Option<<() as Data>::Address>> {
+        // never unprefixed by anything
+        None
+    }
+}
+
 /*
 /// Composition
 pub trait LensExt: Lens {
