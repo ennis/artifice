@@ -1,9 +1,8 @@
 #![feature(specialization)]
-//use kyute::view::{ ViewExt};
+use kyute::model::LensIndexExt;
+use kyute::model::{Data, Identifiable, Lens, State};
 use kyute::view::ButtonAction;
 use kyute::view::Property;
-use veda::lens::LensIndexExt;
-use veda::{Data, Database, Identifiable, Lens};
 
 #[derive(Data, Clone, Debug)]
 pub struct NodeInput {
@@ -70,7 +69,7 @@ fn main() {
     let first_output_of_first_node = Document::nodes.index(0).compose(Node::inputs).index(0);
     // alternate macro-based syntax: lens!(<Document>.nodes[0].inputs[0]) => Document::Nodes((0, Some(Node::Inputs(0, None))))
 
-    let mut db = Database::new(m);
+    let mut db = State::new(m);
     //let view = Rc::new(TestView);
     //db.add_view(view.clone());
 
@@ -120,62 +119,6 @@ fn main() {
             kyv::Button::new("world"),
         )),
     )));
-
-    view! {
-        pub view ViewName { // struct-like declaration
-            in node: Node,          // input (bindable) property
-            in label: String,
-            state: i32,             // local state
-        } ->  // (alternate anonymous prop: pub view ViewName(Type) -> ...)
-        VBox {
-            Label(.text <- label),
-            VBox {
-                Label(
-                    [pattern = Node::name in node] .text = pattern;
-                    .text <- Node::name in node;    // alternate short form of the above
-                    .text <- node.name;     // ideal form, but how to get the lens for name?
-
-                    // V1:
-                    // - no local state
-                    // - single input property (multiple properties supported in body)
-
-                    // [... in ...] is an update guard, will update the value of the prop only if .name changed;
-                    // n is the value of the prop (optional, can use node.name).
-                    // issue: the guard needs to identify which prop it is watching
-                    // the branch under a guard has access to the watched prop
-                    // TODO: multiple update guards?
-                    //
-                    // problem: naming the lens
-                    // - ideally: node.name
-                    //      - but:
-
-                    // can't access another property in a guarded declaration or property binding
-                    // - because in update, we only see the property that has changed!
-                    // OR: update() takes a diff of ALL properties at once, diff can be "unchanged"
-                    // also: cannot double-guard (except if the prop is cached)
-
-                    // Options:
-                    // - A: Cache property values so they can be accessed at any time
-                    //      - potentially expensive clone
-                    // - B: A guarded expression / branch cannot depend on more than one property
-                    // - C: Only allow a single (unnamed) property (the "ambient state")
-                    //      - forces the user to create an unrelated struct
-                    //      - note: the struct can contain references instead of copies?
-                    //          - e.g.
-                    //  nodegraph <- NodeGraph { nodes: &nodes, connections: &connections }
-                    //          - difficult to propagate the changes
-                    //
-                    // go with option B
-
-                    [desc = Node::description in node, shortcut = Node::shortcut in node] .shortcut = shortcut;
-                )
-
-                Button(.label="hello")         // (shortcut for .content.set()), default guard is rev.focus(Unit)
-                Button(.label="world")
-            }
-        }
-    }
-
 
     /* kyv::VBox::new(vec![
             Box::new(kyv::Lensed::new(Node::name, kyv::Label::new())),

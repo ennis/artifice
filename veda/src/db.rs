@@ -9,8 +9,6 @@
 //! undo operations. Note that this does not remove revisions: instead, it creates new revisions
 //! that revert the changes (like git revert).
 //!
-//! # Trace
-//! A _trace_ is a view of a part of the data in the database and a change that affected it.
 
 use crate::data::Data;
 use crate::lens::Lens;
@@ -111,16 +109,16 @@ pub trait Watcher<Root: Data> {
 }
 
 /// 'Database' wrapper for a data model that keeps track of changes in the model.
-pub struct Database<M: Data> {
+pub struct State<M: Data> {
     data: RefCell<M>,
     log: RefCell<Vec<Box<dyn Update<M>>>>,
     watchers: RefCell<Vec<Weak<dyn Watcher<M>>>>,
 }
 
-impl<M: Data> Database<M> {
+impl<M: Data> State<M> {
     /// Creates a new database wrapping an existing data model instance.
-    pub fn new(data: M) -> Database<M> {
-        Database {
+    pub fn new(data: M) -> State<M> {
+        State {
             data: RefCell::new(data),
             log: RefCell::new(Vec::new()),
             watchers: RefCell::new(Vec::new()),
@@ -158,7 +156,7 @@ impl<M: Data> Database<M> {
     }
 }
 
-impl<M: Data> Database<M> {
+impl<M: Data> State<M> {
     pub fn append<A, K>(&mut self, lens: K, element: A)
     where
         A: Data,

@@ -52,28 +52,28 @@ struct Node {
 
 #[no_mangle]
 pub extern "C" fn art_create_instance() -> Instance {
-    unimplemented!()
+unimplemented!()
 }
 
 #[no_mangle]
 pub extern "C" fn art_watch_node(instance: &mut Instance, id: NodeId, cb: WatchCallback) -> WatcherId {
-    unimplemented!()
+unimplemented!()
 }
 
 #[no_mangle]
 pub extern "C" fn art_delete_watcher(instance: &mut Instance, id: WatcherId) {
-    unimplemented!()
+unimplemented!()
 }
 
 #[no_mangle]
 pub extern "C" fn art_watch_network_connections(instance: &mut Instance, network: NetworkId, cb: WatchCallback) -> WatcherId {
-    unimplemented!()
+unimplemented!()
 }
 
 /// Watches the collection of nodes in a network.
 #[no_mangle]
 pub extern "C" fn art_watch_network_nodes(instance: &mut Instance, network: NetworkId, cb: WatchCallback) -> WatcherId {
-    unimplemented!()
+unimplemented!()
 }
 
 #[no_mangle]

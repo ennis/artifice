@@ -170,9 +170,8 @@ where
     }
 }
 
-
 /// Unit lens: returns () always
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct UnitLens<T>(PhantomData<T>);
 
 impl<T> UnitLens<T> {
@@ -190,9 +189,10 @@ impl<T: Data> Lens for UnitLens<T> {
         None
     }
 
-    fn concat<L, U>(&self, rhs: L) -> Option<T::Address> where
-        L: Lens<Root=(), Leaf=U>,
-        U: Data
+    fn concat<L, U>(&self, rhs: L) -> Option<T::Address>
+    where
+        L: Lens<Root = (), Leaf = U>,
+        U: Data,
     {
         None
     }

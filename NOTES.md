@@ -30,12 +30,84 @@
         - maybe less generated code, but that's about it
         
 
-## veda alternate design
+## Lensless design
 - typeless
 - no lenses
 - trait Addressable: with path, returns another &Addressable
 - path is optionally-typed 
 - key path can be index or string (what about keys in maps?)
+- issue: all modifications must happen via path, dynamic type checking
+
+```rust
+trait Addressable: Any {
+    fn get(&self, path: String) -> Option<&Addressable>;
+}
+``` 
+
+- the real issue is tracking changes
+- two options:
+    - automatic (veda): data as a database with triggers
+        - must wrap every modification to the data
+        - no control over the modification of the data: the structure is exposed
+    - manual: emit events via message bus and custom interface
+        - control over the update process, but must write the topic interface manually
+        - UI update code must also be written manually (no concept of "property" or "binding")
+        
+- Alternative:
+    - define data model objects as opaque objects with "properties"
+    - UI queries those properties
+    - update?
+        - example: modification of a property deep within the data model
+        - must emit event, but where? 
+        
+- Proposal: decouple data access from update description
+    - each data model type has an associated "change" type that describe what has changed, but it's not 
+      directly linked to the members (or automatically derived, for that matter)
+    - can control precisely how a data model type communicates changes
+    - no need for lenses anymore
+    - in views: guarded by change
+    
+```
+struct Input {
+    name: String,
+}
+
+enum InputChange {
+    All,
+    Name,
+}
+
+struct Node {
+    name: String,
+    inputs: Vec<Input>,
+}
+
+enum NodeChange {
+    Name,
+    Inputs(CollectionChanges),
+    Input(usize, InputChange),
+    Outputs(CollectionChanges),
+    Output(usize, OutputChange)
+}
+```
+Or, if precise changes are not needed:
+
+```
+struct Input { ... }
+struct Node {}
+enum NodeChange {
+    Name,
+    Inputs,
+    Outputs,
+}
+```
+
+- Why does this have to be a value?
+    - For composability (and decomposability)
+
+```
+
+```
 
 ## Options for "property bindings"
 
@@ -276,3 +348,136 @@ fn update(&mut self, rev: Revision<Node>) {
     }
 }
 ```
+
+## artifice
+
+Things to port from autograph:
+- Uniform layout checks 
+- shader interface checks
+
+## Use native text widgets for custom UI?
+- don't bother, no big application uses the win32 controls anyway
+    - firefox uses gecko, which uses custom rendering
+    - same with java UI toolkits
+    - Qt does its own rendering
+
+## GLTF
+- maybe we don't need to convert GLTF to an internal representation?
+    - the renderer just consumes GLTF directly?
+    - no: not meant as an in-memory representation
+
+## Components of the data model:
+- context (outside of the data model)
+- windows (runtime model)
+- scenes (document model / scenes)
+    - geometries
+        - morph target
+            - GPU buffer(s)
+    - materials
+        - standard viewport material
+            - color
+            - specularity
+            - associated shaders
+        - others? 
+    - post-effects
+        - shaders
+    - animations
+        - GPU buffers
+    - object
+        - geometry reference 
+        - morph weights
+        - animation
+- renderers (runtime model)
+    - scene ref + camera
+    - renders a scene to a window
+- open documents (document model)
+    - scenes + camera + renderer configs + undo list
+    
+## Next steps to open a window
+- Use glutin + imgui
+    - OK
+- Use druid-shell + glutin (context creation) + imgui
+    - OK, some redundant code, but we also get:
+        - main menu
+        - context menus
+        - 2D drawing library (piet, via direct2d)
+    - we won't use the additional features immediately, but might in the future
+    - note: it's a pain in the ass to do anything with the platform-specific handle...
+    - not polished...
+- kyute + Qt OpenGL
+    
+## Should we continue kyute?
+Is it worth binding all of Qt when we need to fight around the way Qt is designed (signals/slots, event loops, etc.)?
+A pure-rust equivalent would be preferable in the long term, but cannot be a single-person effort.
+`druid` is on the way, but unsure about the way they chose for representing state (they want immutable data structures for 
+quick diffs). 
+
+
+## artifice windows
+- There is a table of open windows, identified by ID
+- Each window has a GL context
+- Renderers can be bound to a window (identified by ID)
+- Drawing stuff on the windows:
+    - a closure, associated to the window, that has access to the application state (except the windows)
+        - read the contents, draw stuff
+    - can be multiple layers
+    - A table of 2D "DrawLayers", associated to a window ID
+    - WinHandler: has access to the DrawLayers
+        - executes all draw layers
+        - a draw layer can request an animation frame
+    - can move DrawLayers between windows
+    - DrawLayers are ordered, the order is defined explicitly by setting an integer priority
+- Listening to input:
+    - inputs are passed to registered handlers
+- Register keyboard shortcuts
+
+- Windows display things from the data model
+    - update: data model revision
+    - event: window event
+- There is a global table of windows
+    - on data model update, call update() on all windows in this table
+- The run loop calls the event handlers for all windows
+    - must borrow dynamically the application state here
+    - in event handlers, must be able to open other windows
+- RunLoop
+    - AppState
+        - Open documents
+        - Open windows
+    - Registered views on the application state
+
+```
+trait WinHandler {
+    event(&mut self, ctx, event, &mut appState)
+    paint(&mut self, ctx, appState)
+} 
+trait View {
+    update(&mut self, Revision<appState>) -> Action
+}
+```
+
+## High-level architecture
+The application is divided in components that communicate via a shared event bus.
+Examples of components:
+- Document model 
+    - Open documents, etc.
+- User interface
+- Renderer
+- Network
+- Etc.
+
+The document objects also "make space" for the data required by application components.
+So that when a document object is deleted, the data for each component is also deleted.
+With a "distributed" approach (multiple ID -> Data maps), need to listen to events to 
+delete the associated data (i.e. synchronization).
+
+Rule of thumb: if we know in advance that there is going to be only one instance of the component data, 
+
+Behavior:
+- The top-level program gives control to the UI component, which then returns an action to perform (unidirectional event flow).
+- The action is translated into a command that is sent to the document.
+- The document emits events to signal changes
+    - emits where? 
+    - the document model component has an observable that contains a list of handlers
+        - problem: can't store handlers having exclusive access to components
+    - the components operate as cooperative tasks
+        - not exactly a task, as sending an event blocks the caller

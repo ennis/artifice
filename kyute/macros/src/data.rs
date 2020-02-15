@@ -4,9 +4,11 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::spanned::Spanned;
 
-pub fn derive(input: &syn::DeriveInput) -> Result<TokenStream, syn::Error> {
-    match &input.data {
-        syn::Data::Struct(s) => derive_struct(input, s),
+pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+
+    let result = match &input.data {
+        syn::Data::Struct(s) => derive_struct(&input, s),
         syn::Data::Enum(e) => Err(syn::Error::new(
             e.enum_token.span(),
             "Lens implementations cannot be derived from enums",
@@ -15,10 +17,12 @@ pub fn derive(input: &syn::DeriveInput) -> Result<TokenStream, syn::Error> {
             u.union_token.span(),
             "Lens implementations cannot be derived from unions",
         )),
-    }
+    };
+
+    result.unwrap_or_else(|err| err.to_compile_error()).into()
 }
 
-fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenStream, syn::Error> {
+fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> syn::Result<TokenStream> {
     let ty = &input.ident;
     let vis = &input.vis;
     //let internal_mod_name = syn::Ident::new(&format!("{}_lenses", ty), Span::call_site());
@@ -60,7 +64,7 @@ fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenS
         };
 
         let addr_variant = quote! {
-            #name ( Option<<#lty as #CRATE::Data>::Address> )
+            #name ( Option<<#lty as #CRATE::model::Data>::Address> )
         };
         addr_variants.push(addr_variant);
 
@@ -82,7 +86,7 @@ fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenS
         decls.push(decl);
 
         let lens_impl = quote! {
-            impl #CRATE::Lens for #lens_ty_name {
+            impl #CRATE::model::Lens for #lens_ty_name {
                 type Root = #ty;
                 type Leaf = #lty;
 
@@ -112,13 +116,13 @@ fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenS
 
                 fn concat<L, U>(&self, rhs: L) -> Option<#addr_enum>
                 where
-                    L: #CRATE::Lens<Root=#lty, Leaf=U>,
-                    U: #CRATE::Data
+                    L: #CRATE::model::Lens<Root=#lty, Leaf=U>,
+                    U: #CRATE::model::Data
                 {
                     Some(#addr_enum::#name(rhs.address()))
                 }
 
-                fn unprefix(&self, addr: <#ty as #CRATE::Data>::Address) -> Option<Option<<#lty as #CRATE::Data>::Address>>
+                fn unprefix(&self, addr: <#ty as #CRATE::model::Data>::Address) -> Option<Option<<#lty as #CRATE::model::Data>::Address>>
                 {
                     if let #addr_enum::#name(rest) = addr {
                         Some(rest)
@@ -158,7 +162,7 @@ fn derive_struct(input: &syn::DeriveInput, s: &syn::DataStruct) -> Result<TokenS
 
 
         #[allow(non_upper_case_globals)]
-        impl #impl_generics #CRATE::Data for #ty #ty_generics #where_clause {
+        impl #impl_generics #CRATE::model::Data for #ty #ty_generics #where_clause {
             type Address = #addr_enum;
         }
 

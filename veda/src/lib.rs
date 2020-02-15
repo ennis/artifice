@@ -1,9 +1,9 @@
 #![feature(never_type)]
 #![feature(specialization)]
 
+mod binding;
 mod change;
 pub mod data;
-mod binding;
 mod db;
 /// terminology:
 ///
@@ -49,8 +49,8 @@ pub use data::Collection;
 pub use data::Data;
 pub use data::Identifiable;
 pub use data::IndexAddress;
-pub use db::Database;
 pub use db::Revision;
+pub use db::State;
 pub use db::Watcher;
 pub use lens::IdentityLens;
 pub use lens::Lens;

@@ -1,8 +1,8 @@
 //! GLTF loader
 
-use crate::{
-    Geometry, GeometryCache, GeometryId, GeometrySource, GeometrySources, Indices, Texcoords,
-};
+use crate::document::Document;
+use crate::geom::{Geometry, GeometryCache, GeometryId, GeometrySource, Indices, Texcoords};
+use crate::scene::{Object, ObjectId, Scene};
 use gltf::mesh::util::ReadIndices;
 use std::fmt::Display;
 use std::path::Path;
@@ -15,7 +15,9 @@ pub enum Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        unimplemented!()
+        match self {
+            Error::GltfError(e) => Display::fmt(e, f),
+        }
     }
 }
 
@@ -31,20 +33,19 @@ struct GltfGeometrySource;
 
 impl GeometrySource for GltfGeometrySource {
     fn load(&self, self_id: GeometryId, cache: &GeometryCache) {
-        unimplemented!()
+        // nothing to do, already loaded in the cache
     }
 }
 
-pub fn load_gltf(
-    path: &Path,
-    geom_sources: &mut GeometrySources,
-    geom_cache: &mut GeometryCache,
-) -> Result<Vec<GeometryId>, Error> {
+/// Loads (merges) the specified GLTF file into the specified document.
+pub fn load_gltf(path: &Path, document: &mut Document) -> Result<(), Error> {
     let (doc, buffers, images) = gltf::import(path)?;
 
-    let mut geom_ids = Vec::new();
+    let mut geom_ids: Vec<GeometryId> = Vec::new();
+    let mut object_ids: Vec<ObjectId> = Vec::new();
 
-    // for now only load the meshes
+    // load meshes (geometries)
+    let mut num_meshes = 0;
     for m in doc.meshes() {
         for p in m.primitives() {
             let reader = p.reader(|buffer| Some(&buffers[buffer.index()]));
@@ -69,11 +70,54 @@ pub fn load_gltf(
                 indices,
             };
 
-            let id = geom_sources.add(Box::new(GltfGeometrySource));
-            geom_cache.add(id, geom);
+            let id = document.geom_sources.add(Box::new(GltfGeometrySource));
+            document.geom_cache.add(id, geom);
             geom_ids.push(id);
         }
+        num_meshes += 1;
+    }
+    eprintln!("loaded {} geometries", num_meshes);
+
+    // load scene nodes
+    let mut scene = Scene::new();
+    let mut num_nodes = 0;
+    for n in doc.nodes() {
+        let index = n.index();
+        // create a name for the node if it has none
+        let name = n
+            .name()
+            .map_or_else(|| format!("node_{}", index), |name| name.to_owned());
+        let transform = n.transform();
+        // get the corresponding geometry
+        let geom = n.mesh().map(|mesh| geom_ids[mesh.index()]);
+
+        // create and insert the object in the scene
+        let obj = Object {
+            name,
+            transform,
+            geom,
+            parent: None,
+            children: Vec::new(),
+        };
+        eprintln!("object: {}", obj.name);
+        let id = scene.objects.insert(obj);
+        object_ids.push(id);
+        num_nodes += 1;
+    }
+    eprintln!("loaded {} scene objects", num_nodes);
+
+    // build scene hierarchy
+    for n in doc.nodes() {
+        let children: Vec<_> = n.children().map(|c| object_ids[c.index()]).collect();
+
+        let obj_id = object_ids[n.index()];
+
+        for c in children.iter() {
+            scene.objects.get_mut(*c).unwrap().parent = Some(obj_id);
+        }
+
+        scene.objects.get_mut(obj_id).unwrap().children = children;
     }
 
-    Ok(geom_ids)
+    Ok(())
 }

@@ -1,0 +1,3 @@
+[submodule "ext/druid"]
+	path = ext/druid
+	url = https://github.com/xi-editor/druid

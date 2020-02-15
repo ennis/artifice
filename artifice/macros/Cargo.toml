@@ -1,0 +1,19 @@
+[package]
+name = "artifice-macros"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+log ="0.4.8"
+quote ="1.0.2"
+syn ="1.0.11"
+proc-macro2 ="1.0.6"
+
+[dev-dependencies]
+artifice = { path = "../"}
+
+[lib]
+proc-macro = true
+

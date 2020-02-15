@@ -11,7 +11,6 @@ pub trait Binding {
     fn compute_if_changed(&mut self, data: Revision<Self::Source>) -> Option<Self::Output>;
 }
 
-
 /// A binding with an underlying state that you can get a reference to. (materialized)
 pub trait CachedBinding: Binding {
     fn get(&self) -> &Self::Output;
@@ -20,8 +19,6 @@ pub trait CachedBinding: Binding {
     /// Updates the cached value.
     fn update(&mut self, rev: Revision<Self::Source>) -> Revision<Self::Output>;
 }
-
-
 
 /*pub struct Binding<S: Data, V: View<S>, F: Fn(&mut V, Revision<S>)>
 {
