@@ -481,3 +481,32 @@ Behavior:
         - problem: can't store handlers having exclusive access to components
     - the components operate as cooperative tasks
         - not exactly a task, as sending an event blocks the caller
+        
+        
+## Kyute windows
+- Q: can they be created within the widget hierarchy, or only as top-level?
+    - If they can be created within the widget hierarchy, then it must have access to the ambient state
+        - and all window events must be rerouted to the root of the hierarchy for propagation
+    - If windows are "special", then they are self-contained, in that they can hold a strong ref to a part of state
+- Q: modal windows (and widgets)
+    - modal dialogs require platform support, which druid-shell doesn't have right now
+    - combo boxes?
+    
+## What do we need from the window system?
+
+- (ignore mac and linux for now)
+- can create an OpenGL context
+- can render 2D graphics with D2D/DirectWrite/whatever native API is there on linux
+- create native menus (main menu bar + context menu)
+- create borderless windows for combo boxes and stuff
+    - and draw to it
+- receive events from graphics tablets
+    - WM_POINTER
+- native dialogs
+    - file save/open
+- native font rendering
+
+
+## The great `Data` change:
+- Make it `?Sized`.
+- Remove the `Clone` bound.

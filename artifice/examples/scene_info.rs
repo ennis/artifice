@@ -11,9 +11,13 @@ fn main() {
     // document model
     let docs = Documents::new(&app);
     app.add_component(docs.clone());
+
     // user interface
-    let ui = UserInterface::new();
+    let ui = UserInterface::new(&app);
     app.add_component(ui.clone());
+
+    // create an empty document (this will automatically open a window)
+    docs.borrow_mut().new_document();
 
     UserInterface::enter_event_loop();
 }

@@ -15,6 +15,7 @@ druid-shell = { path = "../ext/druid/druid-shell" }
 glutin = "0.22.0"
 typemap = "0.3.3"
 artifice-macros = { path = "macros" }
+kyute = { path = "../kyute" }
 
 [build-dependencies]
 gl_generator = "0.14.0"
