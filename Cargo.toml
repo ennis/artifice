@@ -9,7 +9,7 @@ members = [
     "veda",     # state management store library
     "veda/macros", # macros for veda
 ]
-exclude = ["ext/druid"]
+exclude = ["ext/druid", "ext/directx"]
 
 [profile.release]
 debug = true

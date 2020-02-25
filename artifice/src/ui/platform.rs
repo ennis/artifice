@@ -450,7 +450,7 @@ impl PlatformWindow {
                     .with_format(Format::R8G8B8A8Unorm)
                     .with_buffer_count(SWAP_CHAIN_BUFFERS)
                     .with_scaling(Scaling::Stretch)
-                    .with_with_alpha_mode(AlphaMode::Unspecified)
+                    .with_alpha_mode(AlphaMode::Unspecified)
                     .with_buffer_usage(UsageFlags::RENDER_TARGET_OUTPUT)
                     .with_hwnd(hwnd)
                     .build()?;

@@ -21,10 +21,10 @@ wio = "0.2.2"
 gltf = "0.14.0"
 
 # drawing
-dxgi = "0.3.0-alpha4"
-direct3d11 = "0.3.0-alpha2"
-direct2d = "0.3.0-alpha1"
-directwrite = "0.3.0-alpha4"
+dxgi = { path="../ext/directx/dxgi" }
+direct3d11 = { path="../ext/directx/direct3d11" }
+direct2d = { path="../ext/directx/direct2d" }
+directwrite = { path="../ext/directx/directwrite" }
 com-wrapper = "0.1.0"
 kyute = { path = "../kyute" }
 
