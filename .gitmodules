@@ -2,6 +2,6 @@
 	path = ext/druid
 	url = https://github.com/xi-editor/druid
 
-[submodule "ext/directx"]
-	path = ext/directx
-	url = git@github.com:Connicpu/directx-rs.git
+[submodule "ext/directx-rs"]
+	path = ext/directx-rs
+	url = git@github.com:ennis/directx-rs.git
