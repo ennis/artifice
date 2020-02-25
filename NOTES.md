@@ -510,3 +510,82 @@ Behavior:
 ## The great `Data` change:
 - Make it `?Sized`.
 - Remove the `Clone` bound.
+-> that was surprisingly painless
+
+## And now, the renderer (again)
+- Q: Should we have objects that wrap OpenGL resources, and delete the resource on drop?
+    - autograph-ng is still a thing
+- There are good ideas in autograph-ng
+    - the arenas are NOT one of them: unusable in 'static contexts
+        - application structure is constrained to a set of nested loops
+        - this is incompatible with druid
+        - can't delete one object at a time
+        - all this to avoid putting a backreference for deletion
+- There are types to expose to the nodes, and types to keep private in the renderer
+- Useful types in the backend:
+    - management of textures/buffers (or Images: Renderbuffer OR Texture)
+        - a base handle type, which only has a deleter, when things need to be kept very lightweight
+        - plus a simple wrapper to create one
+    - management of framebuffers
+    - don't use backpointers: use a global variable
+    - some convenient abstraction for shader state
+
+- Rendering interface: TODO
+
+## Consider WebGPU (wgpu-rs)
+- Issue: extensions 
+    - imported memory (EXT_memory_object)
+    - interop with other stuff
+- Made for the web, portability first
+    - might want more flexibility
+    
+## Should we even use OpenGL?
+- context creation / multi-window is hard
+- interop with D2D (druid) might be hard
+- modify druid_shell to provide a D3D11 context instead
+
+
+## API options
+- OpenGL
+    - has GLSL, there exists a GLSL parser for Rust
+- D3D11
+    - good interop with D2D
+- ~~Vulkan~~: too complex
+- 
+
+## presentation
+- application emits draw commands
+- commands are flushed to the GPU queue
+- SwapChain::Present is called
+    - what happens here? does present wait for the queued ops on the GPU to finish?
+    - probably not: 
+    
+    
+## Existing applications
+- Maya: DirectX, OpenGL
+- Blender: OpenGL
+- Nuke: OpenGL
+- Natron: OpenGL
+- Cinema4D: OpenGL, Metal
+- Unity: DX, OpenGL, etc.
+- Houdini: OpenGL (multi-context, also for UI?)
+- Substance: OpenGL (?)
+
+## Reconsider using winit?
+- druid-shell
+    - is smaller than winit
+    - has native menus
+    - has native file dialogs
+    
+- winit
+    - does not provide any rendering context: we do that ourselves
+    - was there for a longer time
+    - seems less complex than druid-shell w.r.t. drawing?
+    
+- ... and winit is in a fucked-up state.
+
+## Don't use piet/piet-d2d
+- latest version doesn't seem to support DxgiRenderTargets
+- use directwrite/direct2d directly
+    - don't really care about linux support for now
+    - wait for piet to grow up

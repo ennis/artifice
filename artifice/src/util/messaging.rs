@@ -63,13 +63,13 @@ impl<L: ?Sized> TopicListeners<L> {
         if let Ok(mut listeners) = self.inner.try_borrow_mut() {
             listeners.push(Rc::downgrade(&l))
         } else {
-            unimplemented!()
+            unimplemented!("reentrant call to add_listener")
         }
     }
 
     pub fn for_each(&self, mut f: impl FnMut(Rc<RefCell<L>>)) {
-        let mut listeners = self.inner.borrow_mut();
-        for l in listeners.iter_mut() {
+        let listeners = self.inner.try_borrow().expect("reentrant event submission");
+        for l in listeners.iter() {
             f(l.upgrade().expect("listener deleted"))
         }
     }

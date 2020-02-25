@@ -3,9 +3,12 @@ use crate::geom::{GeometryCache, GeometrySources};
 use crate::material::StandardViewportMaterial;
 use crate::scene::Scene;
 use crate::util::MessageBus;
+use anyhow::{Error, Result};
 use artifice_macros::topic;
+use kyute::model::Data;
 use slotmap::SlotMap;
 use std::cell::RefCell;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 slotmap::new_key_type! {
@@ -16,12 +19,21 @@ slotmap::new_key_type! {
 
 #[topic(DocumentChanges)]
 pub trait DocumentChangeListener {
+    /// The name of the document has changed.
+    #[allow(unused_variables)]
+    fn name_changed(&mut self, doc: &Document) {}
+    /// A scene was added to the document.
+    #[allow(unused_variables)]
     fn scene_added(&mut self, id: DocumentId, doc: &Document, scene: SceneId) {}
 }
 
 pub struct Document {
     bus: MessageBus,
     events: DocumentChanges,
+    unsaved_changes: bool,
+
+    pub name: String,
+    pub path: Option<PathBuf>,
     pub scenes: SlotMap<SceneId, Scene>,
     pub materials: SlotMap<MaterialId, StandardViewportMaterial>,
     pub geom_cache: GeometryCache,
@@ -33,6 +45,9 @@ impl Document {
         let bus = MessageBus::new();
         let events = DocumentChanges::publisher(&bus);
         Document {
+            name: "Unnamed".to_string(),
+            path: None,
+            unsaved_changes: true,
             bus,
             events,
             scenes: SlotMap::with_key(),
@@ -42,8 +57,27 @@ impl Document {
         }
     }
 
+    pub fn from_gltf<P: AsRef<Path>>(path: P) -> Result<Document> {
+        // load geometries
+        let mut doc = Document::new();
+        doc.path = Some(path.as_ref().to_path_buf());
+        crate::gltf::load_gltf(path.as_ref(), &mut doc)?;
+        Ok(doc)
+    }
+
+    pub fn has_unsaved_changes(&self) -> bool {
+        self.unsaved_changes
+    }
+
     pub fn message_bus(&self) -> &MessageBus {
         &self.bus
+    }
+
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = name.into();
+        // TODO this is a bit much, maybe the methods on the publisher
+        // should not be &mut ?
+        self.events.name_changed(self);
     }
 }
 
@@ -74,6 +108,8 @@ impl Component for Documents {}
 
 #[topic(OpenDocumentsChanges)]
 pub trait OpenDocumentsChangeListener {
+    #[allow(unused_variables)]
     fn document_opened(&mut self, id: DocumentId, doc: &Document) {}
+    #[allow(unused_variables)]
     fn document_closed(&mut self, id: DocumentId, doc: &Document) {}
 }

@@ -7,16 +7,37 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-slotmap = { version = "0.4.0", features = ["unstable"] }
-gltf = "0.14.0"
-#veda = { path = "../veda" }
-#mopa = "0.2.2"
-druid-shell = { path = "../ext/druid/druid-shell" }
-glutin = "0.22.0"
-typemap = "0.3.3"
+
+# private macros
 artifice-macros = { path = "macros" }
+
+# windowing
+winit = "0.20"      # 0.21 is broken on windows
+glutin = "0.22"
+winapi = "0.3.8"
+wio = "0.2.2"
+
+# file formats
+gltf = "0.14.0"
+
+# drawing
+dxgi = "0.3.0-alpha4"
+direct3d11 = "0.3.0-alpha2"
+direct2d = "0.3.0-alpha1"
+directwrite = "0.3.0-alpha4"
+com-wrapper = "0.1.0"
 kyute = { path = "../kyute" }
+
+# data structures and utilities
+slotmap = { version = "0.4.0", features = ["unstable"] }
+lazy_static = "1.4.0"
+typemap = "0.3.3"
+log = "0.4.8"
+pretty_env_logger = "0.4.0"
+anyhow = "1.0.26"
+thiserror = "1.0.11"
+
+
 
 [build-dependencies]
 gl_generator = "0.14.0"
-

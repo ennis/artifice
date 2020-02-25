@@ -1,7 +1,5 @@
 use crate::document::{Document, DocumentId};
 use crate::util::MessageBus;
-use druid_shell::{RunLoop, WindowBuilder};
-use slotmap::SlotMap;
 use std::any::Any;
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -28,7 +26,6 @@ pub struct Application {
 
 impl Application {
     pub fn new() -> Application {
-        druid_shell::Application::init();
         Application {
             components: TypeMap::new(),
             bus: MessageBus::new(),

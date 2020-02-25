@@ -3,31 +3,12 @@
 use crate::document::Document;
 use crate::geom::{Geometry, GeometryCache, GeometryId, GeometrySource, Indices, Texcoords};
 use crate::scene::{Object, ObjectId, Scene};
+use anyhow::{Error, Result};
 use gltf::mesh::util::ReadIndices;
+use log::warn;
 use std::fmt::Display;
 use std::path::Path;
 use std::{error, fmt};
-
-#[derive(Debug)]
-pub enum Error {
-    GltfError(gltf::Error),
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::GltfError(e) => Display::fmt(e, f),
-        }
-    }
-}
-
-impl error::Error for Error {}
-
-impl From<gltf::Error> for Error {
-    fn from(e: gltf::Error) -> Self {
-        Error::GltfError(e)
-    }
-}
 
 struct GltfGeometrySource;
 
@@ -38,7 +19,7 @@ impl GeometrySource for GltfGeometrySource {
 }
 
 /// Loads (merges) the specified GLTF file into the specified document.
-pub fn load_gltf(path: &Path, document: &mut Document) -> Result<(), Error> {
+pub fn load_gltf(path: &Path, document: &mut Document) -> Result<()> {
     let (doc, buffers, images) = gltf::import(path)?;
 
     let mut geom_ids: Vec<GeometryId> = Vec::new();
@@ -50,9 +31,18 @@ pub fn load_gltf(path: &Path, document: &mut Document) -> Result<(), Error> {
         for p in m.primitives() {
             let reader = p.reader(|buffer| Some(&buffers[buffer.index()]));
 
-            let positions: Vec<[f32; 3]> = reader.read_positions().unwrap().collect();
-            let normals: Vec<[f32; 3]> = reader.read_normals().unwrap().collect();
-            let tangents: Vec<[f32; 4]> = reader.read_tangents().unwrap().collect();
+            let positions: Vec<[f32; 3]> = if let Some(pos) = reader.read_positions() {
+                pos.collect()
+            } else {
+                warn!("mesh has no positions");
+                continue;
+            };
+
+            let normals: Option<Vec<[f32; 3]>> =
+                reader.read_normals().map(|normals| normals.collect());
+            let tangents: Option<Vec<[f32; 4]>> =
+                reader.read_tangents().map(|tangents| tangents.collect());
+
             let texcoords: Option<Texcoords> = reader
                 .read_tex_coords(0)
                 .map(|texcoords| Texcoords::F32(texcoords.into_f32().collect()));

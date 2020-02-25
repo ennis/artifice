@@ -40,8 +40,8 @@ pub enum Texcoords {
 #[derive(Clone, Debug)]
 pub struct Geometry {
     pub positions: Vec<[f32; 3]>,
-    pub normals: Vec<[f32; 3]>,
-    pub tangents: Vec<[f32; 4]>,
+    pub normals: Option<Vec<[f32; 3]>>,
+    pub tangents: Option<Vec<[f32; 4]>>,
     pub texcoords: Option<Texcoords>,
     pub indices: Option<Indices>,
 }

@@ -40,6 +40,17 @@ pub fn topic(attr: TokenStream, item: TokenStream) -> TokenStream {
             } else {
                 // Good path
                 let method_name = &sig.ident;
+                let mut sig = sig.clone();
+
+                // publisher method does not need to be mutable
+                // no first_mut?
+                match sig.inputs.iter_mut().next().unwrap() {
+                    syn::FnArg::Receiver(ref mut r) => {
+                        r.mutability = None;
+                    }
+                    _ => unreachable!(),
+                }
+
                 let args: Vec<_> = sig
                     .inputs
                     .iter()
@@ -88,7 +99,7 @@ pub fn topic(attr: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
 
-        impl #listener for #topic {
+        impl #topic {
             #(#publisher_methods)*
         }
 

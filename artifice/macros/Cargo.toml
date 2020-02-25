@@ -8,7 +8,7 @@ edition = "2018"
 [dependencies]
 log ="0.4.8"
 quote ="1.0.2"
-syn ="1.0.11"
+syn = { version = "1.0.11", features=["full"] }
 proc-macro2 ="1.0.6"
 
 [dev-dependencies]
