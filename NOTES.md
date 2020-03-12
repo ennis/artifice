@@ -589,3 +589,52 @@ Behavior:
 - use directwrite/direct2d directly
     - don't really care about linux support for now
     - wait for piet to grow up
+- don't invest too much time in directwrite/direct2d
+    - eventually, move away from it, wrap dwrite/d2d in a tailored API for kyute+artifice from winapi
+    - less code to maintain, less layers, less things to work around
+    
+## TODO
+- PlatformWindow: impl WindowEventTarget, wrapper for paint, draw
+    - PlatformWindow(DocumentWindowHandler)
+- UI: current focused modal window
+    - PopupWindow(PlatformWindow(PopupWindowHandler))
+    
+    
+    
+## The scope is too big
+- Custom UI with layout, input handling 
+- Custom windows, menus
+- Custom renderer
+- Data model
+- Lens-based change tracking system
+=> too much
+
+What we want:
+- load a 3D scene in memory from a file
+    - along with a recipe for rendering objects on the screen
+    - recipe is more complex than simply a material: both material attributes and control targets that talk to specific post-proc passes / renderers
+    - stroke placement and rendering
+- User interface to edit the recipe
+
+Shortest path:
+- use IMGUI for the GUI
+
+The custom UI is too much. Too many decisions to make regarding the design of the API, the layout system, painting, state management, etc.
+Should go with a simpler approach? immediate mode?
+
+immediate mode:
+- on state change / event received
+    - updates the previous layout
+    - invisible items are skipped (although this must be conservative)
+    - functions like button(), etc. also take a callback that produce an Action
+    - in the end, simply produces a bunch of boxes
+    - identity using Identifiable trait
+- problem: visibility determination without layout?
+- layout the boxes and text within the boxes
+- draw the boxes and text
+
+
+## Follow-up
+- don't follow up with the model+lens thing
+- don't follow up with the view stuff
+ 

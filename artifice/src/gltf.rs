@@ -8,7 +8,6 @@ use gltf::mesh::util::ReadIndices;
 use log::warn;
 use std::fmt::Display;
 use std::path::Path;
-use std::{error, fmt};
 
 struct GltfGeometrySource;
 

@@ -4,12 +4,11 @@ members = [
     "artifice-main", # executable
     "artifice/macros", # executable
     "kyute",    # the user interface library
-    "kyute/miniqt-sys",    # lightweight Qt wrapper
     "kyute/macros",    # user interface codegen macros
     "veda",     # state management store library
     "veda/macros", # macros for veda
 ]
-exclude = ["ext/druid", "ext/directx"]
+exclude = ["ext/druid", "ext/directx-rs"]
 
 [profile.release]
 debug = true

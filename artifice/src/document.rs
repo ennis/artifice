@@ -3,9 +3,9 @@ use crate::geom::{GeometryCache, GeometrySources};
 use crate::material::StandardViewportMaterial;
 use crate::scene::Scene;
 use crate::util::MessageBus;
+use crate::util::model::Data;
 use anyhow::{Error, Result};
 use artifice_macros::topic;
-use kyute::model::Data;
 use slotmap::SlotMap;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -19,9 +19,11 @@ slotmap::new_key_type! {
 
 #[topic(DocumentChanges)]
 pub trait DocumentChangeListener {
+
     /// The name of the document has changed.
     #[allow(unused_variables)]
     fn name_changed(&mut self, doc: &Document) {}
+
     /// A scene was added to the document.
     #[allow(unused_variables)]
     fn scene_added(&mut self, id: DocumentId, doc: &Document, scene: SceneId) {}

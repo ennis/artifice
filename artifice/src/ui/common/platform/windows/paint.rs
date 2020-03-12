@@ -30,4 +30,3 @@ impl<'a> PaintCtx<'a> {
         self.d2d_target
     }
 }
-

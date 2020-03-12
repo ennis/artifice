@@ -1,3 +1,5 @@
+#![feature(specialization)]
+
 // macro support
 extern crate self as artifice;
 
