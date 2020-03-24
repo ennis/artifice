@@ -3,7 +3,10 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::spanned::Spanned;
 
-pub fn topic(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn topic(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
     // works only on trait declarations
     let trait_decl: syn::ItemTrait = syn::parse_macro_input!(item as syn::ItemTrait);
     let topic: syn::Ident = syn::parse_macro_input!(attr as syn::Ident);

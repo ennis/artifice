@@ -1,4 +1,3 @@
-use crate::render::gl::api::Gl;
 use crate::render::gl::handle::VertexArrayHandle;
 
 /*#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -8,11 +7,10 @@ pub struct VertexAttribute {
     pub semantic: Option<Semantic<'tcx>>,
 }*/
 
-
 impl VertexArrayHandle {
     // don't know yet how and when we will create vertex arrays, so don't
 
-   /* pub unsafe fn new(gl: &Gl, attribs: &[VertexInputAttributeDescription]) -> VertexArrayHandle {
+    /* pub unsafe fn new(gl: &Gl, attribs: &[VertexInputAttributeDescription]) -> VertexArrayHandle {
 
         let mut vao = 0;
         gl.CreateVertexArrays(1, &mut vao);
@@ -32,4 +30,3 @@ impl VertexArrayHandle {
         vao
     }*/
 }
-

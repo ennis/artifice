@@ -1,4 +1,5 @@
 #![feature(specialization)]
+#![feature(unsized_locals)]
 
 // macro support
 extern crate self as artifice;
@@ -12,3 +13,5 @@ pub mod render;
 pub mod scene;
 pub mod ui;
 pub mod util;
+
+pub mod model;

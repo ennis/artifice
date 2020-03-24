@@ -1,11 +1,11 @@
-use crate::render::gl::handle::VertexShaderHandle;
-use crate::render::gl::handle::FragmentShaderHandle;
-use crate::render::gl::handle::ProgramHandle;
 use crate::render::gl::api::gl;
 use crate::render::gl::api::gl::types::*;
 use crate::render::gl::api::Gl;
 use crate::render::gl::error::Error;
-use std::ffi::{CString, c_void};
+use crate::render::gl::handle::FragmentShaderHandle;
+use crate::render::gl::handle::ProgramHandle;
+use crate::render::gl::handle::VertexShaderHandle;
+use std::ffi::{c_void, CString};
 use std::mem;
 
 fn get_shader_info_log(gl: &Gl, obj: GLuint) -> String {
@@ -77,8 +77,8 @@ unsafe fn create_from_spirv(gl: &Gl, stage: GLenum, bytecode: &[u32]) -> Result<
 macro_rules! impl_shader {
     ($handle:ty; $stage:expr) => {
         impl $handle {
-            pub unsafe fn from_glsl(gl: &Gl, source: &str) -> Result<$handle,Error> {
-                Ok(Self::from_raw(gl, compile_glsl(source)?))
+            pub unsafe fn from_glsl(gl: &Gl, source: &str) -> Result<$handle, Error> {
+                Ok(Self::from_raw(gl, compile_glsl(gl, source, $stage)?))
             }
         }
     };
@@ -88,8 +88,11 @@ impl_shader!(VertexShaderHandle; gl::VERTEX_SHADER);
 impl_shader!(FragmentShaderHandle; gl::FRAGMENT_SHADER);
 
 impl ProgramHandle {
-    pub unsafe fn link(gl: &Gl, vertex: &VertexShaderHandle, fragment: &FragmentShaderHandle) -> Result<ProgramHandle, Error>
-    {
+    pub unsafe fn link(
+        gl: &Gl,
+        vertex: &VertexShaderHandle,
+        fragment: &FragmentShaderHandle,
+    ) -> Result<ProgramHandle, Error> {
         let obj = gl.CreateProgram();
         gl.AttachShader(obj, vertex.obj);
         gl.AttachShader(obj, fragment.obj);

@@ -18042,8 +18042,6 @@ pub mod wgl {
     unsafe impl __gl_imports::Send for Wgl {}
 }
 
-
-
 // Adapted from http://nercury.github.io/rust/opengl/tutorial/2018/02/12/opengl-in-rust-from-scratch-06-gl-generator.html
 #[derive(Clone)]
 pub struct Gl(Rc<gl::Gl>);

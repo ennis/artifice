@@ -1,6 +1,6 @@
-use crate::render::gl::api::gl::types::GLenum;
-use crate::render::gl::api::gl;
 use crate::render::format::Format;
+use crate::render::gl::api::gl;
+use crate::render::gl::api::gl::types::GLenum;
 
 /// Equivalent OpenGL format information for a given `Format`.
 pub struct GlFormatInfo {
@@ -70,20 +70,20 @@ static GLF_R16_SFLOAT: GlFormatInfo = GlFormatInfo {
     upload_ty: gl::FLOAT,
 }; // XXX no half-float for upload!
 static GLF_R16G16_SFLOAT: GlFormatInfo = GlFormatInfo {
-        internal_fmt: gl::RG16F,
-        upload_components: gl::RG,
-        upload_ty: gl::FLOAT,
-    }; // XXX no half-float for upload!
+    internal_fmt: gl::RG16F,
+    upload_components: gl::RG,
+    upload_ty: gl::FLOAT,
+}; // XXX no half-float for upload!
 static GLF_R16G16B16A16_SFLOAT: GlFormatInfo = GlFormatInfo {
-        internal_fmt: gl::RGBA16F,
-        upload_components: gl::RGBA,
-        upload_ty: gl::FLOAT,
-    }; // XXX no half-float for upload!
+    internal_fmt: gl::RGBA16F,
+    upload_components: gl::RGBA,
+    upload_ty: gl::FLOAT,
+}; // XXX no half-float for upload!
 static GLF_R32G32_SFLOAT: GlFormatInfo = GlFormatInfo {
-        internal_fmt: gl::RG32F,
-        upload_components: gl::RG,
-        upload_ty: gl::FLOAT,
-    };
+    internal_fmt: gl::RG32F,
+    upload_components: gl::RG,
+    upload_ty: gl::FLOAT,
+};
 static GLF_R32G32B32_SFLOAT: GlFormatInfo = GlFormatInfo {
     internal_fmt: gl::RGB32F,
     upload_components: gl::RGB,

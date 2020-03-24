@@ -1,22 +1,24 @@
 //! TODO: framebuffer creation
 //! impl FramebufferHandle {}
-use crate::render::gl::handle::FramebufferHandle;
-use crate::render::gl::handle::TextureHandle;
-use crate::render::gl::handle::RenderbufferHandle;
-use crate::render::gl::error::{GlResult, Error};
-use crate::render::gl::api::Gl;
 use crate::render::gl::api::gl;
+use crate::render::gl::api::Gl;
+use crate::render::gl::error::{Error, GlResult};
+use crate::render::gl::handle::FramebufferHandle;
+use crate::render::gl::handle::RenderbufferHandle;
+use crate::render::gl::handle::TextureHandle;
 
-#[derive(Copy,Clone)]
+#[derive(Copy, Clone)]
 pub enum FramebufferAttachment<'a> {
     Texture(&'a TextureHandle),
     Renderbuffer(&'a RenderbufferHandle),
 }
 
 impl FramebufferHandle {
-    pub unsafe fn new(gl: &Gl, color_attachments: &[FramebufferAttachment], depth_attachment: Option<FramebufferAttachment>)
-        -> GlResult<FramebufferHandle>
-    {
+    pub unsafe fn new(
+        gl: &Gl,
+        color_attachments: &[FramebufferAttachment],
+        depth_attachment: Option<FramebufferAttachment>,
+    ) -> GlResult<FramebufferHandle> {
         assert!(color_attachments.len() < 8);
 
         let mut obj = 0;
@@ -33,7 +35,7 @@ impl FramebufferHandle {
                         gl::RENDERBUFFER,
                         r.obj,
                     );
-                },
+                }
                 FramebufferAttachment::Texture(tex) => {
                     gl.NamedFramebufferTexture(
                         obj,
@@ -41,7 +43,7 @@ impl FramebufferHandle {
                         tex.obj,
                         0, // TODO
                     );
-                },
+                }
             }
         }
 
@@ -55,7 +57,7 @@ impl FramebufferHandle {
                         gl::RENDERBUFFER,
                         r.obj,
                     );
-                },
+                }
                 FramebufferAttachment::Texture(tex) => {
                     gl.NamedFramebufferTexture(
                         obj,
@@ -63,7 +65,7 @@ impl FramebufferHandle {
                         tex.obj,
                         0, // TODO
                     );
-                },
+                }
             }
         }
 
@@ -80,7 +82,9 @@ impl FramebufferHandle {
                 gl::COLOR_ATTACHMENT0 + 5,
                 gl::COLOR_ATTACHMENT0 + 6,
                 gl::COLOR_ATTACHMENT0 + 7,
-            ].as_ptr());
+            ]
+            .as_ptr(),
+        );
 
         // check framebuffer completeness
         let status = gl.CheckNamedFramebufferStatus(obj, gl::DRAW_FRAMEBUFFER);
@@ -92,4 +96,3 @@ impl FramebufferHandle {
         }
     }
 }
-

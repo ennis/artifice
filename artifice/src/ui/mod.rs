@@ -8,5 +8,14 @@
 //!
 
 pub mod common;
-pub mod application;
+pub mod document;
+pub mod kyute;
 
+
+pub trait Application {
+    type Action: 'static;
+
+    fn update(&mut self);
+
+    fn view(&mut self) -> kyute::Widget<>
+}

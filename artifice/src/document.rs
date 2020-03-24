@@ -3,8 +3,7 @@ use crate::geom::{GeometryCache, GeometrySources};
 use crate::material::StandardViewportMaterial;
 use crate::scene::Scene;
 use crate::util::MessageBus;
-use crate::util::model::Data;
-use anyhow::{Error, Result};
+use anyhow::Result;
 use artifice_macros::topic;
 use slotmap::SlotMap;
 use std::cell::RefCell;
@@ -19,7 +18,6 @@ slotmap::new_key_type! {
 
 #[topic(DocumentChanges)]
 pub trait DocumentChangeListener {
-
     /// The name of the document has changed.
     #[allow(unused_variables)]
     fn name_changed(&mut self, doc: &Document) {}

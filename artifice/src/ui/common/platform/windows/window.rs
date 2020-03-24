@@ -13,30 +13,30 @@ use glutin::platform::windows::RawContextExt;
 use glutin::{ContextBuilder, PossiblyCurrent, RawContext};
 use log::{error, info, trace};
 
+use std::marker::PhantomData;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use std::{error, fmt, ptr};
-use std::marker::PhantomData;
 
 use winit::platform::windows::WindowExtWindows;
 use winit::window::{Window, WindowBuilder, WindowId};
 
 use com_wrapper::ComWrapper;
-use dxgi::swap_chain::swap_chain::ISwapChain;
+use direct3d11::device_context::IDeviceContext;
 use direct3d11::enums::BindFlags;
 use direct3d11::enums::Usage;
-use direct3d11::device_context::IDeviceContext;
 use dxgi::enums::*;
 use dxgi::enums::{PresentFlags, SwapChainFlags};
+use dxgi::swap_chain::swap_chain::ISwapChain;
 
-use winapi::shared::ntdef::HRESULT;
-use winapi::shared::winerror::SUCCEEDED;
-use winapi::shared::windef::HWND;
+use winapi::shared::dxgiformat::*;
 use winapi::shared::minwindef::HINSTANCE;
-use winapi::um::errhandlingapi::GetLastError;
+use winapi::shared::ntdef::HRESULT;
+use winapi::shared::windef::HWND;
+use winapi::shared::winerror::SUCCEEDED;
 use winapi::um::d2d1::*;
 use winapi::um::dcommon::*;
-use winapi::shared::dxgiformat::*;
+use winapi::um::errhandlingapi::GetLastError;
 
 use super::PlatformState;
 
@@ -74,7 +74,7 @@ unsafe fn init_debug_callback(gl: &Gl) {
         extern "system" fn debug_callback(
             source: GLenum,
             gltype: GLenum,
-            id: GLuint,
+            _id: GLuint,
             severity: GLenum,
             length: GLsizei,
             message: *const GLchar,
@@ -117,7 +117,7 @@ unsafe fn init_debug_callback(gl: &Gl) {
                 panic!();
             }
         }
-        gl.DebugMessageCallback(Some(debug_callback), 0 as *mut _);
+        gl.DebugMessageCallback(Some(debug_callback), ptr::null());
     }
 }
 
@@ -167,8 +167,7 @@ impl SwapChainResources {
         width: u32,
         height: u32,
         use_staging_texture: bool,
-    ) -> Result<SwapChainResources>
-    {
+    ) -> Result<SwapChainResources> {
         let mut res = Self::new(swap_chain, device, width, height)?;
 
         let interop_device = wgl.DXOpenDeviceNV(device.get_raw() as *mut _);
@@ -218,7 +217,12 @@ impl SwapChainResources {
         // create a framebuffer that points to the swap chain buffer
         let mut fbo = 0;
         gl.CreateFramebuffers(1, &mut fbo);
-        gl.NamedFramebufferRenderbuffer(fbo, gl::COLOR_ATTACHMENT0, gl::RENDERBUFFER, renderbuffer.obj);
+        gl.NamedFramebufferRenderbuffer(
+            fbo,
+            gl::COLOR_ATTACHMENT0,
+            gl::RENDERBUFFER,
+            renderbuffer.obj,
+        );
         let fbo = FramebufferHandle::from_raw(&gl, fbo);
 
         let fb_status = gl.CheckNamedFramebufferStatus(fbo.obj, gl::DRAW_FRAMEBUFFER);
@@ -259,15 +263,19 @@ impl Drop for SwapChainResources {
         if let Some(ref mut interop) = self.interop {
             unsafe {
                 check_win32_last_error(
-                    interop.wgl.DXUnregisterObjectNV(interop.device, interop.target),
+                    interop
+                        .wgl
+                        .DXUnregisterObjectNV(interop.device, interop.target),
                     "wglDXUnregisterObjectNV",
                 );
-                check_win32_last_error(interop.wgl.DXCloseDeviceNV(interop.device), "wglDXCloseDeviceNV");
+                check_win32_last_error(
+                    interop.wgl.DXCloseDeviceNV(interop.device),
+                    "wglDXCloseDeviceNV",
+                );
             }
         }
     }
 }
-
 
 pub struct GlState {
     context: RawContext<PossiblyCurrent>,
@@ -279,7 +287,7 @@ const SWAP_CHAIN_BUFFERS: u32 = 2;
 const USE_INTEROP_STAGING_TEXTURE: bool = false;
 
 /// Guard object that holds a lock on an interop OpenGL context.
-pub struct GlDrawGuard<'a> {
+pub struct OpenGlDrawContext<'a> {
     gl: &'a Gl,
     wgl: &'a Wgl,
     interop: &'a mut DxGlInterop,
@@ -287,12 +295,9 @@ pub struct GlDrawGuard<'a> {
     d3d11_ctx: &'a direct3d11::DeviceContext,
 }
 
-impl<'a> GlDrawGuard<'a> {
-    fn new(w: &'a mut PlatformWindow) -> GlDrawGuard<'a> {
-        let gl_state = w
-            .gl
-            .as_mut()
-            .expect("a GL context was not requested");
+impl<'a> OpenGlDrawContext<'a> {
+    pub fn new(w: &'a mut PlatformWindow) -> OpenGlDrawContext<'a> {
+        let gl_state = w.gl.as_mut().expect("a GL context was not requested");
         let swap_res = w
             .swap_res
             .as_mut()
@@ -312,7 +317,7 @@ impl<'a> GlDrawGuard<'a> {
             wgl.DXLockObjectsNV(interop.device, 1, &mut interop.target);
         }
 
-        GlDrawGuard {
+        OpenGlDrawContext {
             gl,
             wgl,
             interop,
@@ -332,11 +337,12 @@ impl<'a> GlDrawGuard<'a> {
     }
 }
 
-impl<'a> Drop for GlDrawGuard<'a> {
+impl<'a> Drop for OpenGlDrawContext<'a> {
     fn drop(&mut self) {
         // finished using the resource
         unsafe {
-            self.wgl.DXUnlockObjectsNV(self.interop.device, 1, &mut self.interop.target);
+            self.wgl
+                .DXUnlockObjectsNV(self.interop.device, 1, &mut self.interop.target);
         }
 
         if let Some(ref staging_d3d11) = self.interop.staging {
@@ -350,9 +356,63 @@ impl<'a> Drop for GlDrawGuard<'a> {
     }
 }
 
-pub struct D2DDrawContext<'a> {
-    pub target: direct2d::render_target::RenderTarget,
-    _phantom: PhantomData<&'a ()>
+pub struct Direct2dDrawContext<'a> {
+    window: &'a mut PlatformWindow,
+    target: direct2d::render_target::RenderTarget,
+    _phantom: PhantomData<&'a ()>,
+}
+
+impl<'a> Direct2dDrawContext<'a> {
+    pub fn new(window: &'a mut PlatformWindow) -> Direct2dDrawContext<'a> {
+        let d2d = &window.shared.d2d_factory;
+        let dwrite = &window.shared.dwrite_factory;
+        //let mut context = self.shared.d2d_context.borrow_mut();
+        let swap_res = window.swap_res.as_ref().unwrap();
+        let dxgi_buffer = swap_res.backbuffer.as_dxgi();
+
+        let dpi = 0.0;
+        let props = D2D1_RENDER_TARGET_PROPERTIES {
+            _type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            pixelFormat: D2D1_PIXEL_FORMAT {
+                format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                alphaMode: D2D1_ALPHA_MODE_IGNORE,
+            },
+            dpiX: dpi,
+            dpiY: dpi,
+            usage: D2D1_RENDER_TARGET_USAGE_NONE,
+            minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
+        };
+
+        const DPI: f32 = 1.0;
+
+        let target = unsafe {
+            let mut render_target: *mut ID2D1RenderTarget = ptr::null_mut();
+            let res = (*d2d.get_raw()).CreateDxgiSurfaceRenderTarget(
+                dxgi_buffer.get_raw(),
+                &props,
+                &mut render_target,
+            );
+            direct2d::render_target::RenderTarget::from_raw(render_target)
+        };
+
+        Direct2dDrawContext {
+            window,
+            target,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn window(&self) -> &PlatformWindow {
+        self.window
+    }
+
+    pub fn render_target(&self) -> &direct2d::render_target::RenderTarget {
+        &self.target
+    }
+
+    pub fn render_target_mut(&mut self) -> &mut direct2d::render_target::RenderTarget {
+        &mut self.target
+    }
 }
 
 /// Encapsulates a Win32 window and associated resources for drawing to it.
@@ -369,7 +429,6 @@ pub struct PlatformWindow {
     interop_needs_staging: bool,
 }
 
-
 impl PlatformWindow {
     /// Returns the underlying winit [`Window`].
     ///
@@ -378,7 +437,6 @@ impl PlatformWindow {
         &self.window
     }
 
-
     /// Returns the underlying winit [`WindowId`].
     /// Equivalent to calling `self.window().id()`.
     ///
@@ -386,7 +444,6 @@ impl PlatformWindow {
     pub fn id(&self) -> WindowId {
         self.window.id()
     }
-
 
     /// Resizes the swap chain and associated resources of the window.
     ///
@@ -465,7 +522,7 @@ impl PlatformWindow {
             //} else {
             //    SwapEffect::FlipDiscard
             //};
-            let swap_effect = SwapEffect::FlipDiscard;
+            let swap_effect = SwapEffect::Discard;
 
             // OpenGL interop does not work well with FLIP_* swap effects
             // (generates a "D3D11 Device Lost" error during resizing after a while).
@@ -535,7 +592,7 @@ impl PlatformWindow {
                 (swap_res, None)
             };
 
-            let mut pw = PlatformWindow {
+            let pw = PlatformWindow {
                 shared: platform.0.clone(),
                 window,
                 hwnd,
@@ -547,49 +604,6 @@ impl PlatformWindow {
             };
 
             Ok(pw)
-        }
-    }
-
-    /// TODO return some kind of context object borrowing self instead of passing a closure
-    pub fn draw_gl(&mut self) -> GlDrawGuard {
-        GlDrawGuard::new(self)
-    }
-
-    pub fn draw_2d(&mut self) -> D2DDrawContext {
-        let d2d = &self.shared.d2d_factory;
-        let dwrite = &self.shared.dwrite_factory;
-        //let mut context = self.shared.d2d_context.borrow_mut();
-        let mut swap_res = self.swap_res.as_mut().unwrap();
-        let dxgi_buffer = swap_res.backbuffer.as_dxgi();
-
-        let dpi = 0.0;
-        let props = D2D1_RENDER_TARGET_PROPERTIES {
-            _type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            pixelFormat: D2D1_PIXEL_FORMAT {
-                format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                alphaMode: D2D1_ALPHA_MODE_IGNORE,
-            },
-            dpiX: dpi,
-            dpiY: dpi,
-            usage: D2D1_RENDER_TARGET_USAGE_NONE,
-            minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-        };
-
-        const DPI: f32 = 1.0;
-
-        let mut target = unsafe {
-            let mut render_target: *mut ID2D1RenderTarget = ptr::null_mut();
-            let res = (*d2d.get_raw()).CreateDxgiSurfaceRenderTarget(
-                dxgi_buffer.get_raw(),
-                &props,
-                &mut render_target,
-            );
-            direct2d::render_target::RenderTarget::from_raw(render_target)
-        };
-
-        D2DDrawContext {
-            target,
-            _phantom: PhantomData
         }
     }
 

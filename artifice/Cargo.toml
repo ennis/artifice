@@ -25,6 +25,7 @@ dxgi = { path="../ext/directx-rs/dxgi" }
 direct3d11 = { path="../ext/directx-rs/direct3d11" }
 direct2d = { path="../ext/directx-rs/direct2d" }
 directwrite = { path="../ext/directx-rs/directwrite" }
+math2d = { path="../ext/directx-rs/math2d" }
 com-wrapper = "0.1.0"
 
 # data structures and utilities
@@ -36,7 +37,7 @@ pretty_env_logger = "0.4.0"
 anyhow = "1.0.26"
 thiserror = "1.0.11"
 euclid = "0.20.7"
-
+palette = "0.5.0"
 
 [build-dependencies]
 gl_generator = "0.14.0"

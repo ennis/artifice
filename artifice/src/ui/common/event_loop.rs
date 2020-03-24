@@ -1,14 +1,14 @@
-use winit::window::WindowId;
-use winit::event::{WindowEvent, Event};
-use winit::event_loop::{EventLoopWindowTarget, ControlFlow};
-use crate::ui::common::platform::Platform;
 use crate::ui::common::platform;
+use crate::ui::common::platform::Platform;
 use log::trace;
+use winit::event::{Event, WindowEvent};
+use winit::event_loop::{ControlFlow, EventLoopWindowTarget};
+use winit::window::WindowId;
 
 /// The result of delivering an event to a window.
 ///
 /// See [`WindowEventTarget::event`].
-#[derive(Copy,Clone,Debug,Eq,PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum EventResult {
     /// Do nothing.
     None,
@@ -24,7 +24,6 @@ impl Default for EventResult {
 
 /// A wrapper around a window that receives events.
 pub trait WindowEventTarget {
-
     /// Returns the [`WindowId`] of this window.
     ///
     /// [`WindowId`]: winit::WindowId
@@ -43,9 +42,10 @@ pub trait WindowEventTarget {
     /// Returns whether this window is modal: i.e., whether it should capture all user inputs.
     ///
     /// TODO modal stack?
-    fn is_modal(&self) -> bool { false }
+    fn is_modal(&self) -> bool {
+        false
+    }
 }
-
 
 /// Context passed to functions that create new windows
 /// so that they can be registered with the event loop.
@@ -89,7 +89,6 @@ impl<'a> WindowCtx<'a> {
     }
 }
 
-
 /// Represents the main application event loop.
 ///
 /// The event loop also manages the application open windows and dispatches messages to them.
@@ -107,42 +106,38 @@ pub struct MainEventLoop {
 }
 
 impl MainEventLoop {
-
     /// Creates the application event loop.
     pub fn new() -> MainEventLoop {
         let inner = winit::event_loop::EventLoop::new();
-        let platform = unsafe { platform::Platform::init().expect("failed to initialize platform state") };
+        let platform =
+            unsafe { platform::Platform::init().expect("failed to initialize platform state") };
         let ui = MainEventLoop {
             inner,
             early_windows: Vec::new(),
-            platform
+            platform,
         };
         ui
     }
-
 
     /// Runs the specified closure with a window context. This can be used to create windows before
     /// the event loop is started.
     pub fn with_window_ctx(&mut self, f: impl FnOnce(&mut WindowCtx)) {
         trace!("creating a new document");
         let mut nw = {
-            let mut ctx = WindowCtx::new(&self.event_loop, &self.platform);
+            let mut ctx = WindowCtx::new(&self.inner, &self.platform);
             f(&mut ctx);
             ctx.new_windows
         };
-        self.early_windows
-            .append(&mut nw);
+        self.early_windows.append(&mut nw);
     }
-
 
     /// Enters the main application event loop.
     pub fn run(self) -> ! {
-
         let mut windows = self.early_windows;
         // index of the currently modal window
-        let mut platform = self.platform;
+        let platform = self.platform;
 
-        self.event_loop.run(move |event, elwt, control_flow| {
+        self.inner.run(move |event, elwt, control_flow| {
             *control_flow = ControlFlow::Wait;
 
             let mut ctx = WindowCtx::new(elwt, &platform);
@@ -150,8 +145,11 @@ impl MainEventLoop {
             match event {
                 Event::WindowEvent { window_id, event } => {
                     // find the window with a matching ID and deliver event
-                    windows.iter_mut().find(|w| w.window_id() == window_id).map(|w| w.event(&mut ctx, event));
-                },
+                    windows
+                        .iter_mut()
+                        .find(|w| w.window_id() == window_id)
+                        .map(|w| w.event(&mut ctx, event));
+                }
                 Event::RedrawRequested(window_id) => {
                     // find the window with a matching ID and deliver event
                     windows
@@ -167,4 +165,3 @@ impl MainEventLoop {
         })
     }
 }
-

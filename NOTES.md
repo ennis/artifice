@@ -636,5 +636,85 @@ immediate mode:
 
 ## Follow-up
 - don't follow up with the model+lens thing
+    - use ad-hoc change 
 - don't follow up with the view stuff
- 
+
+
+## The document model, in Rust
+- Compromise between
+    - a very simple document model, with very few primitives, and extensible with schemas: GENERICITY
+        - (+) load/save is dead simple - no code on the extension side
+        - (+) UI can be generated automatically - no code on the extension side (if desired)
+        - (+) more generally, low-level tools can manipulate the structure without knowing the high-level schemas
+        - (-) Overhead: every object is dynamic
+    - a document model with lots of different objects
+        - (+) less overhead
+        - (-) load/save of objects must be reimplemented for every type (or auto-derived)
+
+- Rule of thumb: user first
+    - favor first flexibility and extensibility for the user, then performance
+
+- Basic concepts:
+    - Node, which have Attributes
+    - Attributes have a type and a value of that type
+    - Nodes have metadata
+    - Attributes have metadata
+    - Attributes can be a pointer to another attribute 
+    - Nodes have paths
+
+- The interface of nodes (IOPs) is defined by the type of the node, makes no sense to edit them
+    
+- On top of that, components can be added to nodes (interfaces)
+
+    
+    
+- E.g. a shader node
+    - Node trait:
+        - Input attribs
+            - +Metadata
+        - Output attribs
+            - +Metadata
+    - Editor trait:
+        - node X position (attribute)
+        - node Y position (attribute)
+        - color           (attribute)
+    - ShaderNode trait:
+        - source code (can be an attribute, can be evaluated)
+
+- Problem: a lot of things can be attributes, and can be bound to an expression, etc.
+    - Given a Node (primit  ive type), create schema objects that access an aspect of the node
+    - schema ~ traits
+    
+- Attributes that can be both a connection or a value?
+    
+```
+let node = doc.node("/shade/img0");
+
+let shader = Shader::from(&node);
+// OR (to create it)
+let shader = Shader::create(&node);
+
+// then
+shader.glsl_source();
+shader.uniforms();
+```
+        
+- hierarchy of objects with attributes
+- attributes can be values, expressions, or references
+- an object within a hierarchy is identified with a path
+- the structure of a node is controlled via one or more schema classes
+    - this is done so that, if the schema is not there, the document is still viewable, and no information is lost
+- node handles are both mut and non-mut: RefCell-like 
+    - locks the whole system on borrow
+- changing the schema in response to a parameter change?
+    - [Model borrowed] schema listens to parameter changes
+    - [Model borrowed] schema schedules a "schema changed" action -> goes through the action dispatcher
+- don't discard unknown properties in the input file
+    - load in memory into generic, hierarchical key-value pairs
+    - Option 1: loader: deserialize into the in-memory model
+        - how to know which properties have been used, and which ones are unknown?
+            - through a custom API
+        - 
+    - Option 2: loader: deserialize into a generic model, apply schemas on top
+        - zero-copy possible
+        - everything is loaded

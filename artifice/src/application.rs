@@ -1,4 +1,3 @@
-use crate::document::{Document, DocumentId};
 use crate::util::MessageBus;
 use std::any::Any;
 use std::cell::RefCell;

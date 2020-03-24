@@ -24,8 +24,7 @@ macro_rules! impl_named_uniform_vec_n {
     };
 }
 
-impl<'a> UniformCtx<'a>
-{
+impl<'a> UniformCtx<'a> {
     pub unsafe fn set_named_uniform_float(&mut self, name: &str, v: f32) {
         let loc = get_uniform_location(self.prog, name);
         self.gl.Uniform1f(loc, v);
@@ -44,5 +43,7 @@ impl<'a> UniformCtx<'a>
     impl_named_uniform_vec_n!(set_named_uniform_ivec3 [i32;3] Uniform3iv);
     impl_named_uniform_vec_n!(set_named_uniform_ivec4 [i32;4] Uniform4iv);
 
-    pub unsafe fn set_texture_2d(&mut self, tex_unit: u32, tex: &TextureHandle) { unimplemented!() }
+    pub unsafe fn set_texture_2d(&mut self, tex_unit: u32, tex: &TextureHandle) {
+        unimplemented!()
+    }
 }

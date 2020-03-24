@@ -3,10 +3,9 @@
 use crate::document::Document;
 use crate::geom::{Geometry, GeometryCache, GeometryId, GeometrySource, Indices, Texcoords};
 use crate::scene::{Object, ObjectId, Scene};
-use anyhow::{Error, Result};
+use anyhow::Result;
 use gltf::mesh::util::ReadIndices;
 use log::warn;
-use std::fmt::Display;
 use std::path::Path;
 
 struct GltfGeometrySource;

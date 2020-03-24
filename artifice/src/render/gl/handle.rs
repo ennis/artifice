@@ -1,5 +1,5 @@
-use crate::render::gl::api::Gl;
 use crate::render::gl::api::gl::types::*;
+use crate::render::gl::api::Gl;
 
 pub struct ContextObject<T> {
     gl: Gl,
@@ -36,65 +36,49 @@ impl_handle_type!(pub struct FragmentShaderHandle(GLuint));
 
 impl Drop for TextureHandle {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.DeleteTextures(1, &mut self.obj)
-        }
+        unsafe { self.gl.DeleteTextures(1, &mut self.obj) }
     }
 }
 
 impl Drop for RenderbufferHandle {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.DeleteRenderbuffers(1, &mut self.obj)
-        }
+        unsafe { self.gl.DeleteRenderbuffers(1, &mut self.obj) }
     }
 }
 
 impl Drop for FramebufferHandle {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.DeleteFramebuffers(1, &mut self.obj)
-        }
+        unsafe { self.gl.DeleteFramebuffers(1, &mut self.obj) }
     }
 }
 
 impl Drop for VertexArrayHandle {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.DeleteVertexArrays(1, &mut self.obj)
-        }
+        unsafe { self.gl.DeleteVertexArrays(1, &mut self.obj) }
     }
 }
 
 impl Drop for BufferHandle {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.DeleteBuffers(1, &mut self.obj)
-        }
+        unsafe { self.gl.DeleteBuffers(1, &mut self.obj) }
     }
 }
 
 impl Drop for VertexShaderHandle {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.DeleteShader(self.obj)
-        }
+        unsafe { self.gl.DeleteShader(self.obj) }
     }
 }
 
 impl Drop for FragmentShaderHandle {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.DeleteShader(self.obj)
-        }
+        unsafe { self.gl.DeleteShader(self.obj) }
     }
 }
 
 impl Drop for ProgramHandle {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.DeleteProgram(self.obj)
-        }
+        unsafe { self.gl.DeleteProgram(self.obj) }
     }
 }
 
@@ -117,4 +101,3 @@ impl Drop for ProgramHandle {
 //
 // Textures?
 // - easy data upload + readback (Texture1D, Texture2D methods)
-
