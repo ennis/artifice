@@ -2,11 +2,9 @@
 members = [
     "artifice", # main library
     "artifice-main", # executable
-    "artifice/macros", # executable
-    "kyute",    # the user interface library
-    "kyute/macros",    # user interface codegen macros
-    "veda",     # state management store library
-    "veda/macros", # macros for veda
+    "artifice/macros", # macros
+    "kyute",    # user interface library - widgets and application architecture
+    "kyute-shell",    # user interface library - windowing and system integration
 ]
 exclude = ["ext/druid", "ext/directx-rs"]
 
