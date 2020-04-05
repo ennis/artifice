@@ -12,21 +12,13 @@ edition = "2018"
 artifice-macros = { path = "macros" }
 
 # windowing
-winit = "0.20"      # 0.21 is broken on windows
+winit = "0.22.0"
 glutin = "0.22"
 winapi = "0.3.8"
 wio = "0.2.2"
 
 # file formats
 gltf = "0.14.0"
-
-# drawing
-dxgi = { path="../ext/directx-rs/dxgi" }
-direct3d11 = { path="../ext/directx-rs/direct3d11" }
-direct2d = { path="../ext/directx-rs/direct2d" }
-directwrite = { path="../ext/directx-rs/directwrite" }
-math2d = { path="../ext/directx-rs/math2d" }
-com-wrapper = "0.1.0"
 
 # data structures and utilities
 slotmap = { version = "0.4.0", features = ["unstable"] }

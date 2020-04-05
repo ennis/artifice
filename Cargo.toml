@@ -4,7 +4,7 @@ members = [
     "artifice-main", # executable
     "artifice/macros", # macros
     "kyute",    # user interface library - widgets and application architecture
-    "kyute-shell",    # user interface library - windowing and system integration
+    "kyute-shell",    # user interface library - windowing, drawing and system integration
 ]
 exclude = ["ext/druid", "ext/directx-rs"]
 
