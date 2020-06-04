@@ -718,3 +718,225 @@ shader.uniforms();
     - Option 2: loader: deserialize into a generic model, apply schemas on top
         - zero-copy possible
         - everything is loaded
+        
+        
+## Rendering of purely cosmetic visuals
+A lot of widgets are composed of an outer frame, and a "content area" inside, 
+with some padding between the two.
+Is it necessary to have three visual nodes (one for the frame, one "layout box" for the padding, and another for the content)?
+-> currently, yes, because of the way layout is done right now
+
+-> make it simpler 
+    - given constraints:
+        - apply padding on constraints
+        - size and position the inner box
+        - add padding
+
+-> nested layout boxes
+    LayoutBox
+        
+    let b = LayoutBox::new(constraints);
+    b.inner_constraints();
+    let outer_size = b.set_inner_size(inner_size);
+    
+    let box = PaddingBox::new(constraints, |inner_constraints| {
+        ... return inner visual, which has a size ...
+    });
+    box.inner_bounds();
+    box.outer_size()
+    
+    visuals:
+    - Frame
+    - Text
+    
+
+        
+
+Other option:
+-> Frame{ inner: Padding::new(5.0, }
+ 
+Other option: 
+-> move box model (padding, border, margins) inside the node itself?
+-> many widgets use some kind of box, except some layout widgets:
+    - Align
+    - Baseline
+    - Padding
+    
+Align creates a "LayoutBox" that fills the parent, and places its child within it depending
+on some alignment value. 
+Baseline layouts the child, then creates a box that contains the child + some slack to place the child at a fixed baseline
+height.
+
+=> Instead of "wrapper" widgets, put alignment options directly into the node (like CSS).
+=> this delegates the alignment computation (placement) to the container widget
+
+Basically, move more things into the node, and remove redundant ones
+Node:
+- Alignment
+- Margin
+- Padding
+- Border
+
+Instead of node layout, have a node.layout: LayoutBox, specifying the size of the border and the size of the padding.
+pass `LayoutBox::inner_constraints()` to the child widgets.
+
+The API around "layout" is still not very good:
+there are a bunch of members in "NodeData" that are accessible, and it's unclear which ones should be changed.
+Notably, changing node.layout.offset has no effect because the offset is overwritten by the parent.
+Ideally, layout() should return a visual and a "Box" (content size + padding?)
+
+List of confusing public fields of NodeData accessible during layout:
+- window_pos (overwritten later)
+- layout.offset (but not layout.size)
+- in some way, key
+
+The problem with themes is that you need the values at different steps.
+Let's take the example of a border size shared between elements:
+- during layout, you need the border size to adjust the constraints passed to the child widgets
+- during painting, you need the border size to know the size of the border to paint
+=> The solution is to make the border a separate widget (like flutter).
+
+
+## Changing the API of "Widget::layout"
+Cannot really be changed, because, as previously found, we need to pass a cursor so that the child widget can find
+its matching node in the tree.
+Why is it the responsibility of the child widget? => because the child widget always knows the concrete type of the 
+visual that it produces, and we use that type for reconciliation.
+
+So we really need to change the API of cursor.reconcile()
+The current API is `reconcile(F), where F: Option<NodeData<Visual>> -> NodeData<Visual>`.
+Proposed API, more precise:
+`reconcile(F) where F: Option<Visual> -> (BoxLayout, Visual)`
+Under the hood, it updates the size in the node. `NodeData` becomes an implementation detail.
+
+## Ensuring that "Widget::layout" inserts only one node
+It's unclear whether this restriction is necessary or not:
+- if it is: then the cursor passed to layout should only allow the insertion of one node
+- it it's not: then the function should not return a (single) NodeId
+ 
+```
+
+// the event loop should have a ref to the windows, so that it knows where to deliver
+// the event based on the window ID.
+//
+// a child window itself is conceptually "owned" by a parent visual.
+//
+// actions can be emitted by a window, but not during a traversal of the whole tree
+// (only the subtree associated to the window), so action mappers can't operate during the traversal.
+// Solution: action mapper has an Rc<ActionSink>
+// - one root action sink, which is ActionSink<RootActionType> + one sink per mapper which forwards
+//   the transformed action to the parent sink
+//      - problem: potentially a lot of mappers, one Rc for each
+//
+// other option:
+// - accumulate all generated actions in a vec alongside the window, then
+//   signal the parent window that a child window has generated actions
+//   then, traverse widget tree of parent window, and collect (and map) generated actions
+//
+// other option:
+// - always propagate events starting from the root
+//    for windows, it means that the event may need to traverse the whole tree before finding the child window
+//
+// other option:
+// - nodes in the visual tree have paths, so that an event that targets a window can be delivered
+//   efficiently to the node
+//      - similar approach in xxgui
+//      - problem: the structure of the visual tree is opaque, so need additional code in Nodes?
+//
+// There is actually a bigger problem, which is delivering events directly to a target node in the
+// hierarchy, without having to do a traversal.
+//  - can be useful for keyboard focus, delivering events to a particular window, etc.
+//  -
+//
+// -> This means that visual nodes should be "addressable" (identifiable + an efficient way of reaching them)
+// -> which is very hard right now, because
+//      - A: the tree is opaque (traversal is the responsibility of each node)
+//      - B: nodes don't have a common related type (there's Visual<A>, but 'A' varies between nodes).
+//      - C: the layout boxes are computed on-the-fly during traversal
+//
+// B: The "Action" type parameter should not be in the nodes?
+// A: The node hierarchy should be visible: have an explicit tree data structure?
+// C: the calculated layout should be stored within the visual node
+//
+//
+// Review of existing approaches:
+// - druid: opaque tree, forced traversal to find the target
+// - iced: transparent layout tree, no widget identity
+// - conrod: graph, nodes accessible by ID
+// - ImGui: forced traversal
+// - Qt: probably pointers to widgets
+// - Servo DOM: tree, garbage collected
+// - Stretch (layout lib): nodes are IDs into a Vec-backed tree
+// - OrbTk: IDs in an ECS
+//
+```
+
+
+## The artifice pipeline language
+
+It's a language that allows the user to specify a sequence computations to run on the GPU, and resources to allocate.
+
+The basic building block of GPU computation is a _pass_. A _pass_ reads from and writes to _resources_.
+_Resources_ are blocks of memory on the GPU. There are two main types of _resources_:
+_images_, and generic _buffers_. 
+
+Multiple passes are then combined in a _schedule_, that describes which passes to execute, and in which order.
+
+Declaring an image is done like so:
+```
+image Normals;
+image Depth;
+```
+
+The precise type of the image is inferred through usage.
+
+_Modules_ group resources and passes into a common namespace.
+
+```
+module g_buffers {
+    image normals;
+    image depth;
+    
+    pass gen_g_buffers {
+        ...
+    }
+}
+```
+
+_Templates_ take parameters and produce modules and passes when "instantiated".
+
+```
+macro g_buffers(name) {
+    module $name {
+        image normals;
+        image depth;
+    }  
+}
+```
+
+Technically, a simple "configuration" language would be enough; it should support macros and includes, though.
+_Modules_ are optional.
+
+Something more akin to a "scripting" language would be OK as well. The question is how much flexibility and control we
+want to put in the file.
+
+E.g. iteratively downsampling a texture:
+- in script: need a loop and expressions
+- in program 
+
+## GUI themes
+
+Theme is an interface to draw and layout reusable visual elements called frames.
+It defines the metrics (size, padding, margins) of these elements, and methods to draw them.
+Ideally, it should also be able to "override" the rendering of custom widgets.
+
+Possible signatures:
+```
+fn draw_frame(&self, ctx: &mut PaintCtx, bounds: Bounds, class: Class, params: &dyn Any);   // very similar to QStyle
+fn draw_frame(&self, ctx: &mut PaintCtx, bounds: Bounds, class: &dyn Any); // class determined by the type of Any
+```
+where params depends on the class (can be anything, passed by the visual during rendering).
+
+Bikeshedding for `frames`:
+- Primitive / primitive element (Qt)
+
