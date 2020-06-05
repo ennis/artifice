@@ -41,7 +41,7 @@ Removing the `A` parameter eliminates the issue.
 2. Instead of emitting action objects, visuals should invoke user-provided callbacks on actions (e.g. `on_click(...)`).
 
 This basically removes all action-related complexity from the widgets/visuals, and moves it to the user of the library.
-It also makes the interface a bit more familiar.
+It also makes the interface a bit more familiar (more like the DOM event API).
 Users are now free to use the pattern they want to manage actions:
 - if the data model is already wrapped into `Rc<RefCell<..>>`, then the user can pass a Rc to the state into the callbacks
 and modify the data model from there.   

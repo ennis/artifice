@@ -152,3 +152,27 @@ pub trait Key {
 }
 ```
 
+// all copy types are copied, not borrowed
+// FIXME this does not work:
+// error[E0119]: conflicting implementations of trait `env::EnvValue<'_>` for type `std::string::String`
+// because "upstream crates may add a new impl of trait `std::marker::Copy` for type `std::string::String` in future versions" (lol)
+// -> So:
+//      - we need to impl EnvValue manually for all types that we want to put in env
+//      - in turn, users of the library won't be able to implement this trait for foreign types. PERFECT.
+// TODO:
+// - evaluate what kind of stuff we actually want to put in the environment
+// - consider removing static key default values, replace by a function that does the initialization
+// -
+=> Probably needs to implement a trait for anything that we want to put in an Env
+
+## Explored alternatives for keys
+- `struct Key<T>` 
+    - does not support non-const default values
+- `trait Key { type Value; fn default() }`
+    - supports non-const default values
+Without key defaults:
+- `struct Key<T>` needs less boilerplate.
+
+Should we keep default values for keys?
+- alternative: a function that must be called to initialize the env with default values
+- a "inventory"-like solution to register keys at compile time
