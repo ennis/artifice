@@ -26,3 +26,7 @@ across widget updates. You can think of it as the counterpart of the DOM in fram
 - _Visual_: the visual defines the behavior of a node: how it is drawn to the screen, and how it responds to input events.
 
 - _Platform state_: 
+
+- _Device pixel_: a pixel on the render device
+- _Device-independent pixel (DIP)_ -> all sizes in kyute measured in DIPs
+- _DIP scaling factor_, or just _scaling factor_ -> how many device pixels are in a DIP

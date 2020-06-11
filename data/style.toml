@@ -1,0 +1,18 @@
+
+[[palettes]]
+entries = [
+    [0.227, 0.227, 0.227],   # [0] FrameBgSunkenColor
+    [0.326, 0.326, 0.326],   # [1] FrameBgNormalColor
+    [0.424, 0.424, 0.424],   # [2] FrameBgRaisedColor
+    [0.6, 0.6, 0.9],         # [3] FrameFocusColor
+    [0.13,0.13,0.13],        # [4] FrameBorderColor
+    [0.45, 0.45, 0.45],      # [5] ButtonBackgroundTopColor
+    [0.40, 0.40, 0.40],      # [6] ButtonBackgroundBottomColor
+    [0.5, 0.5, 0.5],         # [7] ButtonBackgroundTopColorHover
+    [0.45, 0.45, 0.45],      # [8] ButtonBackgroundBottomColorHover
+    [0.1, 0.1, 0.1],         # [9] ButtonBorderBottomColor
+    [0.18, 0.18, 0.18],      # [10] ButtonBorderTopColor
+]
+
+[style_sets.button]
+
