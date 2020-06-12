@@ -256,9 +256,11 @@ Follow suit:
 /// - Button (disabled) - override intensity
 
 ## Integration with kyute
-
 - should a StyleCollection be passed via the environment?
     - can a StyleCollection be overriden for child widgets?
         - probably not (maybe change the palette)
         - if overriding, can't override only one style, cumbersome
         - pass along the paintctx? 
+        
+## Bitmap loading and caching
+A StyleCollection has caches that store loaded bitmaps.
