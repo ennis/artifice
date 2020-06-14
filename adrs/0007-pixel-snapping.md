@@ -34,10 +34,13 @@ This way, widgets can round up their desired size to the next physical pixel bou
     
 
 ## Decision
-- Add the following methods to `LayoutCtx`:
+- Add the following methods to `LayoutCtx` and `PaintCtx`:
 ```
 /// Returns the DPI scale factor (device DPI / 96.0) of the screen
 fn scale_factor() -> f64;
+```
+- Add the following method to `LayoutCtx`:
+```
 /// Sets a flag on the current node that indicates that the rendering pass should snap 
 /// the window position and the size of the node to device pixel boundaries   
 fn snap_to_device_pixel();

@@ -940,3 +940,39 @@ where params depends on the class (can be anything, passed by the visual during 
 Bikeshedding for `frames`:
 - Primitive / primitive element (Qt)
 
+
+
+## Kyute consolidation phase
+A lot of things were added recently to kyute and kyute-shell:
+- the environment, with a complex system for locally overriding keys
+- a rudimentary styling system (StyleCollection) that can be loaded from files
+- matching additions to `kyute_shell::drawing` to create gradients.
+
+The purpose of this section is to collect various pain points and inconsistencies with the current API and alleviate them.
+- metrics should be distributed along the style collections
+    - remove them from the environment
+- the Point,Offset, etc. types should be moved into kyute-drawing and assigned a "DIP" unit.
+- a layout debugger (show element bounds)
+- make the slider work also vertically
+- introduce a scoped version of DrawContext::save/restore
+- normalize passing by value and by-ref for geometric types (Bounds?)
+- error handling in the drawing library
+- maybe split Platform context into sub-contexts? (for Drawing, Text, etc. => PlatformDrawing, PlatformImaging, PlatformText)
+- DrawContext should reference the PlatformDrawing
+- move styling module in a separate crate?
+- specify the event delivery, propagation and focus logic
+- remove `Bounds` with `Rect` for consistency
+- provide the `ToDips` that converts a type to a DIP size given a target.
+
+## Remaining widgets for "self-hosting" a style editor
+- Combo box 
+    - drop down
+    - Popup windows
+- Checkboxes
+- Radio buttons
+- Menus
+- File picker
+- Table view
+
+## Testing
+???

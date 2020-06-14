@@ -264,3 +264,15 @@ Follow suit:
         
 ## Bitmap loading and caching
 A StyleCollection has caches that store loaded bitmaps.
+
+## Image filtering pipeline
+Direct2D effects to produce and manipulate images.
+
+## Color picker
+How to produce the color picker image?
+- Generate (or load) a base, linearly interpolated 0->1 2D texture, then perform channel ops on it
+- e.g. HSB:
+    - Set H to some value, splice it into the base image, and convert to RGB
+- Generate a small (64x64) texture on the CPU, upload, and then interpolate
+    - Fairly easy
+    
