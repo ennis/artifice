@@ -951,8 +951,8 @@ A lot of things were added recently to kyute and kyute-shell:
 The purpose of this section is to collect various pain points and inconsistencies with the current API and alleviate them.
 - metrics should be distributed along the style collections
     - remove them from the environment
-- the Point,Offset, etc. types should be moved into kyute-drawing and assigned a "DIP" unit.
-- a layout debugger (show element bounds)
+- ~~the Point,Offset, etc. types should be moved into kyute-drawing and assigned a "DIP" unit.~~
+- ~~a layout debugger (show element bounds)~~
 - make the slider work also vertically
 - introduce a scoped version of DrawContext::save/restore
 - normalize passing by value and by-ref for geometric types (Bounds?)
@@ -961,7 +961,7 @@ The purpose of this section is to collect various pain points and inconsistencie
 - DrawContext should reference the PlatformDrawing
 - move styling module in a separate crate?
 - specify the event delivery, propagation and focus logic
-- remove `Bounds` with `Rect` for consistency
+- ~~replace `Bounds` with `Rect` for consistency~~
 - provide the `ToDips` that converts a type to a DIP size given a target.
 
 ## Remaining widgets for "self-hosting" a style editor
@@ -976,3 +976,15 @@ The purpose of this section is to collect various pain points and inconsistencie
 
 ## Testing
 ???
+
+## Pros/cons of changing the drawing API to use strongly-typed units
+
+Pros:
+- self-documenting
+
+Cons:
+- lots of noise when calling (must wrap all lengths with DipLength)
+
+Variant: drawing functions take IntoDips, where f64: IntoDips, f32: IntoDips, ... Length<Dip>: IntoDips
+
+For convenience, leave f64 for now.

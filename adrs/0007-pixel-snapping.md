@@ -34,7 +34,7 @@ This way, widgets can round up their desired size to the next physical pixel bou
     
 
 ## Decision
-- Add the following methods to `LayoutCtx` and `PaintCtx`:
+- Add the following method to `DrawContext`:
 ```
 /// Returns the DPI scale factor (device DPI / 96.0) of the screen
 fn scale_factor() -> f64;

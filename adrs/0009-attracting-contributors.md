@@ -1,4 +1,4 @@
-# 8. Attracting users and contributors
+# 9. Attracting users and contributors
 
 Date: 2020-06-07
 
