@@ -6,7 +6,7 @@ members = [
     "kyute",    # user interface library - widgets and application architecture
     "kyute-shell",    # user interface library - windowing, drawing and system integration
 ]
-exclude = ["ext/druid", "ext/directx-rs"]
+exclude = ["ext/druid", "ext/directx-rs", "ext/winit"]
 
 [profile.release]
 debug = true

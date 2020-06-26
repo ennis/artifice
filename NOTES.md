@@ -988,3 +988,9 @@ Cons:
 Variant: drawing functions take IntoDips, where f64: IntoDips, f32: IntoDips, ... Length<Dip>: IntoDips
 
 For convenience, leave f64 for now.
+
+## Sharing a handle to the node tree to component tasks
+Need to wrap the `NodeTree` into `Rc<RefCell<>>`, and _pass it to LayoutCtx as such_, 
+which is **supremely annoying** (borrow_mut and weird derefs everywhere).
+Ideally, we want a  async task that is somehow resumable with a mut ref to the NodeTree as the context, 
+but that's not going to happen anytime soon, is it?
