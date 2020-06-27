@@ -994,3 +994,14 @@ Need to wrap the `NodeTree` into `Rc<RefCell<>>`, and _pass it to LayoutCtx as s
 which is **supremely annoying** (borrow_mut and weird derefs everywhere).
 Ideally, we want a  async task that is somehow resumable with a mut ref to the NodeTree as the context, 
 but that's not going to happen anytime soon, is it?
+
+## Multi-threaded component update
+- Each individual node needs to be wrapped in `Arc` for concurrent access.
+
+## Don't store component state in the visual tree?
+- Instead, put them in a secondary map: components don't need the tree to update themselves, 
+  only their state
+- Problem: reconciliation/update needs a special API for Widget::layout
+    - update component state / get previous state
+- Move the state in the task itself?
+    - problem: prop update
