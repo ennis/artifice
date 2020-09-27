@@ -1,0 +1,10 @@
+[package]
+name = "artifice-gfxbase"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+artifice-gfxbase-macros = { path = "macros/" }
+spirv_headers = "1.5.0"
+dropless-arena = { git = "https://github.com/ennis/dropless-arena" }

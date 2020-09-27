@@ -1,8 +1,12 @@
 [workspace]
 members = [
-    "artifice", # main library
+    "artifice-gfxbase", # API-independent graphics definitions
+    "artifice-gfxbase/macros", # API-independent graphics macros
+    "artifice-opengl", # OpenGL wrapper
+    "artifice", # Node, Ops and evaluator
     "artifice-main", # executable
     "artifice/macros", # macros
+    "haikara", # shading stylization test
     "kyute",    # user interface library - widgets and application architecture
     "kyute-shell",    # user interface library - windowing, drawing and system integration
 ]
