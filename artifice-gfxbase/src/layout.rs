@@ -1,6 +1,6 @@
+use crate::typedesc::{PrimitiveType, TypeDesc};
 use dropless_arena::DroplessArena;
 use std::iter;
-use crate::typedesc::{TypeDesc, PrimitiveType};
 
 //--------------------------------------------------------------------------------------------------
 // yet another copy of the align offset function

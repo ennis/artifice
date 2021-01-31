@@ -6,8 +6,10 @@ members = [
     "artifice", # Node, Ops and evaluator
     "artifice-main", # executable
     "artifice/macros", # macros
+    "graal",    # graphics resource abstraction layer
     "haikara", # shading stylization test
     "kyute",    # user interface library - widgets and application architecture
+    "kyute-iml",    # user interface library
     "kyute-shell",    # user interface library - windowing, drawing and system integration
 ]
 exclude = ["ext/druid", "ext/directx-rs", "ext/winit"]

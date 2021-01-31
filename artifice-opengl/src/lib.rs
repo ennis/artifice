@@ -5,12 +5,12 @@ pub mod handle;
 pub mod api;
 pub mod buffer;
 //pub mod draw;
-pub mod renderbuffer;
-pub mod texture;
 pub mod error;
-pub mod gl_format;
 pub mod framebuffer;
+pub mod gl_format;
+pub mod renderbuffer;
 pub mod shader;
+pub mod texture;
 pub mod uniform;
 pub mod vertex_array;
 

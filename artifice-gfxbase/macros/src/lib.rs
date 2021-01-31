@@ -31,7 +31,6 @@ impl ToTokens for CrateName {
 //mod arguments;
 mod layout;
 
-
 #[proc_macro_derive(StructuredBufferData)]
 pub fn structured_buffer_data_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let ast: syn::DeriveInput = syn::parse(input).expect("Couldn't parse item");

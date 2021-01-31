@@ -1,4 +1,3 @@
-
 #[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub enum SamplerAddressMode {
     Clamp,
@@ -37,7 +36,7 @@ impl SamplerDescription {
         mag_filter: Filter::Linear,
         min_filter: Filter::Linear,
         mipmap_mode: SamplerMipmapMode::Linear,
-        border_color: [0.0,0.0,0.0,0.0]
+        border_color: [0.0, 0.0, 0.0, 0.0],
     };
 
     pub const LINEAR_MIPMAP_NEAREST: SamplerDescription = SamplerDescription {
@@ -47,7 +46,7 @@ impl SamplerDescription {
         mag_filter: Filter::Linear,
         min_filter: Filter::Linear,
         mipmap_mode: SamplerMipmapMode::Nearest,
-        border_color: [0.0,0.0,0.0,0.0]
+        border_color: [0.0, 0.0, 0.0, 0.0],
     };
 
     pub const NEAREST_MIPMAP_LINEAR: SamplerDescription = SamplerDescription {
@@ -57,7 +56,7 @@ impl SamplerDescription {
         mag_filter: Filter::Nearest,
         min_filter: Filter::Nearest,
         mipmap_mode: SamplerMipmapMode::Linear,
-        border_color: [0.0,0.0,0.0,0.0]
+        border_color: [0.0, 0.0, 0.0, 0.0],
     };
 
     pub const NEAREST_MIPMAP_NEAREST: SamplerDescription = SamplerDescription {
@@ -67,7 +66,7 @@ impl SamplerDescription {
         mag_filter: Filter::Nearest,
         min_filter: Filter::Nearest,
         mipmap_mode: SamplerMipmapMode::Nearest,
-        border_color: [0.0,0.0,0.0,0.0]
+        border_color: [0.0, 0.0, 0.0, 0.0],
     };
 
     pub const WRAP_NEAREST_MIPMAP_NEAREST: SamplerDescription = SamplerDescription {
@@ -77,6 +76,6 @@ impl SamplerDescription {
         mag_filter: Filter::Nearest,
         min_filter: Filter::Nearest,
         mipmap_mode: SamplerMipmapMode::Nearest,
-        border_color: [0.0,0.0,0.0,0.0]
+        border_color: [0.0, 0.0, 0.0, 0.0],
     };
 }

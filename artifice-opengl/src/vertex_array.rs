@@ -1,6 +1,6 @@
-use crate::gl_format::{GlFormatInfo, GlFormatInfoExt};
-use crate::api::Gl;
 use crate::api::gl::types::*;
+use crate::api::Gl;
+use crate::gl_format::{GlFormatInfo, GlFormatInfoExt};
 use artifice_gfxbase::vertex::{VertexData, VertexLayout};
 
 // vertex array: describes the layout of inputs to the vertex processing stage
@@ -26,8 +26,7 @@ impl VertexArrayHandle {
         unsafe {
             gl.CreateVertexArrays(1, &mut vao);
 
-            for (binding,buffer_layout) in buffer_layouts.iter().enumerate()
-            {
+            for (binding, buffer_layout) in buffer_layouts.iter().enumerate() {
                 for element in buffer_layout.elements {
                     // determine the location of the attrib
                     let index = if let Some(semantic) = element.semantic {

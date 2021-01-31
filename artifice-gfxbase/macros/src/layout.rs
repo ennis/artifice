@@ -8,7 +8,10 @@ fn has_repr_c_attr(ast: &syn::DeriveInput) -> bool {
     ast.attrs.iter().any(|attr| match attr.parse_meta() {
         Ok(meta) => match meta {
             syn::Meta::List(list) => {
-                (list.path.get_ident().map_or(false, |i| i.to_string() == "repr"))
+                (list
+                    .path
+                    .get_ident()
+                    .map_or(false, |i| i.to_string() == "repr"))
                     && list.nested.iter().next().map_or(false, |n| match n {
                         syn::NestedMeta::Meta(syn::Meta::Path(ref path)) => {
                             path.get_ident().map_or(false, |i| i.to_string() == "C")

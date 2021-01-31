@@ -18,6 +18,10 @@
       <sourceFolder url="file://$MODULE_DIR$/artifice-gfxbase/macros/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/artifice-opengl/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/haikara/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kyute-iml/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/graal/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/graal/examples" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/graal/examples" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

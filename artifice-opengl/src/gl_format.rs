@@ -1,5 +1,5 @@
-use crate::api::gl::types::GLenum;
 use crate::api::gl;
+use crate::api::gl::types::GLenum;
 use artifice_gfxbase::format::Format;
 
 /// Equivalent OpenGL format information for a given `Format`.
@@ -206,6 +206,6 @@ pub trait GlFormatInfoExt {
 
 impl GlFormatInfoExt for Format {
     fn gl_format_info(self) -> &'static GlFormatInfo {
-        return GlFormatInfo::from_format(self)
+        return GlFormatInfo::from_format(self);
     }
 }

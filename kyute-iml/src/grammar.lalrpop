@@ -1,0 +1,107 @@
+use crate::lexer::{Token, LexicalError};
+
+grammar<'input>(text: &'input str);
+
+comma<T>: Vec<T> = {
+    <v:(<T> ",")*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            let mut v = v;
+            v.push(e);
+            v
+        }
+    }
+};
+
+newline<T>: Vec<T> = {
+              <v:(<T> ",")*> <e:T?> => match e {
+                  None => v,
+                  Some(e) => {
+                      let mut v = v;
+                      v.push(e);
+                      v
+                  }
+              }
+          };
+
+pub attribute: Box<Attribute> = {
+
+}
+
+pub element: Box<Element> = {
+    <name:ident> <p:positional_attributes?>
+    "{"
+        <a:attribute*>
+        <c:element*>
+     "}" => Box::new(),
+};
+
+pub positional_attributes: Vec<Value> = {
+    "(" <p:comma<value>> ")" => Vec::new()
+};
+
+pub value: Value = {
+    Str => Value::String(<>.to_string()),
+    double_constant => Value::Number(<>.to_string()),
+    float_constant => Value::Number(<>.to_string()),
+};
+
+extern {
+    type Location = usize;
+    type Error = LexicalError;
+
+    enum Token<'input> {
+        Str => Token::Str(_),
+        ident => Token::Ident(_),
+        bool_constant => Token::BoolConst(_),
+        float_constant => Token::FloatConst(_),
+        double_constant => Token::DoubleConst(_),
+        newline => Token::Newline,
+        "(" => Token::LParen,
+        ")" => Token::RParen,
+        "[" => Token::LBracket,
+        "]" => Token::RBracket,
+        "." => Token::Dot,
+        "++" => Token::Inc,
+        "--" => Token::Dec,
+        "void" => Token::Void,
+        "+" => Token::Plus,
+        "-" => Token::Dash,
+        "!" => Token::Bang,
+        "~" => Token::Tilde,
+        "*" => Token::Star,
+        "/" => Token::Slash,
+        "%" => Token::Percent,
+        "<<" => Token::LShift,
+        ">>" => Token::RShift,
+        "<" => Token::LAngle,
+        ">" => Token::RAngle,
+        "<=" => Token::LEqual,
+        ">=" => Token::REqual,
+        "==" => Token::DEqual,
+        "!=" => Token::BangEqual,
+        "&" => Token::Ampersand,
+        "^" => Token::Caret,
+        "|" => Token::Bar,
+        "&&" => Token::And,
+        "^^" => Token::Xor,
+        "||" => Token::Or,
+        "?" => Token::Question,
+        ":" => Token::Colon,
+        "=" => Token::Equal,
+        "*=" => Token::StarEqual,
+        "/=" => Token::SlashEqual,
+        "%=" => Token::PercentEqual,
+        "+=" => Token::PlusEqual,
+        "-=" => Token::DashEqual,
+        "<<=" => Token::LShiftEqual,
+        ">>=" => Token::RShiftEqual,
+        "&=" => Token::AmpersandEqual,
+        "^=" => Token::CaretEqual,
+        "|=" => Token::BarEqual,
+        "," => Token::Comma,
+        "{" => Token::LBrace,
+        "}" => Token::RBrace,
+        ";" => Token::Semicolon,
+    }
+}

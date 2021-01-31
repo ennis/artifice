@@ -1,5 +1,5 @@
-use slotmap::SlotMap;
 use slotmap::new_key_type;
+use slotmap::SlotMap;
 
 mod node;
 pub use node::Node;
@@ -12,7 +12,7 @@ new_key_type! {
 // now define the type for a database of nodes
 pub struct NodeDatabase {
     // the nodes will be a primary slotmap
-    nodes: SlotMap<NodeId, Node>
+    nodes: SlotMap<NodeId, Node>,
 }
 
 // there will be a limited number of plug types (not extensible)
@@ -37,44 +37,38 @@ enum PlugKind {
 // => hash of the plug name?
 // => index?
 // => must also somehow communicate the type of the plug
-#[derive(Copy,Clone,Debug,Eq,PartialEq,Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct PlugId {
     kind: PlugKind,
     id: u32,
 }
 
-#[derive(Copy,Clone,Debug,Eq,PartialEq,Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IntPlug {}
 
 impl IntPlug {
-    pub const fn id(&self) -> PlugId {
-
-    }
+    pub const fn id(&self) -> PlugId {}
 }
 
-
-#[derive(Copy,Clone,Debug,Eq,PartialEq,Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct StringPlug {}
 
-pub const STRING_LENGTH: IntPlug = IntPlug{};
+pub const STRING_LENGTH: IntPlug = IntPlug {};
 
 impl StringPlug {
     pub const fn id(&self) -> PlugId {
-        static DERIVED: [PlugId;1] = [STRING_LENGTH.id()];
+        static DERIVED: [PlugId; 1] = [STRING_LENGTH.id()];
         PlugId {
             kind: PlugKind::String,
             id: 0,
-            derived: &DERIVED
+            derived: &DERIVED,
         }
     }
 
-    pub const fn length(&self) -> IntPlug {
-        
-    }
+    pub const fn length(&self) -> IntPlug {}
 }
 
 trait Op {
     /// Returns the interface of the node.
     fn interface(&self) -> ();
-
 }

@@ -1,9 +1,9 @@
 use std::ffi::{c_void, CString};
 use std::mem;
 
-use crate::api::Gl;
 use crate::api::gl;
 use crate::api::gl::types::*;
+use crate::api::Gl;
 use crate::error::Error;
 
 impl_handle_type!(pub struct ProgramHandle(GLuint));
@@ -98,9 +98,7 @@ macro_rules! impl_shader {
     ($handle:ty; $stage:expr) => {
         impl $handle {
             pub fn from_glsl(gl: &Gl, source: &str) -> Result<$handle, Error> {
-                unsafe {
-                    Ok(Self::from_raw(gl, compile_glsl(gl, source, $stage)?))
-                }
+                unsafe { Ok(Self::from_raw(gl, compile_glsl(gl, source, $stage)?)) }
             }
         }
     };

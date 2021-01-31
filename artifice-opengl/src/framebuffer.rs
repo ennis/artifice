@@ -1,11 +1,11 @@
 //! TODO: framebuffer creation
 //! impl FramebufferHandle {}
-use crate::api::Gl;
 use crate::api::gl;
 use crate::api::gl::types::*;
-use crate::error::{GlResult, Error};
-use crate::texture::TextureHandle;
+use crate::api::Gl;
+use crate::error::{Error, GlResult};
 use crate::renderbuffer::RenderbufferHandle;
+use crate::texture::TextureHandle;
 
 impl_handle_type!(pub struct FramebufferHandle(GLuint));
 
@@ -24,17 +24,19 @@ pub enum FramebufferAttachment<'a> {
 #[derive(Default)]
 pub struct FramebufferBuilder<'a> {
     color_attachments: Vec<FramebufferAttachment<'a>>,
-    depth_attachment: Option<FramebufferAttachment<'a>>
+    depth_attachment: Option<FramebufferAttachment<'a>>,
 }
 
 impl<'a> FramebufferBuilder<'a> {
     pub fn color_texture(&mut self, texture: &'a TextureHandle) -> &mut Self {
-        self.color_attachments.push(FramebufferAttachment::Texture(texture));
+        self.color_attachments
+            .push(FramebufferAttachment::Texture(texture));
         self
     }
 
     pub fn color_renderbuffer(&mut self, renderbuffer: &'a RenderbufferHandle) -> &mut Self {
-        self.color_attachments.push(FramebufferAttachment::Renderbuffer(renderbuffer));
+        self.color_attachments
+            .push(FramebufferAttachment::Renderbuffer(renderbuffer));
         self
     }
 
@@ -57,7 +59,7 @@ impl FramebufferHandle {
     pub fn builder<'a>() -> FramebufferBuilder<'a> {
         FramebufferBuilder {
             color_attachments: Vec::new(),
-            depth_attachment: None
+            depth_attachment: None,
         }
     }
 

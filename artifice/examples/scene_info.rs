@@ -8,7 +8,6 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::ControlFlow;
 use winit::window::WindowBuilder;
 
-
 // opening a document window:
 // - create a new document / load document
 // - create window
@@ -23,5 +22,4 @@ fn main() {
     // 2. create a winit event loop
     // 3. create a platform window
     // 4. enter event loop
-
 }

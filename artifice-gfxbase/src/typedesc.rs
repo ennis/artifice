@@ -1,5 +1,5 @@
 //! Type descriptions of buffer data.
-use spirv_headers::{ImageFormat, Dim};
+use spirv_headers::{Dim, ImageFormat};
 
 /// Primitive data types.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]

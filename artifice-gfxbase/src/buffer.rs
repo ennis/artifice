@@ -1,7 +1,7 @@
-use std::marker::PhantomData;
-use crate::typedesc::TypeDesc;
-use crate::typedesc::PrimitiveType;
 use crate::layout::Layout;
+use crate::typedesc::PrimitiveType;
+use crate::typedesc::TypeDesc;
+use std::marker::PhantomData;
 
 //--------------------------------------------------------------------------------------------------
 

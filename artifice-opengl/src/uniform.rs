@@ -1,7 +1,7 @@
-use std::ffi::CString;
 use crate::api::Gl;
 use crate::shader::ProgramHandle;
 use crate::texture::TextureHandle;
+use std::ffi::CString;
 
 /// Interface for setting uniforms
 struct UniformCtx<'a> {
@@ -17,7 +17,7 @@ unsafe fn get_uniform_location(prog: &ProgramHandle, name: &str) -> i32 {
 
 macro_rules! impl_named_uniform_vec_n {
     ($name:ident [$t:ty;$n:expr] $f:ident) => {
-        pub unsafe fn $name(&mut self, name: &str, v: [$t;$n]) {
+        pub unsafe fn $name(&mut self, name: &str, v: [$t; $n]) {
             let loc = get_uniform_location(self.prog, name);
             self.gl.$f(loc, $n, v.as_ptr());
         }

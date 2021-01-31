@@ -1,7 +1,7 @@
-use crate::format::Format;
-use crate::typedesc::TypeDesc;
-use crate::typedesc::PrimitiveType;
 use crate::buffer::BufferData;
+use crate::format::Format;
+use crate::typedesc::PrimitiveType;
+use crate::typedesc::TypeDesc;
 
 pub use artifice_gfxbase_macros::VertexData;
 
@@ -43,7 +43,6 @@ pub struct VertexLayout<'tcx> {
     /// Number of bytes to go to the next element.
     pub stride: usize,
 }
-
 
 /// Trait implemented by types that represent vertex data in a vertex buffer.
 ///
@@ -163,7 +162,6 @@ macro_rules! impl_index_data {
 
 impl_index_data!(u16, U16);
 impl_index_data!(u32, U32);
-
 
 #[cfg(feature = "glm")]
 impl_attrib_type!(
