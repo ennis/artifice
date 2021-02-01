@@ -75,6 +75,60 @@
                 ),
             ],
         ),
+        "slider_track": (
+            shape: RoundedRect(Dip(2)),
+            styles: [
+                (
+                    state_filter: (
+                        value: (
+                            bits: 0,
+                        ),
+                        mask: (
+                            bits: 0,
+                        ),
+                    ),
+                    fill: Some(SolidColor(Palette(
+                        index: 0,
+                    ))),
+                    borders: [
+                        (
+                            opacity: 1,
+                            blend_mode: Normal,
+                            position: Inside(Dip(0)),
+                            width: Dip(1),
+                            brush: SolidColor(Palette(
+                                index: 9,
+                            )),
+                        ),
+                        (
+                            opacity: 1,
+                            blend_mode: Normal,
+                            position: Outside(Dip(0)),
+                            width: Dip(1),
+                            brush: Gradient(
+                                angle: (
+                                    radians: 1.5707963267948966,
+                                ),
+                                ty: Linear,
+                                stops: [
+                                    (0, Palette(
+                                        index: 11,
+                                    )),
+                                    (0.3, Palette(
+                                        index: 12,
+                                    )),
+                                ],
+                                reverse: false,
+                            ),
+                        ),
+                    ],
+                    inner_shadow: None,
+                    drop_shadow: None,
+                    inner_glow: None,
+                    outer_glow: None,
+                ),
+            ],
+        ),
         "button": (
             shape: RoundedRect(Dip(2)),
             styles: [
@@ -236,60 +290,6 @@
                         index: 0,
                     ))),
                     borders: [],
-                    inner_shadow: None,
-                    drop_shadow: None,
-                    inner_glow: None,
-                    outer_glow: None,
-                ),
-            ],
-        ),
-        "slider_track": (
-            shape: RoundedRect(Dip(2)),
-            styles: [
-                (
-                    state_filter: (
-                        value: (
-                            bits: 0,
-                        ),
-                        mask: (
-                            bits: 0,
-                        ),
-                    ),
-                    fill: Some(SolidColor(Palette(
-                        index: 0,
-                    ))),
-                    borders: [
-                        (
-                            opacity: 1,
-                            blend_mode: Normal,
-                            position: Inside(Dip(0)),
-                            width: Dip(1),
-                            brush: SolidColor(Palette(
-                                index: 9,
-                            )),
-                        ),
-                        (
-                            opacity: 1,
-                            blend_mode: Normal,
-                            position: Outside(Dip(0)),
-                            width: Dip(1),
-                            brush: Gradient(
-                                angle: (
-                                    radians: 1.5707963267948966,
-                                ),
-                                ty: Linear,
-                                stops: [
-                                    (0, Palette(
-                                        index: 11,
-                                    )),
-                                    (0.3, Palette(
-                                        index: 12,
-                                    )),
-                                ],
-                                reverse: false,
-                            ),
-                        ),
-                    ],
                     inner_shadow: None,
                     drop_shadow: None,
                     inner_glow: None,
