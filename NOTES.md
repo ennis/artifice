@@ -1103,8 +1103,53 @@ proven otherwise (i.e. resolves to `None`).
 There _could_ be a concept of run-time type annotations to encode expectations about the type at some path, e.g.
 `.nodes.[name].value:i32`
 
-## 
 
 ### Lenses and components? 
+
+### Goals
+Don't forget the main goal: UI should be easy and quick to build. Strive for a dear ImGui-like experience.
+Minimal boilerplate.
+
+A UI designer is too much work. Is it possible to reuse one?
+- Expression Blend
+    - Needs parsing of XAML
+
+### Parse XAML?
+- Need to support 
+    - Grids
+- What workflow?
+    - at compile time, take XAML and turn it into a `Widget` taking a `&mut DataContext`.
+    - two-way bindings?
+        - bit more difficult
+- XAML static resources:
+    - Key -> Value pair
+    - Resources are associated to an element 
+        - Globally on the application, on the container, on leaf elements...
+        - Resources in parent visible to the children
+        - Resource lookup necessary
+        - Like druid:Env?
+    - Styling:
+        - Style == Collection of attributes
+    - Template:
+        - template == `fn (|context| -> Widget) -> Widget`
+        - "higher-order" widget
+    - Animation:
+        - 
+    - Mapping to rust:
+        - Simple data => translate to constants
+        - Strings => &'static str
+        - Geometry => Paths or whatever
+
+- Conclusion: too complicated
+    - start with a bespoke description language with interactive update
+    - could also put rust code directly inside
+
+### Bespoke UI description language (kyute-iml)
+- Describes a `Widget`
+- Dynamically loaded widget: 
+    - `ImlWidget::new` takes a `&mut DataSource` as input and a property dictionary:
+- `DataSource`
+    - Automatically reflected trait
+
 
  
