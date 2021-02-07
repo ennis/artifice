@@ -5,5 +5,27 @@
     <mapping directory="$PROJECT_DIR$/ext/directx-rs" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/ext/druid" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/ext/winit" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/accumulators" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/algorithm" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/align" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/any" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/array" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/asio" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/assert" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/assign" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/atomic" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/beast" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/bimap" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/bind" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/callable_traits" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/chrono" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/circular_buffer" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/compatibility" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/compute" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/concept_check" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/config" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/fusion" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/oiio-build/build/_deps/boost-src/libs/iterator" vcs="Git" />
   </component>
 </project>
