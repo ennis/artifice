@@ -1152,4 +1152,34 @@ A UI designer is too much work. Is it possible to reuse one?
     - Automatically reflected trait
 
 
- 
+### Descriptor set layouts, pipelines, etc.
+- global cache
+
+### Pipeline query builders
+```rust
+struct MyPass {
+    tex: ResourceId,
+    pipeline_variant_a: PipelineQuery,
+    pipeline_variant_b: PipelineQuery,
+    pipeline_variant_c: PipelineQuery,
+}
+```
+- the pipeline create infos need a bunch of slices, and thus borrows or vecs or arrays:
+    - vertex binding descriptions
+    - vertex attribute descriptions
+    - viewports
+    - descriptor set layouts
+    - push constant ranges
+    - render pass subpasses
+- Some of those we might want to infer from the SPIR-V
+- Q: Why do we need queries anyway?
+    - just pass everything in one go and get the result
+    - cache individual shader modules, renderpasses, descriptor sets
+
+- Options:
+    - borrows: `PipelineQuery<'a>`
+        - lowest overhead
+        - lifetime pollution
+        - exposed to self-referential borrows when storing in a struct
+    - nothing
+        - it's probably one of those cases where it's easy to over-engineer things
