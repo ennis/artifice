@@ -1183,3 +1183,57 @@ struct MyPass {
         - exposed to self-referential borrows when storing in a struct
     - nothing
         - it's probably one of those cases where it's easy to over-engineer things
+    
+## Shader bindings
+- For textures: VK_EXT_descriptor_indexing
+    - Big table of descriptors, one for each texture
+    - Every shader-accessible texture is put into this table and assigned an index
+    - The descriptor set is passed to all shaders as set #0
+    - Pass texture indices as a shader parameter (push constant)
+    
+- For uniforms: 
+    - Pass the device address to the buffer in push constants
+        - Can have multiple buffers
+    - No need to bother with allocating descriptor sets
+    - Issue: might be less performant than uniform buffers on some architectures 
+        - e.g. on AMD, there seems to be a dedicated constant cache 
+            - see https://developer.amd.com/wp-content/resources/RDNA_Shader_ISA.pdf
+                - Chapter 9. Flat Memory Instructions
+        - other archs: how the fuck can we know
+        - Generates different instructions:
+            - uniform buffer: s_buffer_load_dword, scalar load
+            - buffer_reference: global_load_dword, vector load
+    
+- Tentative design:
+    - one big array of texture descriptors, always bound to set #0
+    - when a texture is first used in a pass, add it to the big array
+    - push constants contain pointers to storage buffers
+        - (8b) pointer to per-frame buffer
+        - (8b) pointer to per-material buffer
+        - (8b) pointer to per-object buffer
+        - (64b) matrix
+        - (40b) free for other per-drawcall stuff
+    - just allocate a buffer per-object, or suballocate if necessary
+        - methods to 
+    - put all of this in a convenience layer on top of the context
+        - wraps add_resource_usage
+    
+- More traditional design:
+    - same big array of texture descriptors (that doesn't change)
+    - for uniforms:
+        - set #1: per-frame uniforms
+        - set #2: per-material/object uniform, dynamic uniform buffer (per convention)
+        - push constants: per-drawcall
+    - allocation of descriptors:
+        - layouts inferred from SPIR-V
+        - combine layout with an allocator:
+            - track last serial for each set
+                - the set should only be used in one queue (otherwise need to track multiple queues)
+            - re-use if serial is completed
+            - multiple pools, expanded as needed
+            - not super hard to implement
+        - layout+allocator combo is cached, by hashing the descriptor set layout
+        - one pool per layout? is that OK?
+            - approach taken by unreal engine and others, seems reasonable
+    
+    
