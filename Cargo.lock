@@ -1153,6 +1153,7 @@ dependencies = [
  "ash",
  "bitflags",
  "fixedbitset 0.3.2",
+ "graal-macros",
  "graal-spirv",
  "inline-spirv",
  "lazy_static",
