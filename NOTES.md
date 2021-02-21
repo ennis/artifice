@@ -1151,6 +1151,11 @@ A UI designer is too much work. Is it possible to reuse one?
 - `DataSource`
     - Automatically reflected trait
 
+## Consider Druid again
+- Good font rendering, rich text
+- Native menus
+- Authors seem to know what they're doing
+
 
 ### Descriptor set layouts, pipelines, etc.
 - global cache
@@ -1236,4 +1241,28 @@ struct MyPass {
         - one pool per layout? is that OK?
             - approach taken by unreal engine and others, seems reasonable
     
-    
+## Shaders and pipelines: expected interface
+It's not super useful to fully create a pipeline layout from reflection,
+because the application that uses the shader usually knows what to expect from the shader.
+Reflection is useful when a shader has parameters that should be exposed as an UI, but not much more.
+
+A more useful thing would be to ensure that a shader/pipeline **conforms** to a particular interface, 
+defined **in code**. Reflection is still needed but only for verification, and dynamic stuff like uniform UIs.
+Reflection stuff should probably be moved in `graal::spirv::shader_interface` or at least in a separate module.
+-> the autograph-ng legacy lives on
+
+## Code organization
+- device.rs: device stuff
+- swapchain.rs: swapchain related stuff
+- context: create / track resources, batches, passes
+    - context/mod.rs: Context, ResourceId, SwapchainId, SubmissionNumber, QueueSerialNumbers
+    - context/batch.rs: Batch
+    - context/pass.rs: Pass 
+    - context/resource.rs: resource creation
+        - buffer/images
+    - batch
+    - pass builder
+    - serials  
+- descriptors: descriptor management
+-> wait until more descriptor stuff comes around
+    -> easy enough to refactor at that time 

@@ -7,6 +7,8 @@ members = [
     "artifice-main", # executable
     "artifice/macros", # macros
     "graal",    # graphics resource abstraction layer
+    "graal/macros", # graphics resource abstraction layer - proc macros
+    "graal-spirv",    # graphics resource abstraction layer - SPIRV reflection utilities
     "haikara", # shading stylization test
     "kyute",    # user interface library - widgets and application architecture
     "kyute-iml",    # user interface library
