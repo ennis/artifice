@@ -1266,3 +1266,147 @@ Reflection stuff should probably be moved in `graal::spirv::shader_interface` or
 - descriptors: descriptor management
 -> wait until more descriptor stuff comes around
     -> easy enough to refactor at that time 
+  
+## Idea: fully static pipelines (macro-batches?)
+- Specify the whole render pipeline statically, indicating what can change and what is fixed
+- A whole DSL?
+- Can optimize for render passes automatically, layout transitions, scheduling
+    - no need for per-frame computations
+- e.g. "load image from a file"
+    - produces one resource, list of possible output formats
+- automatically handle the combinatorial explosion of pipelines/render targets
+- conditionals
+- e.g. rendering:
+    - inputs:
+        - format 
+        - previous frame in the given format
+        - vertex buffers
+    - outputs: new frame
+    
+Assume you have a shader with some SPIR-V, but you want to run it on targets with multiple formats.
+You need a different renderpass, and a different pipeline.
+You don't want to deal with that, you just want someone else to create the renderpass and pipeline 
+that corresponds to the target format.
+
+So you declare your pass like so:
+```
+- one input image, with a format that is one of those: [list of supported formats]
+    - it should be in the following layout
+    - i'll need to know its size
+    - i'll need to know its precise format
+- one output image, with a format that is the same or similar to the format of the input image
+    - it will be in the following layout
+    - it will have the following size, calculated from the input size
+
+- I will need:
+    - one render pass, for one target, with the format of the output image
+    - a pipeline
+        - with these modules: (spirv file)
+        - with the render pass specified above
+```
+
+Another example: let's say you want to load an image file. 
+You need an output image on the GPU to store it. However, you don't know in advance what will be the format 
+of the image (usually you should know the data that you consume, but let's assume it's a user-facing thing).
+You declare your pass like so:
+```
+- one output image
+    - I don't know its format, but I know that it can be one of those <list of possible output formats>.
+    - I also don't know its size.
+    - I'll need it to be in the `TRANSFER_DST` layout, please 
+    - It will be in the TRANSFER_DST layout afterwards
+```
+
+In the pass, you'll need to fill in the remaining details about the size of the image, etc. 
+before you can get an actual vkImage.
+However, since you specified some info about the image, other passes can make decisions from that info.
+
+Matching an input and an output is like solving a system of equations.
+You have an input image, with a set of possible formats, size, etc.
+and layouts.
+You need to verify that 1. the size is the same, 2. the formats are compatible, and also to generate layout transitions
+
+Pipelines: made from GLSL shaders.
+Probably should support "shader variants" made from macros.
+
+## Case study: a downsampling compute shader (depth-aware)
+The pass has an input texture, which is downsampled to the given resolution (possibly down to 1x1).
+The input texture must be a floating-point format (f32, unorm, snorm), and must be compatible with sampling.
+The pass will create one output texture with a compatible format.
+
+
+### Compilation variants
+So, first, the output image in the shader must be declared like this:
+```glsl
+layout(set=x, binding=y, rgba32f) uniform image2D outputImage;
+```
+Note the format (`rgba32f`): this is hardcoded in the source. So it needs to be a macro if we want it to support multiple formats.
+```glsl
+layout(set=x, binding=y, $output_format) uniform image2D outputImage;
+```
+Hence, the shader source now expects a variable to be set, `$output_format`. The provided source does not represent a shader module, but rather a template for shader modules (a `.glsl.in`).
+There are variants for each `$output_format`.
+
+### Specialization constants
+The compute shader has a workgroup size definition:
+```
+layout(local_size_x = 16, local_size_y = 16) in;
+```
+The size of the workgroup should match the SIMD size of the underlying hardware. 
+It could be set with a variable, but for this we have specialization constants:
+```
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
+```
+Specialization constants 0,1,2 are used for the workgroup size. Those are provided during the creation of the pipeline.
+
+### Uniform buffers
+```
+layout(set=x, binding=y, std140) uniform U0 {
+ ivec2 origin; // upper-left corner of footprint
+ ivec2 size; 
+ float opacity; 
+};
+```
+
+## Case study: rendering a scene
+The shell (rust code) provides the data to render, but the format is not known in advance.
+For instance, it can be 
+    - "position only", or "position + normals"
+    - "triangles", or "lines"
+All possible permutations are declared beforehand. 
+Then, rust code can get which permutation fits the input data, **at runtime**.
+=> but then, this may have an influence on the rest of the passes!
+    - the goal is that it shouldn't
+    - who/what is in charge of running the draw command?
+        - the shell (application)
+    - drawing a mesh is only a matter of uploading the data into a GPU visible buffer (not our responsibility), 
+      and to run the correct pipeline.
+        - query the corresponding pipeline variant at runtime 
+
+
+## Base concepts:
+- Pass
+- Data context
+    - Can extract variables from this data context
+
+## Problem: variable number of passes
+- For example: 
+    - painter_v2 for shading design
+    - Flair
+- Q: How do we do this?
+- A: don't
+    - no interactivity that involves adding more passes
+    - OK for video games and such, but what about prototyping?
+- A: some complicated mechanism with loops
+- A: runtime code generation
+    - basically call rustc?
+- Q: is everything worth it?
+    - we get the ability to: 
+        - create optimized render passes statically
+        - handle shader permutations statically (precompile every permutation)
+        - codegen minimal and efficient synchronization code 
+    - at the cost of:
+        - not being able to add new passes or shaders at runtime
+        - not being able to run a pass in a loop
+- Q: is the cost of computing synchronization per frame measurable?
+    - a dubious claim
