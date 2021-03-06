@@ -1410,3 +1410,174 @@ Then, rust code can get which permutation fits the input data, **at runtime**.
         - not being able to run a pass in a loop
 - Q: is the cost of computing synchronization per frame measurable?
     - a dubious claim
+
+## Effects/techniques/whatever
+
+An effect is a combination of a pipeline and one or more passes.
+In order to run an effect, you need:
+- (context) descriptor set layout cache
+- (owned) descriptor set layout
+- (owned) descriptor set layout allocator
+- UBO ID
+- mapped pointer to UBO
+- buffer handle to UBO
+- shader interface struct
+- descriptor set
+- (owned) update template
+- get handle of output image
+- create output image view
+- create framebuffer
+
+Constant:
+- descriptor set layout
+- pipeline layout
+- pipeline
+- some descriptor sets?
+Those are stored in the technique object, they are long-lived.
+
+Resource-associated objects:
+- output image view
+- framebuffers
+Those are not put in the technique.
+
+Parameters:
+- format of the output image
+- format of the input vertices
+
+```rust
+
+fn main() {
+    let effect_template = EffectTemplate::from_file("...");
+    
+    let mut current_size = unimplemented!();
+    while !should_stop {
+        
+        let window_size = unimplemented!();
+        if window_size !=  current_size {
+            current_size = window_size;
+            
+            // communicate the size change to the effect
+            // internally, the pipeline object depends on those
+            // two values, so setting those two values will 
+            // invalidate the created pipeline.
+            // This means that the pipeline will be re-created. However, 
+            // re-creation is not immediate, but deferred to when the pipeline object is actually needed.
+            effect.set_width(window_size.width);
+            effect.set_height(window_size.height);
+        }
+        
+        
+        let mut batch = context.start_batch();
+        
+        // allocate buffers
+        let buf = unimplemented!();
+        
+        // setup effect, could be typed
+        effect.set_vertex_buffer(buf);
+        effect.set_param(12.0);
+        effect.set_output_image(swapchain_image);   // this will hold a strong ref to the image
+        
+        // issue: setting references to resources
+        // -> the effect ends up owning a strong ref to the reference, even if it's not going to be used
+        // for more than a batch
+        // -> pass resources in `Effect::run()` instead?
+        // Problem: for some resources, it actually makes sense for the effect to hold a strong ref to it
+        // -> long-lived uniform buffers, textures, etc.
+        // -> no single owner: can write to an uniform buffer while the effect references it
+        
+        // this runs the pass: internally, it will create and/or update
+        // any invalidated object (pipelines, framebuffers, etc.) 
+        
+        let r = EffectBatchResources {
+            uniform_buffer: unimplemented!(),
+            vertex_buffer: unimplemented!()            
+        };
+        effect.run(batch);
+        
+        
+        
+        batch.finish();        
+    }
+    
+}
+
+struct Effect {
+    // pipeline
+    pipeline: Option<vk::Pipeline>
+}
+
+```
+
+
+```
+
+// this could be a memoized function
+// it'd be cool if all render effect files could share the same instance of the render pass with a particular format
+// e.g.
+// effectA.fx: color_only_render_pass(RGBA8) 
+// effectB.fx: color_only_render_pass(RGBA8) 
+// -> the two render passes refer to the same variable, and are created once
+// -> that's hard, because the resources and objects live in an EffectTemplate object, and
+// each file produces a different EffectTemplate
+
+// can be called from rust:
+// `effect_template.get_color_only_render_pass(device, format) -> RenderPass`
+RenderPass color_only_render_pass(format) {
+    Attachment color {
+        flags = MAY_ALIAS;
+        format = format;
+        load_op: DONT_CARE;
+        store_op: STORE;
+        stencil_load_op: DONT_CARE;
+        stencil_store_op: DONT_CARE;
+        initial_layout: COLOR_ATTACHMENT_OPTIMAL;
+        final_layout: COLOR_ATTACHMENT_OPTIMAL;
+    }
+    
+    Subpass {
+        color_attachments = [AttachmentReference {
+            attachment = color;
+            layout = COLOR_ATTACHMENT_OPTIMAL;
+        }]
+    }
+}
+
+DescriptorSetLayout background_shader_set_interface 
+{
+    type = BackgroundShaderInterface;
+}
+
+ShaderModule vertex {
+    source_file = ...;
+}
+
+ShaderModule fragment {
+    source_file = ...;
+}
+
+PipelineLayout pipeline_layout {
+     set_layouts = [background_shader_set_interface];
+}
+
+VertexInputState vertex_input_state {
+    
+}
+
+
+
+Pipeline background_pipeline {
+    
+}
+
+pass background
+{
+    
+}
+```
+
+Two points of view:
+- effect writer:
+    - doesn't care about where the resources come from, only that they are in a format that it supports
+    - doesn't care about how long the resources live, only that they live at least until the effect has finished rendering
+- "host" application:
+    - wants to manage
