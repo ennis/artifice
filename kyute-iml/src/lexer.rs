@@ -16,7 +16,7 @@ fn parse_str<'input>(lex: &mut logos::Lexer<'input, Token<'input>>) -> &'input s
     &s[1..s.len() - 1]
 }
 
-fn parse_f32<'input>(lex: &mut Lexer<'input, Token<'input>>) -> Result<f32, LexicalError> {
+/*fn parse_f32<'input>(lex: &mut Lexer<'input, Token<'input>>) -> Result<f32, LexicalError> {
     let s = lex.slice();
     Ok(f32::from_str(
         s.strip_suffix(|c| c == 'f' || c == 'F').unwrap_or(s),
@@ -30,18 +30,33 @@ fn parse_f64<'input>(lex: &mut Lexer<'input, Token<'input>>) -> Result<f64, Lexi
             .and_then(|s| s.strip_suffix(|c| c == 'l' || c == 'L'))
             .unwrap_or(s),
     )?)
-}
+}*/
 
 #[derive(Logos, Debug, PartialEq)]
 pub enum Token<'input> {
-    #[regex(r#""([^\\"]*)""#, parse_str)]
-    Str(&'input str),
     #[regex(r#"[a-zA-Z_][a-zA-Z0-9_]*"#)]
     Ident,
+    //------------------- Keywords -------------------
+    #[token("pub")]
+    Pub,
+    #[token("const")]
+    Const,
+    #[token("RenderPass")]
+    RenderPass,
+    #[token("Attachment")]
+    Attachment,
+    #[token("Subpass")]
+    Subpass,
+
+    //------------------- Literals -------------------
     #[token("true", |_| true)]
     #[token("false", |_| false)]
     BoolConst(bool),
-    #[regex(
+    #[regex(r#""([^\\"]*)""#, parse_str)]
+    Str(&'input str),
+    #[regex("[+-]?[0-9]*[.]?[0-9]+(?:[eE][+-]?[0-9]+)?")]
+    Number,
+    /*#[regex(
         r"([0-9]+\.[0-9]+|[0-9]+\.|\.[0-9]+)([eE][+-]?[0-9]+)?(f|F)?",
         parse_f32
     )]
@@ -52,11 +67,13 @@ pub enum Token<'input> {
         parse_f64
     )]
     #[regex(r"[0-9]+[eE][+-]?[0-9]+(lf|LF)", parse_f64)]
-    DoubleConst(f64),
+    DoubleConst(f64),*/
+    //------------------- Comments -------------------
     #[regex("//.*", logos::skip)]
     SingleLineComment,
     #[regex(r"/\*([^*]|\*[^/])+\*/", logos::skip)]
     BlockComment,
+    //------------------- Operators -------------------
     #[token("(")]
     LParen,
     #[token(")")]
@@ -71,8 +88,6 @@ pub enum Token<'input> {
     Inc,
     #[token("--")]
     Dec,
-    #[token("void")]
-    Void,
     #[token("+")]
     Plus,
     #[token("-")]
@@ -147,10 +162,12 @@ pub enum Token<'input> {
     LBrace,
     #[token("}")]
     RBrace,
+    //------------------- Whitespace -------------------
     #[regex("[ \r\n]")]
     Newline,
     #[regex("[ \t\r\n]", logos::skip)]
     Whitespace,
+    //------------------- Other -------------------
     #[error]
     Error,
 }

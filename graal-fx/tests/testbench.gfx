@@ -1,0 +1,19 @@
+pub var2 : u32x2 = u32x2(0,1);
+
+RenderPass rp0 {
+    Attachment color {
+        flags          = MAY_ALIAS;       // shorthand: no need for the full qualified path (vk::AttachmentDescriptionFlags::MAY_ALIAS)
+        format         = output_format; // this makes the object depend on the value of the variable
+        samples        = output_sample_count;
+        loadOp         = DONT_CARE;
+        storeOp        = STORE;
+        stencilLoadOp  = DONT_CARE;
+        stencilStoreOp = DONT_CARE;
+        initialLayout  = COLOR_ATTACHMENT_OPTIMAL;
+        finalLayout    = COLOR_ATTACHMENT_OPTIMAL;
+    }
+
+    Subpass sp0 {}
+}
+
+
