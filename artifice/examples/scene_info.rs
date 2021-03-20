@@ -2,11 +2,12 @@ use artifice::application::Application;
 use std::any::Any;
 
 use artifice::document::Documents;
-use std::cell::Cell;
-use std::rc::Rc;
-use winit::event::{Event, WindowEvent};
-use winit::event_loop::ControlFlow;
-use winit::window::WindowBuilder;
+use std::{cell::Cell, rc::Rc};
+use winit::{
+    event::{Event, WindowEvent},
+    event_loop::ControlFlow,
+    window::WindowBuilder,
+};
 
 // opening a document window:
 // - create a new document / load document

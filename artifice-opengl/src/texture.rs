@@ -1,9 +1,8 @@
-use crate::api::gl;
-use crate::api::gl::types::*;
-use crate::api::Gl;
-use crate::gl_format::GlFormatInfoExt;
-use artifice_gfxbase::dimensions::Dimensions;
-use artifice_gfxbase::format::Format;
+use crate::{
+    api::{gl, gl::types::*, Gl},
+    gl_format::GlFormatInfoExt,
+};
+use artifice_gfxbase::{dimensions::Dimensions, format::Format};
 
 //--------------------------------------------------------------------------------------------------
 pub struct ExtentsAndType {

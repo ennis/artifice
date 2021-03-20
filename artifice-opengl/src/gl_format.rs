@@ -1,5 +1,4 @@
-use crate::api::gl;
-use crate::api::gl::types::GLenum;
+use crate::api::{gl, gl::types::GLenum};
 use artifice_gfxbase::format::Format;
 
 /// Equivalent OpenGL format information for a given `Format`.

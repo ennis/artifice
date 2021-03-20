@@ -1,10 +1,10 @@
-use crate::api::gl::types::*;
-use crate::api::Gl;
-use crate::framebuffer::FramebufferAttachment::Renderbuffer;
-use crate::gl_format::GlFormatInfoExt;
-use crate::texture::ExtentsAndType;
-use artifice_gfxbase::dimensions::Dimensions;
-use artifice_gfxbase::format::Format;
+use crate::{
+    api::{gl::types::*, Gl},
+    framebuffer::FramebufferAttachment::Renderbuffer,
+    gl_format::GlFormatInfoExt,
+    texture::ExtentsAndType,
+};
+use artifice_gfxbase::{dimensions::Dimensions, format::Format};
 
 impl_handle_type!(pub struct RenderbufferHandle(GLuint));
 

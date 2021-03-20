@@ -1,11 +1,8 @@
-use logos::Lexer;
-use logos::Logos;
-use regex::internal::Input;
-use std::path::PathBuf;
-use std::str::FromStr;
-use thiserror::Error;
 use crate::Arena;
-use std::panic::panic_any;
+use logos::{Lexer, Logos};
+use regex::internal::Input;
+use std::{panic::panic_any, path::PathBuf, str::FromStr};
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum LexicalError {
@@ -52,33 +49,47 @@ pub enum Token<'input> {
     Subpass,
 
     //------------------- Primitive types -------------------
-    #[token("u32x2")] U32x2,
-    #[token("u32x3")] U32x3,
-    #[token("u32x4")] U32x4,
-    #[token("i32x2")] I32x2,
-    #[token("i32x3")] I32x3,
-    #[token("i32x4")] I32x4,
-    #[token("f32x2")] F32x2,
-    #[token("f32x3")] F32x3,
-    #[token("f32x4")] F32x4,
+    #[token("u32x2")]
+    U32x2,
+    #[token("u32x3")]
+    U32x3,
+    #[token("u32x4")]
+    U32x4,
+    #[token("i32x2")]
+    I32x2,
+    #[token("i32x3")]
+    I32x3,
+    #[token("i32x4")]
+    I32x4,
+    #[token("f32x2")]
+    F32x2,
+    #[token("f32x3")]
+    F32x3,
+    #[token("f32x4")]
+    F32x4,
 
     //------------------- Contextual keywords -------------------
     /*#[token("flags")] CkFlags,
     #[token("format")] CkFormat,
     #[token("samples")] CkSamples,
-    #[token("load_op")] CkLoadOp,
-    #[token("store_op")] CkStoreOp,
-    #[token("stencil_load_op")] CkStencilLoadOp,
-    #[token("stencil_store_op")] CkStencilStoreOp,
-    #[token("initial_layout")] CkInitialLayout,
-    #[token("final_layout")] CkFinalLayout,
+    #[token("loadOp")] CkLoadOp,
+    #[token("storeOp")] CkStoreOp,
+    #[token("stencilLoadOp")] CkStencilLoadOp,
+    #[token("stencilStoreOp")] CkStencilStoreOp,
+    #[token("initialLayout")] CkInitialLayout,
+    #[token("finalLayout")] CkFinalLayout,
+
+    #[token("pipelineBindPoint")] CkPipelineBindPoint,
+    #[token("inputAttachments")] CkInputAttachments,
+    #[token("colorAttachments")] CkColorAttachments,
+    #[token("resolveAttachments")] CkResolveAttachments,
+    #[token("depthStencilAttachment")] CkDepthStencilAttachment,
+    #[token("preserveAttachments")] CkPreserveAttachments,
 
     #[token("MAY_ALIAS")] CkRenderPassFlagsMayAlias,
     #[token("DONT_CARE")] CkDontCare,
     #[token("STORE")] CkStoreOpStore,
     #[token("LOAD")] CkLoadOpLoad,*/
-    //------------------- Contextual keywords: image layouts -------------------
-
     //------------------- Literals -------------------
     #[token("true", |_| true)]
     #[token("false", |_| false)]
@@ -205,22 +216,21 @@ pub enum Token<'input> {
     Error,
 }
 
-
 impl<'input> Token<'input> {
-     pub(crate) fn copy_str<'ast>(&self, arena: &'ast Arena) -> &'ast str {
-         match self {
-             Token::String(s) => arena.alloc_str(s),
-             Token::Ident(s) => arena.alloc_str(s),
-             _ => panic!("cannot convert {:?} into a string", self)
-         }
-     }
+    pub(crate) fn copy_str<'ast>(&self, arena: &'ast Arena) -> &'ast str {
+        match self {
+            Token::String(s) => arena.alloc_str(s),
+            Token::Ident(s) => arena.alloc_str(s),
+            _ => panic!("cannot convert {:?} into a string", self),
+        }
+    }
 
     /// Extract a string from the token if it represents a string
     pub(crate) fn as_str(&self) -> &'input str {
         match self {
             Token::String(s) => s,
             Token::Ident(s) => s,
-            _ => panic!("cannot convert {:?} into a string", self)
+            _ => panic!("cannot convert {:?} into a string", self),
         }
     }
 
@@ -228,7 +238,7 @@ impl<'input> Token<'input> {
     pub(crate) fn as_f64(&self) -> f64 {
         match self {
             Token::FloatLiteral(f) => *f,
-            _ => panic!("cannot convert {:?} into f64", self)
+            _ => panic!("cannot convert {:?} into f64", self),
         }
     }
 
@@ -236,7 +246,7 @@ impl<'input> Token<'input> {
     pub(crate) fn as_i64(&self) -> i64 {
         match self {
             Token::IntLiteral(f) => *f as i64,
-            _ => panic!("cannot convert {:?} into i64", self)
+            _ => panic!("cannot convert {:?} into i64", self),
         }
     }
 
@@ -244,11 +254,10 @@ impl<'input> Token<'input> {
     pub(crate) fn as_bool(&self) -> bool {
         match self {
             Token::BoolLiteral(b) => *b,
-            _ => panic!("cannot convert {:?} into bool", self)
+            _ => panic!("cannot convert {:?} into bool", self),
         }
     }
 }
-
 
 /// Bridge between a logos lexer and what LALRPOP expects
 pub struct LexerAdapter<'input> {

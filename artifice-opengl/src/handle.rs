@@ -1,5 +1,4 @@
-use crate::api::gl::types::*;
-use crate::api::Gl;
+use crate::api::{gl::types::*, Gl};
 
 pub struct ContextObject<T> {
     gl: Gl,

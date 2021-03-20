@@ -1,10 +1,12 @@
-use std::ffi::{c_void, CString};
-use std::mem;
+use std::{
+    ffi::{c_void, CString},
+    mem,
+};
 
-use crate::api::gl;
-use crate::api::gl::types::*;
-use crate::api::Gl;
-use crate::error::Error;
+use crate::{
+    api::{gl, gl::types::*, Gl},
+    error::Error,
+};
 
 impl_handle_type!(pub struct ProgramHandle(GLuint));
 impl_handle_type!(pub struct VertexShaderHandle(GLuint));

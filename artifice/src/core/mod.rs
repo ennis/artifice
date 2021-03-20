@@ -1,5 +1,4 @@
-use slotmap::new_key_type;
-use slotmap::SlotMap;
+use slotmap::{new_key_type, SlotMap};
 
 mod node;
 pub use node::Node;

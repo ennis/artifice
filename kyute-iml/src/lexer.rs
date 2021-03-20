@@ -1,5 +1,4 @@
-use logos::Lexer;
-use logos::Logos;
+use logos::{Lexer, Logos};
 use std::str::FromStr;
 use thiserror::Error;
 

@@ -3,9 +3,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
-use quote::ToTokens;
-use quote::TokenStreamExt;
+use quote::{quote, ToTokens, TokenStreamExt};
 use syn::spanned::Spanned;
 
 mod data;

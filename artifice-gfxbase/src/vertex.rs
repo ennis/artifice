@@ -1,7 +1,8 @@
-use crate::buffer::BufferData;
-use crate::format::Format;
-use crate::typedesc::PrimitiveType;
-use crate::typedesc::TypeDesc;
+use crate::{
+    buffer::BufferData,
+    format::Format,
+    typedesc::{PrimitiveType, TypeDesc},
+};
 
 pub use artifice_gfxbase_macros::VertexData;
 

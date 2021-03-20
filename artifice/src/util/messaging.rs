@@ -1,7 +1,9 @@
-use std::any::Any;
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::{Rc, Weak};
+use std::{
+    any::Any,
+    cell::RefCell,
+    marker::PhantomData,
+    rc::{Rc, Weak},
+};
 use typemap::TypeMap;
 
 pub trait Topic: Any {

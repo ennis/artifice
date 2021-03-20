@@ -1,8 +1,8 @@
 use ash::vk;
 use lalrpop_util::lalrpop_mod;
 use std::collections::HashMap;
-use thiserror::Error;
 use strum::EnumString;
+use thiserror::Error;
 
 mod lexer;
 lalrpop_mod!(
@@ -10,10 +10,12 @@ lalrpop_mod!(
     grammar
 );
 
-use crate::lexer::{LexerAdapter, LexicalError};
+use crate::{
+    lexer::{LexerAdapter, LexicalError},
+    BinaryOp::Sub,
+};
 pub use bumpalo::Bump as Arena;
 use std::str::FromStr;
-use crate::BinaryOp::Sub;
 
 #[derive(Error, Debug)]
 pub enum ParseError {
@@ -69,7 +71,7 @@ impl<'ast> Default for RenderPass<'ast> {
         RenderPass {
             name: "",
             attachments: &[],
-            subpasses: &[]
+            subpasses: &[],
         }
     }
 }
@@ -100,7 +102,7 @@ impl<'a> Default for Attachment<'a> {
             stencil_load_op: None,
             stencil_store_op: None,
             initial_layout: None,
-            final_layout: None
+            final_layout: None,
         }
     }
 }
@@ -108,12 +110,24 @@ impl<'a> Default for Attachment<'a> {
 #[derive(Copy, Clone, Debug)]
 pub struct Subpass<'ast> {
     name: &'ast str,
+    pipeline_bind_point: Option<&'ast Expr<'ast>>,
+    input_attachments: Option<&'ast Expr<'ast>>,
+    color_attachments: Option<&'ast Expr<'ast>>,
+    resolve_attachments: Option<&'ast Expr<'ast>>,
+    depth_stencil_attachment: Option<&'ast Expr<'ast>>,
+    preserve_attachments: Option<&'ast Expr<'ast>>,
 }
 
 impl<'a> Default for Subpass<'a> {
     fn default() -> Self {
         Subpass {
-            name: ""
+            name: "",
+            pipeline_bind_point: None,
+            input_attachments: None,
+            color_attachments: None,
+            resolve_attachments: None,
+            depth_stencil_attachment: None,
+            preserve_attachments: None,
         }
     }
 }
@@ -265,13 +279,15 @@ impl RenderPassPropertyKind {
 struct ParseState<'ast> {
     arena: &'ast Arena,
     cur_attachment: Attachment<'ast>,
+    cur_subpass: Subpass<'ast>,
 }
 
 impl<'ast> ParseState<'ast> {
     fn new(arena: &'ast Arena) -> ParseState<'ast> {
         ParseState {
             arena,
-            cur_attachment: Default::default()
+            cur_attachment: Default::default(),
+            cur_subpass: Default::default(),
         }
     }
 }

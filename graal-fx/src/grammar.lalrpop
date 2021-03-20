@@ -176,7 +176,7 @@ Item: Item<'ast> = {
 RenderPass : RenderPass<'ast> = {
     "RenderPass" <name:IDENT> "{"
     <attachments:RenderPassAttachment*>
-    <subpasses:RenderPassSubpass*>
+    <subpasses:Subpass*>
     "}"
      =>
     {
@@ -216,9 +216,27 @@ RenderPassAttachmentProperty : () = {
     }
 };
 
-RenderPassSubpass : Subpass<'ast> = {
-    "Subpass" <name:IDENT> "{" "}" => Subpass::default()
+Subpass : Subpass<'ast> = {
+    "Subpass" <name:IDENT> "{" SubpassProperty* "}" => {
+        state.cur_subpass.name = name.copy_str(state.arena);
+        mem::take(&mut state.cur_subpass)
+    }
 };
+
+SubpassProperty : () = {
+    <prop:IDENT> "=" <value:Expression> ";" =>
+    {
+        match prop.as_str() {
+            "flags" => state.cur_subpass.flags = Some(value),
+            "pipelineBindPoint" => state.cur_subpass.pipeline_bind_point = Some(value),
+            "inputAttachments" => state.cur_subpass.input_attachments = Some(value),
+            "colorAttachments" => state.cur_subpass.color_attachments = Some(value),
+            "resolveAttachments" => state.cur_subpass.resolve_attachments = Some(value),
+            "depthStencilAttachment" => state.cur_subpass.depth_stencil_attachment = Some(value),
+            "preserveAttachments" => state.cur_subpass.preserve_attachments = Some(value),
+        }
+    }
+}
 
 ///////////////////////////////////////////////////////////////////////
 // Variables

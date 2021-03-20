@@ -1,6 +1,7 @@
-use crate::api::gl::types::*;
-use crate::api::Gl;
-use crate::gl_format::{GlFormatInfo, GlFormatInfoExt};
+use crate::{
+    api::{gl::types::*, Gl},
+    gl_format::{GlFormatInfo, GlFormatInfoExt},
+};
 use artifice_gfxbase::vertex::{VertexData, VertexLayout};
 
 // vertex array: describes the layout of inputs to the vertex processing stage

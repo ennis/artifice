@@ -1,19 +1,18 @@
 //! Renderer for dear imgui (https://github.com/ocornut/imgui).
-use artifice_gfxbase::dimensions::Dimensions;
-use artifice_gfxbase::format::Format;
-use artifice_gfxbase::format::Format::R8G8B8A8_SNORM;
-use artifice_gfxbase::vertex::{Semantic, VertexData, VertexLayout, VertexLayoutElement};
-use artifice_opengl::api::gl;
-use artifice_opengl::api::gl::types::*;
-use artifice_opengl::api::Gl;
-use artifice_opengl::buffer::BufferHandle;
-use artifice_opengl::shader::{FragmentShaderHandle, ProgramHandle, VertexShaderHandle};
-use artifice_opengl::texture::TextureHandle;
-use artifice_opengl::vertex_array::VertexArrayHandle;
-use imgui::internal::RawWrapper;
-use imgui::DrawCmd;
-use std::ffi::c_void;
-use std::{mem, slice};
+use artifice_gfxbase::{
+    dimensions::Dimensions,
+    format::{Format, Format::R8G8B8A8_SNORM},
+    vertex::{Semantic, VertexData, VertexLayout, VertexLayoutElement},
+};
+use artifice_opengl::{
+    api::{gl, gl::types::*, Gl},
+    buffer::BufferHandle,
+    shader::{FragmentShaderHandle, ProgramHandle, VertexShaderHandle},
+    texture::TextureHandle,
+    vertex_array::VertexArrayHandle,
+};
+use imgui::{internal::RawWrapper, DrawCmd};
+use std::{ffi::c_void, mem, slice};
 
 static IMGUI_VERTEX_SHADER_SOURCE: &str = include_str!("imgui.vert");
 static IMGUI_FRAGMENT_SHADER_SOURCE: &str = include_str!("imgui.frag");

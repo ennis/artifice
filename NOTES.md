@@ -1581,3 +1581,169 @@ Two points of view:
     - doesn't care about how long the resources live, only that they live at least until the effect has finished rendering
 - "host" application:
     - wants to manage
+    
+## Do we really need a generic effect file format?
+What we really want is a bridge between the host application and a piece of shader code or pipeline state that's configurable
+at runtime.
+We also want a convenience framework so that dealing with minor variants of pipelines is less painful. For instance:
+- same shaders, but different render target formats (need a different render pass, and thus a different pipeline)
+- same shaders, but different blend modes or rasterization options
+
+Fact: a simple set of (cached) functions that take parameters for each piece of state would work.
+E.g. :
+```rust
+// Caches the result somewhere
+#[graal_fast_cache]
+fn create_single_output_render_pass(
+    cache: &mut graal::ObjectCache,
+    output_format: vk::Format,
+) -> vk::RenderPass {
+    // ...
+}
+
+
+// transparently rewritten into:
+
+// Option A: externally controlled caches
+static create_single_output_render_pass_CACHE_ID : OnceCell<LocalIndexedCacheId<vk::RenderPass>> = OnceCell::new();
+
+fn create_single_output_render_pass_2(
+    cache: &graal::DeviceObjectCache,
+    #[fast_lookup]
+    #[allowed_values(vk::Format::R8G8B8A8_SRGB, ...)]
+    output_format: vk::Format,
+) -> vk::RenderPass 
+{
+    
+    let index = match output_format {
+        vk::Format::R8G8B8A8_SRGB => 0,
+        // ...  
+    };
+    
+    let local_cache_id = create_single_output_render_pass_CACHE_ID.get_or_init(|| {
+        cache.create_local_cache() 
+    });
+    
+    let local_cache = cache.get_local_cache(local_cache_id);
+    
+    if mem::size_of::<vk::Format>() < 8 {
+        
+    } else {
+        
+    }
+    
+    let mut __hash_key = Hash::new(); 
+    __hash_key.append(source_location!());
+    __hash_key.append(output_format);
+    
+    cache.get_or_insert_with(
+        __hash_key, {
+            // pasted code block
+        })
+}
+
+// Option B: static caches
+static create_single_output_render_pass_DEVICE_OBJECT_CACHE: OnceCell<DeviceObjectCache<RenderPassId, 4>> = OnceCell::new();
+
+fn create_single_output_render_pass_3(
+    context: &graal::Context,
+    output_format: vk::Format,
+) -> vk::RenderPass 
+{
+    let index = match output_format {
+    vk::Format::R8G8B8A8_SRGB => 0,
+        // ...  
+    };
+    
+    let cache =  create_single_output_render_pass_DEVICE_OBJECT_CACHE.get_or_init(|| DeviceObjectCache::new());
+    
+    
+    
+}
+
+
+```
+
+Problem: where to put the local caches?
+- owned by a global cache object: can ensure that the objects are deleted before the device that created them
+- static: device objects effectively 'static: meh
+    - objects must have a strong ref to the device that created them
+    - Arc<Device>
+    - DeviceObjectCache
+    
+Option A: externally controlled caches
+- (+) explicit control over the lifetime of the objects
+- (-) harder to implement 
+- (-) less straightforward to access the local cache
+    - need a first lookup by cache ID, then a downcast to the correct local cache type
+    
+Option B: static caches
+- (+) simple
+- (-) no explicit control over the lifetime of cached objects
+- (-) must explicitly reference the device
+
+Caching: generic or only for device objects?
+- Problem: management of lifetimes
+
+Problem: lifetime of cached objects
+- example: cached function that returns a vk::Pipeline: for how long does the vk::Pipeline live?
+    - indefinitely? memory usage can grow
+    - LRU cache? can accidentally put the vk::Pipeline in a struct and use it after it was deleted, or when 
+      it's in use by the device
+-  
+
+Lifetime of vulkan objects:
+
+| object | owner  | ref in commands | depends on |
+|--------|--------|-----------------|------------|
+| sampler     | device  | yes | nothing
+| image view  | image   | yes | image
+| pipeline    | device  | yes | nothing?
+| render pass | device  | yes | nothing
+| framebuffer | device  | yes | render pass, images
+| shader mod  | device  | no  | nothing
+
+
+Simplification:
+1. there's a single logical device in the whole application (excluding those in dynamically-loaded plugins)
+2. there's a single context in the whole application
+3. most methods in context are thread-safe
+4. there's a global batch index counter in the context
+5. the context contains slotmaps for every type of object
+6. the context tracks uses of every object so that they are not deleted while still in use
+    - problem: tracking each object individually is not efficient
+    
+The context should own the caches?
+    
+
+Each object should have a batch tracking number.
+
+
+## Lifetime problem with transient resources and passes
+Transient resources bound to the lifetime of `Batch`, so they borrow it.
+Passes need exclusive access to the batch (by construction), but it is already borrowed.
+
+Solutions:
+* don't require an exclusive borrow to build a pass
+    * need to build a list of accesses and then "commit" to the dependency graph
+        * not in-place, may require dynamic allocation
+* two-stage design:
+```rust 
+fn main() {
+
+// add_pass(&self, ...)
+// RefCell borrow inside
+batch.add_pass(|ctx| {
+    ubo.access(ctx, ...);
+    
+    ctx.set_commands(|ctx| {
+        // ideally, statically ensure that only the registered resources
+        // are accessible here. branding?
+        // -> would need a wrapper for all operations
+        // for now, unsafe.
+        
+    });
+});
+
+}
+```

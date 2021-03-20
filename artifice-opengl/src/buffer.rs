@@ -1,7 +1,5 @@
-use crate::api::gl::types::*;
-use crate::api::Gl;
-use std::os::raw::c_void;
-use std::ptr;
+use crate::api::{gl::types::*, Gl};
+use std::{os::raw::c_void, ptr};
 
 impl_handle_type!(pub struct BufferHandle(GLuint));
 

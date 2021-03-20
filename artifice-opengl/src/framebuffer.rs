@@ -1,11 +1,11 @@
 //! TODO: framebuffer creation
 //! impl FramebufferHandle {}
-use crate::api::gl;
-use crate::api::gl::types::*;
-use crate::api::Gl;
-use crate::error::{Error, GlResult};
-use crate::renderbuffer::RenderbufferHandle;
-use crate::texture::TextureHandle;
+use crate::{
+    api::{gl, gl::types::*, Gl},
+    error::{Error, GlResult},
+    renderbuffer::RenderbufferHandle,
+    texture::TextureHandle,
+};
 
 impl_handle_type!(pub struct FramebufferHandle(GLuint));
 

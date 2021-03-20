@@ -1,7 +1,6 @@
 use artifice::util::MessageBus;
 use artifice_macros::topic;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 #[topic(DocumentEvents)]
 pub trait DocumentEventListener {

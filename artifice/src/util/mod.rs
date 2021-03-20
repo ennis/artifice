@@ -1,5 +1,3 @@
 mod messaging;
 
-pub use messaging::MessageBus;
-pub use messaging::Topic;
-pub use messaging::TopicListeners;
+pub use messaging::{MessageBus, Topic, TopicListeners};

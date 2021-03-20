@@ -1,39 +1,38 @@
 use anyhow::anyhow;
 use glutin::{ContextBuilder, GlProfile};
 use imgui::im_str;
-use winit::dpi::LogicalSize;
-use winit::event::Event;
-use winit::event::WindowEvent;
-use winit::event_loop::ControlFlow;
-use winit::event_loop::EventLoop;
-use winit::window::WindowBuilder;
+use winit::{
+    dpi::LogicalSize,
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+};
 
-use artifice_gfxbase::dimensions::Dimensions;
-use artifice_gfxbase::format::Format;
-use artifice_opengl::api::gl;
-use artifice_opengl::api::gl::types::*;
-use artifice_opengl::api::Gl;
-use artifice_opengl::buffer::BufferHandle;
-use artifice_opengl::framebuffer::FramebufferAttachment::Texture;
-use artifice_opengl::framebuffer::{FramebufferAttachment, FramebufferHandle};
-use artifice_opengl::shader::{FragmentShaderHandle, ProgramHandle, VertexShaderHandle};
-use artifice_opengl::texture::TextureHandle;
-use artifice_opengl::vertex_array::VertexArrayHandle;
-use artifice_opengl::VertexData;
+use artifice_gfxbase::{dimensions::Dimensions, format::Format};
+use artifice_opengl::{
+    api::{gl, gl::types::*, Gl},
+    buffer::BufferHandle,
+    framebuffer::{FramebufferAttachment, FramebufferAttachment::Texture, FramebufferHandle},
+    shader::{FragmentShaderHandle, ProgramHandle, VertexShaderHandle},
+    texture::TextureHandle,
+    vertex_array::VertexArrayHandle,
+    VertexData,
+};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
-use std::os::raw::{c_char, c_void};
-use std::path::Path;
-use std::time::Instant;
-use std::{fmt, mem, ptr};
+use std::{
+    fmt, mem,
+    os::raw::{c_char, c_void},
+    path::Path,
+    ptr,
+    time::Instant,
+};
 
 use glutin::CreationError::Window;
 use nalgebra::{
     DMatrix, DVector, Dynamic, Matrix, Matrix4, MatrixN, Perspective3, Point3, VecStorage, Vector3,
     VectorN,
 };
-use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::ffi::CString;
+use std::{collections::HashMap, f32::consts::PI, ffi::CString};
 //use artifice_opengl::draw::{Uniforms, Uniform};
 
 mod imgui_glue;

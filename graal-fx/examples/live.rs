@@ -1,12 +1,10 @@
-use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event, EventKind};
-use std::fs::File;
-use std::io::Read;
 use anyhow::Result;
-use graal_fx::{Module, Arena};
-use logos::{Logos, Lexer};
-use std::thread;
+use graal_fx::{Arena, Module};
+use logos::{Lexer, Logos};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use std::{fs::File, io::Read, thread};
 
-const TESTBENCH_PATH : &str = "graal-fx/tests/testbench.gfx";
+const TESTBENCH_PATH: &str = "graal-fx/tests/testbench.gfx";
 
 fn reparse() -> Result<()> {
     let mut contents = String::new();
@@ -15,16 +13,15 @@ fn reparse() -> Result<()> {
     // run the lexer
     eprintln!("--- Parser ---");
     let mut arena = Arena::new();
-    let module = Module::parse(&contents,&arena);
+    let module = Module::parse(&contents, &arena);
     match module {
         Ok(m) => eprintln!("{:#?}", m),
-        Err(e) => eprintln!("{:?}", e)
+        Err(e) => eprintln!("{:?}", e),
     }
     Ok(())
 }
 
-fn main() -> Result<()>
-{
+fn main() -> Result<()> {
     let mut watcher: RecommendedWatcher = Watcher::new_immediate(|res| {
         match res {
             Ok(event) => {

@@ -1,6 +1,4 @@
-use crate::api::Gl;
-use crate::shader::ProgramHandle;
-use crate::texture::TextureHandle;
+use crate::{api::Gl, shader::ProgramHandle, texture::TextureHandle};
 use std::ffi::CString;
 
 /// Interface for setting uniforms
