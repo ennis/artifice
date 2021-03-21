@@ -1719,6 +1719,17 @@ The context should own the caches?
 Each object should have a batch tracking number.
 
 
+## Lifetime of render pass and descriptor set layout objects?
+- Would be great if we could just allocate them and just forget about them forever
+    - Memory usage? Probably not much
+- They can always be associated to types
+    - Note that pipelines cannot, or at least not easily:
+        - You'd need a shit-ton of metadata on the type to describe a complete pipeline
+        - Also makes it harder to have variants
+        -> not everything in PipelineCreateInfo is for describing the interface with the host
+- We still need to delete them on context drop.
+
+
 ## Lifetime problem with transient resources and passes
 Transient resources bound to the lifetime of `Batch`, so they borrow it.
 Passes need exclusive access to the batch (by construction), but it is already borrowed.
