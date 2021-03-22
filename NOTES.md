@@ -1758,3 +1758,7 @@ batch.add_pass(|ctx| {
 
 }
 ```
+
+## All vulkan mistakes:
+- using a descriptor in a shader stage not specified in the layout => ERROR_DEVICE_LOST
+- not providing clearValues on beginRenderPass => crash in validation layers
