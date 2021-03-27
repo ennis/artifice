@@ -1811,7 +1811,7 @@ Problem 2: a pipeline barrier on pass exit is not enough because the using pass 
             - when creating a batch, specify the queue
             - problem: worse intra-frame memory aliasing?
             - problem: turning things "async" is harder, because need to split in different batches
-            
+    
 
 Solution:
 - introduce the concept of "immutable resources", which are resources that are written once and never touched again
@@ -1864,9 +1864,10 @@ Proposal: unify the two concepts?
 - problem: worse intra-frame memory aliasing?
 - problem: turning things "async" is harder, because need to split in different batches
 - problem: pacing always considers batch N-2, but we now produce more batches in a "frame"
-    
+- problem: "transient" resources now only live within a submission, which is not a meaningful granularity for the user
 
 Alt. proposal: rename "batch" to "frame" to avoid confusion with vkQueueSubmit batches
+- OK
 
             
   
