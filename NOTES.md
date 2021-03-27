@@ -1762,3 +1762,112 @@ batch.add_pass(|ctx| {
 ## All vulkan mistakes:
 - using a descriptor in a shader stage not specified in the layout => ERROR_DEVICE_LOST
 - not providing clearValues on beginRenderPass => crash in validation layers
+
+## Synchronization of uniform buffers
+- right now one buffer per uniform block, might not be very efficient
+    - upload pool
+
+
+## Next steps
+- DONE Figure out why the mesh is Y-flipped (is it a problem with the mesh, the camera, the viewport setup, something else?)
+    - vulkan flipped the Y coordinate of the clip space: flip Y in vertex shader
+- Setup TAA shader pipeline
+- Hot-reloadable shaders
+- Scene abstraction
+- Generalize G-buffer generation from meshes
+- Textures
+DONE Camera control
+- Figure out what we want to try with the style:
+
+    1. Anchor point generation
+        - load from file?
+        - use a procedural solid noise technique
+    2. Stroke mesh generation
+        - anchor point to meshes
+    3. Coarse stroke rasterization
+        - Follows what?
+            - need a good 2D screen space flow (tangent space?), bilateral-filtered
+    4. Stroke DF resolution
+    
+## Problem with automatic resource transitions
+Scenes have many vertex buffers, and currently they should ALL be registered when creating the pass.
+There can be 100s of buffers.
+
+Facts:
+- vertex buffers are immutable and don't really need synchronization
+    - we can just ignore them
+    - actually no: we must still synchronize on the first data upload!
+- images are a bit more problematic, because in theory they could be in different layouts
+- put an explicit barrier on pass exit, which will ensure that the data is visible in all subsequent passes 
+
+Problem 2: a pipeline barrier on pass exit is not enough because the using pass might run on another queue
+- typical example: load on transfer queue, use on main 
+    - a solution would be to do those operation on different batches and sync them manually
+        - possible confusion: there are two different kinds of batches:
+            - "submission" batches (vkQueueSubmit), on one queue
+            - graal batches
+            - one graal batch may produce multiple submissions on different queues
+        - unify the two concepts?
+            - when creating a batch, specify the queue
+            - problem: worse intra-frame memory aliasing?
+            - problem: turning things "async" is harder, because need to split in different batches
+            
+
+Solution:
+- introduce the concept of "immutable resources", which are resources that are written once and never touched again
+    - those don't need synchronization
+    - images of this type have a fixed layout
+    - we don't need to introduce wrapper types for now, documentation will suffice
+- provide a way to wait for a batch right after submission
+    - batch future?
+
+    
+## Figure out RAII for Scene
+- Scenes own mesh buffers, but do not free them once it goes out of scope, simply because it doesn't have access to 
+  the context at that time.
+
+- Solutions:
+    - Arc<Context> passed to Scene
+    - global context singleton
+        - why not? here are the possible reasons:
+            - don't want the context to live for the whole program?
+                - can still drop it manually (which automatically invalidates all resource IDs)
+                - Rc<Context> also extends the lifetime of the context artificially
+            - don't like singletons
+                - not a reason
+            - multiple contexts per program: which means, multiple vulkan instances (?) or multiple devices (?)
+                - e.g. one device for integrated graphics, another for the discrete GPU
+                    - technically possible, the worst kind of possible
+                - for SLI: device groups
+            - multiple shared objects (DLLs) that create their own context
+                - basically, can't share resource IDs between DLLs
+                    - it will go through a C interface anyway
+- we're already making the assumption that there's going to be only one device anyway
+    - interface types with static get_or_init()
+    - lookup by type-id instead
+    
+
+- Problem with Arc<Context>
+    - must really be Arc<RwLock<Context>> 
+    - this lock-guards everything, even access to the ash::Device function pointers, which don't really need to be guarded
+    
+
+## possible confusion: two different kinds of batches
+- "submission" batches (vkQueueSubmit), on one queue
+- graal batches
+- one graal batch may produce multiple submissions on different queues
+
+Proposal: unify the two concepts?
+- when creating a batch, specify the queue
+- advantage: simplified concepts
+- advantage: simplified code (no need to detect cross-queue dependencies anymore)  
+- problem: worse intra-frame memory aliasing?
+- problem: turning things "async" is harder, because need to split in different batches
+- problem: pacing always considers batch N-2, but we now produce more batches in a "frame"
+    
+
+Alt. proposal: rename "batch" to "frame" to avoid confusion with vkQueueSubmit batches
+
+            
+  
+
