@@ -1762,6 +1762,7 @@ batch.add_pass(|ctx| {
 ## All vulkan mistakes:
 - using a descriptor in a shader stage not specified in the layout => ERROR_DEVICE_LOST
 - not providing clearValues on beginRenderPass => crash in validation layers
+- forgetting to set the colorWriteMask in VkPipelineColorBlendAttachmentState
 
 ## Synchronization of uniform buffers
 - right now one buffer per uniform block, might not be very efficient
@@ -1799,19 +1800,12 @@ Facts:
     - actually no: we must still synchronize on the first data upload!
 - images are a bit more problematic, because in theory they could be in different layouts
 - put an explicit barrier on pass exit, which will ensure that the data is visible in all subsequent passes 
+    
 
 Problem 2: a pipeline barrier on pass exit is not enough because the using pass might run on another queue
 - typical example: load on transfer queue, use on main 
-    - a solution would be to do those operation on different batches and sync them manually
-        - possible confusion: there are two different kinds of batches:
-            - "submission" batches (vkQueueSubmit), on one queue
-            - graal batches
-            - one graal batch may produce multiple submissions on different queues
-        - unify the two concepts?
-            - when creating a batch, specify the queue
-            - problem: worse intra-frame memory aliasing?
-            - problem: turning things "async" is harder, because need to split in different batches
-    
+    - a solution would be to do those operation on different _frames_ and sync them manually
+        - problem: we introduce dummy frames which interfere with pacing    
 
 Solution:
 - introduce the concept of "immutable resources", which are resources that are written once and never touched again
@@ -1821,6 +1815,9 @@ Solution:
 - provide a way to wait for a batch right after submission
     - batch future?
 
+Another solution:
+- when uploading immutable resources, just put a global memory barrier afterwards
+    - can be done manually, totally transparent
     
 ## Figure out RAII for Scene
 - Scenes own mesh buffers, but do not free them once it goes out of scope, simply because it doesn't have access to 
@@ -1870,5 +1867,126 @@ Alt. proposal: rename "batch" to "frame" to avoid confusion with vkQueueSubmit b
 - OK
 
             
-  
+## The avail/visible tracking is wrong
+
+We don't track resource state per-queue: a memory dependency in a queue will update the tracking info so that
+another queue thinks that there's no need for a barrier even though it might not see the barrier yet.
+
+Consider:
+
+Pass 1, graphics queue : writes to A
+Pass 2, compute queue  : reads from A, CQ sync, reset avail mask / set vis
+Pass 3, graphics queue : reads from A, vis OK, no barrier
+-> but pass 3 may run before pass 2, and before the memory barrier
+
+Submitted in another order:
+Pass 1, graphics queue : writes to A
+Pass 2, graphics queue : reads from A, mem barrier, reset avail, set vis
+Pass 3, compute queue  : CQ barrier, sync always OK
+-> different behavior
+
+Solution(?): don't set the availability mask after a cross-queue dep
+-> other problem: on each read of a resource written on another queue, we add a semaphore wait 
+-> this is very inefficient
+
+
+### We add an execution dependency to writers, even when one exists already on the path to the writer
+We need to scan the path to the writer to see if there's already a dependency.
+One solution: update the reachability matrix on the fly, but that's a bit inefficient.
+
+### The availability/visibility tracking is wrong, because of concurrent queues.
+
+When accessing a resource we want to know whether there's a **dependency path** to the writer that includes 
+a memory dependency to the resource access in question. And if there's not, we want to add one (or modify an existing
+barrier on the path).
+    - We also want to avoid redundant barriers in different queues 
+    - Use split barriers
+
+-> Use split barriers and track visibility per-queue?
+
+Tracking memory dependencies:
+- Q: is there a memory dependency for this resource and this access type between this pass and the last writer
+    - read access:
+        - 1. check the visibility mask for the queue
+        - 2. if memory visible, nothing to do
+        - 3. otherwise, insert a memory dependency
+        - 4. reset availability mask for this queue, update visibility
+    - writing:
+        - 1. insert memory dependency
+        - 2. 
+    
+    - alternate answer:
+        - find a dependency path between the source (writer) and destination (access) and build the access scopes
+            - if no path is found, must add one
+            - otherwise, check access scopes to ensure that the first one (availability) contains all the writes of the writer
+              and the second one contains all requested access types (visibility)
+                - if not, must add one: either modify an existing barrier or create a new one
+
+```rust
+struct DependencyPath {
+    passes: Vec<SubmissionNumber>,
+    
+}
+```
+
+`Batch::find_dependency_path(&self, from: snn, to: snn) -> Option<Vec<snn>>`
+`collect_memory_dependencies(&self, resource: id, path: &[snn]) -> `
+
+
+## Memory dependencies across queues
+
+Typical example:
+(1)Q1: write A
+(2)Q1: read A          (3)Q2: read B
+
+Submission order:
+1,2,3 -> 
+
+Q1: write A
+avail mask: COLOR_ATTACHMENT
+vis mask: Q1:empty, Q2:empty
+
+Q1: read A
+avail mask: empty
+vis mask: COLOR_ATTACHMENT
+
+-> don't reset the availability mask ?
+    - consider only the availability mask of the writer pass
+
+
+Exec:
+
+- WAR dependency:
+    - if single reader in the same queue
+        - realize with the pipeline barrier of the destination stage 
+    - else
+        - realize with a semaphore
+- RAW dependency:
+    - if writer in the same queue
+        - realize with the pipeline barrier of the first reader
+    - else
+        - realize with a semaphore
+- WAW dependency:
+    - if writer in the same queue:
+        - realize with the pipeline barrier 
+    - else
+        - realize with a semaphore
+    
+
+                                          WAW     WAR     RAW
+Same queue / single reader in same queue  PB      PB      FRPB 
+Different queues / multiple readers       S       S       S
+
+
+
+
+- same queue, both passes are local
+    - realize with a pipeline barrier
+        - WAW/WAR: the barrier is in the destination pass
+        - RAW: the barrier is in the first reader pass 
+- same queue, source is in a previous frame
+    - realize with a semaphore
+- different queues
+    - realize with a semaphore
+    
 
