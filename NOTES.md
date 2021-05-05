@@ -1006,155 +1006,6 @@ but that's not going to happen anytime soon, is it?
 - Move the state in the task itself?
     - problem: prop update
   
-    
-# Designing a data model
-
-## Goals
-- Easy implementation of undo/redo in applications (no additional user code needed)
-    - no need for the command pattern
-- Load/save from a file comes for free
-- Automatically ensures the consistency of the data
-- Extensible: plugins can "plug into" this data model by associating data
-
-## Ideas
-- take inspiration from veda; what worked, what was clunky
-- data model is an entity-component database
-    - or, more simply, a database (entity = primary key, component type = table, component instance = row)
-- Entities are fundamental
-- Entities exist in a Database
-- Components attached to entities
-- Can remove entities, and all components are removed when an entity is removed
-- Components are stored within the database
-- Schemas correspond to a set of components attached to an entity
-- Components can be unsized types and trait objects (dyn Trait)
-- There can be only one instance of a component type on an entity
-
-* Assume that every operation can be done by an end-user
-* Every transaction should result in a valid data model state
-* The database should be easily introspectable
-
-- The basic operations are:
-      - Create/Delete an entity
-      - Create an entity from a schema
-      - Add a component to an entity
-      - Remove a component
-      - Modify a component
-
-- Databases should maintain coherence:
-      - Assume that a component refers to two other entities (relationship)
-      - If one of the entities is removed, remove the component
-      - (DB: on delete cascade)
-
-- Components are Objects
-- Objects can be reflected:
-      - Iterate over fields
-- Don't pay for what we don't use
-
-- Undo/redo should be supported without too much extra code
-    e.g. component.set_xxx(value, &mut edit)
-
-- problem: representing an operation on a complex data model in an undo command
-   - path = value
-    - If directly modifying the value through a mut reference, there's no way of preserving the previous state.
-    - Lenses, possibly?
-
-## Lightweight lenses
-Concretely, refer to an element with a _string path_, as a form of type erasure.
-From a `&str` return a `&dyn Any` that represent an element inside a bigger data structure. 
-Path lookup is automatically implemented via a procedural macro for structs, or impl manually for types like `Vec<T>`.
-
-
-The main advantage is that it can be used dynamically, "outside" of a compiled program. 
-One example would be an external GUI description that binds to items in the data model with paths.
-
-We lose the efficiency of addresses and typed lenses (more dynamic checks). However it _might_ be possible to add
-a "typed" wrapper over paths that can skip some checks.   
- 
-### Example
-Given the following definitions:
-```rust
-#[derive(Data)]
-struct Root {
-    nodes: HashMap<String, Entry>,
-}
-
-#[derive(Data)]
-struct Entry {
-    value: i32
-}
-```
-
-Then the path `.nodes.[name].value` on an instance of `Root` resolves to a 
-reference to the field `value` of entry `name` in the `nodes` HashMap.  
-
-The equivalent calls to resolve this path would be:
-```rust
-fn resolve(root: &Root) -> &dyn Data {
-    let nodes = root.lookup_field("nodes")?;
-    let v = nodes.lookup_entry("name")?;
-    let value = v.lookup_field("value")?;
-    return value;
-}
-```
-
-Note that there is no concept of "type" within a path: any syntactically-valid path should be considered valid until
-proven otherwise (i.e. resolves to `None`).
-
-There _could_ be a concept of run-time type annotations to encode expectations about the type at some path, e.g.
-`.nodes.[name].value:i32`
-
-
-### Lenses and components? 
-
-### Goals
-Don't forget the main goal: UI should be easy and quick to build. Strive for a dear ImGui-like experience.
-Minimal boilerplate.
-
-A UI designer is too much work. Is it possible to reuse one?
-- Expression Blend
-    - Needs parsing of XAML
-
-### Parse XAML?
-- Need to support 
-    - Grids
-- What workflow?
-    - at compile time, take XAML and turn it into a `Widget` taking a `&mut DataContext`.
-    - two-way bindings?
-        - bit more difficult
-- XAML static resources:
-    - Key -> Value pair
-    - Resources are associated to an element 
-        - Globally on the application, on the container, on leaf elements...
-        - Resources in parent visible to the children
-        - Resource lookup necessary
-        - Like druid:Env?
-    - Styling:
-        - Style == Collection of attributes
-    - Template:
-        - template == `fn (|context| -> Widget) -> Widget`
-        - "higher-order" widget
-    - Animation:
-        - 
-    - Mapping to rust:
-        - Simple data => translate to constants
-        - Strings => &'static str
-        - Geometry => Paths or whatever
-
-- Conclusion: too complicated
-    - start with a bespoke description language with interactive update
-    - could also put rust code directly inside
-
-### Bespoke UI description language (kyute-iml)
-- Describes a `Widget`
-- Dynamically loaded widget: 
-    - `ImlWidget::new` takes a `&mut DataSource` as input and a property dictionary:
-- `DataSource`
-    - Automatically reflected trait
-
-## Consider Druid again
-- Good font rendering, rich text
-- Native menus
-- Authors seem to know what they're doing
 
 
 ### Descriptor set layouts, pipelines, etc.
@@ -1977,9 +1828,6 @@ Exec:
 Same queue / single reader in same queue  PB      PB      FRPB 
 Different queues / multiple readers       S       S       S
 
-
-
-
 - same queue, both passes are local
     - realize with a pipeline barrier
         - WAW/WAR: the barrier is in the destination pass
@@ -1990,3 +1838,21 @@ Different queues / multiple readers       S       S       S
     - realize with a semaphore
     
 
+## Upload frames
+
+```rust
+fn main() {
+    // 1. create the frame used for uploads
+    let upload_frame = context.start_frame(...);
+    
+    // 2. use functions on scene, etc. to load stuff using the upload frame
+    scene.import_obj(&upload_frame, ...);
+    let img = load_image(&upload_frame);
+    
+    // 3. Finish the upload frame
+    upload_frame.finish();
+    
+    // 4. 
+}
+
+```

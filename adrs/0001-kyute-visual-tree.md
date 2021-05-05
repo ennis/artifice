@@ -88,7 +88,7 @@ there are no "split-borrows" like in Vec. The code has been refactored to avoid 
 with minimal readability impact.
 
 - `indextree` stores the nodes in linked lists, for optimized insertions and removals. 
-Each node has thus an memory overhead of 5*sizeof(NodeId) (parent,prev_sibling,next_sibling,first_child,last_child) = 40 bytes,
+Each node has thus an memory overhead of `5*sizeof(NodeId) (parent,prev_sibling,next_sibling,first_child,last_child) = 40 bytes`,
 that was not present in the previous version. We consider this overhead to be negligible.
 
 - The number of dynamic allocations should not have changed much; it's unclear which approach is the most performant,
