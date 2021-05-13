@@ -1854,5 +1854,9 @@ fn main() {
     
     // 4. 
 }
-
 ```
+
+# Bring graal to a higher level
+The current frame abstraction for graal still doesn't know enough about the rendering to be optimal:
+- it reallocates new resources for transients on every frame, even though they could be reused
+    - this was made so that the graph could change on every frame,
