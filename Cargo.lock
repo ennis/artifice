@@ -1260,6 +1260,7 @@ dependencies = [
  "shaderc",
  "slotmap 1.0.3",
  "tracing",
+ "tracing-subscriber",
  "vk-mem",
  "winapi 0.3.9",
  "winit 0.24.0",
