@@ -21,8 +21,8 @@
       <sourceFolder url="file://$MODULE_DIR$/kyute-iml/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal-spirv/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/graal/examples" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/graal/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/graal/examples" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/graal/macros/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal-fx/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal-fx/tests" isTestSource="true" />
@@ -30,6 +30,7 @@
       <sourceFolder url="file://$MODULE_DIR$/graal-bench/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal/macros/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/graal/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/artifice/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/kyute-shell/examples" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>

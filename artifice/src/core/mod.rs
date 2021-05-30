@@ -1,73 +1,123 @@
-use slotmap::{new_key_type, SlotMap};
+use tracing::trace;
+use thiserror::Error;
+use graal::vk;
 
-mod node;
-pub use node::Node;
-
-new_key_type! {
-    /// Unique ID of a node in a node database.
-    pub struct NodeId;
+/// Metadata about an image
+pub struct ImageMetadata {
+    width: u32,
+    height: u32,
+    format: vk::Format,
 }
 
-// now define the type for a database of nodes
-pub struct NodeDatabase {
-    // the nodes will be a primary slotmap
-    nodes: SlotMap<NodeId, Node>,
-}
-
-// there will be a limited number of plug types (not extensible)
-enum PlugKind {
-    Primitive,
-    String,
+pub enum InputResourceKind {
+    /// Describes a buffer input
+    Buffer,
+    /// Describes an image input
     Image,
+    /// Describes a scene (collection of objects with associated geometry and attributes)
+    Scene,
+    /// For variadic parameters, there should be only one
+    Ellipsis,
 }
 
-// the identifier of a plug
-// - cheap to copy
-// - cheap to compare
-// - const-friendly (no need to use lazy_static to initialize it)
-// Can be combined with other plugIDs to get a child plug
-// e.g. given a string plug with ID "stringPlugID", access the "length" plug by doing "stringPlugID.length"
-// -> makes a path
-// given a plug id, need to know its children
-// child plugs are only for stuff that we want to evaluate separately from the main value of the plug,
-// but that should be connected automatically at the same time of the parent plug
+/// Describes an input of a node.
+pub struct InputResourceDesc {
 
-// => cannot contain strings, so cannot be the name of the plug
-// => hash of the plug name?
-// => index?
-// => must also somehow communicate the type of the plug
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct PlugId {
-    kind: PlugKind,
-    id: u32,
+    /// The name of the input.
+    pub name: String,
+
+    /// Whether this input is required.
+    pub required: bool,
+
+    /// The type of resource.
+    pub kind: InputResourceKind
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct IntPlug {}
-
-impl IntPlug {
-    pub const fn id(&self) -> PlugId {}
+pub struct InputResources {
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct StringPlug {}
+impl InputResources {
+    ///
+    pub fn get_image_metadata(&self, name: &str) -> Option<ImageMetadata> {
+        todo!()
+    }
+}
 
-pub const STRING_LENGTH: IntPlug = IntPlug {};
+/// Context passed during rendering
+pub struct RenderContext<'a> {
+    /// Current frame
+    frame: graal::Frame<'a>,
+}
 
-impl StringPlug {
-    pub const fn id(&self) -> PlugId {
-        static DERIVED: [PlugId; 1] = [STRING_LENGTH.id()];
-        PlugId {
-            kind: PlugKind::String,
-            id: 0,
-            derived: &DERIVED,
-        }
+impl<'a> RenderContext<'a> {
+    pub fn get_input_image(&self, name: &str) -> Option<graal::ImageInfo> {
+        todo!()
     }
 
-    pub const fn length(&self) -> IntPlug {}
+    pub fn get_output_image(&self, name: &str) -> Option<graal::ImageInfo> {
+        todo!()
+    }
+
+    pub fn frame(&self) -> &graal::Frame<'a> {
+        &self.frame
+    }
+
+    /// Returns the value of a parameter
+    pub fn get_value(&self, param_name: &str) -> Option<&str> {
+        todo!()
+    }
 }
 
-trait Op {
-    /// Returns the interface of the node.
-    fn interface(&self) -> ();
+pub struct DescribeCtx {
+
+
+}
+
+/// The type of a node parameter
+#[derive(Copy,Clone,Debug,Eq,PartialEq,Hash)]
+pub enum ParamType {
+    Integer,
+    Float,
+    String,
+}
+
+impl DescribeCtx {
+
+    pub fn declare_input_image(&mut self, name: &str) {
+        trace!("declare_input_image: {}", name);
+        todo!()
+    }
+
+    pub fn declare_parameter(&mut self, name: &str, ty: ParamType) {
+        trace!("declare_parameter: {}", name);
+        todo!()
+    }
+
+    pub fn declare_output_image(&mut self, name: &str) {
+        trace!("declare_parameter: {}", name);
+        todo!()
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum RenderError {
+    #[error("input `{0}` not found")]
+    InputNotFound(String),
+    #[error("parameter `{0}` not found")]
+    ParameterNotFound(String),
+    #[error("parameter `{0}` not found")]
+    OutputNotFound(String),
+}
+
+/// Trait describing the behavior of a render node.
+pub trait RenderNode {
+    /// Describes this render node to the evaluator.
+    ///
+    /// This method communicates to the evaluator the inputs of the node, the outputs that it produces,
+    /// and its parameters.
+    fn describe(&self, ctx: &mut DescribeCtx);
+
+
+    /// Renders the node.
+    fn render(&self, context: &mut RenderContext) -> Result<(), RenderError>;
 }

@@ -10,8 +10,6 @@ edition = "2018"
 glutin = "0.24"
 winit = "0.22"
 tobj = "2"
-artifice-opengl = { path = "../artifice-opengl/" }
-artifice-gfxbase = { path = "../artifice-gfxbase/" }
 thiserror = "1"
 anyhow = "1"
 imgui = "0.4.0"

@@ -1,8 +1,5 @@
 [workspace]
 members = [
-    "artifice-gfxbase", # API-independent graphics definitions
-    "artifice-gfxbase/macros", # API-independent graphics macros
-    "artifice-opengl", # OpenGL wrapper
     "artifice", # Node, Ops and evaluator
     "artifice-main", # executable
     "artifice/macros", # macros
@@ -11,7 +8,7 @@ members = [
     #"graal-fx",    # graphics resource abstraction layer - effect files
     "graal/macros", # graphics resource abstraction layer - proc macros
     "graal-spirv",    # graphics resource abstraction layer - SPIRV reflection utilities
-    "haikara", # shading stylization test
+    #"haikara", # shading stylization test
     "kyute",    # user interface library - widgets and application architecture
     "kyute-iml",    # user interface library
     "kyute-shell",    # user interface library - windowing, drawing and system integration
