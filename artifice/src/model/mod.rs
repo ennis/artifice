@@ -193,17 +193,21 @@ impl Property {
 }
 
 /// A hierarchical set of interconnected nodes.
-#[derive(Clone, druid::Data, druid::Lens)]
+#[derive(Clone, Debug, druid::Data, druid::Lens)]
 pub struct Network {
     #[lens(name = "root_lens")]
     pub root: Node,
+
+    // current selection
+    #[lens(name = "selection_lens")]
+    pub selection: Arc<Vec<Node>>,
 }
 
 impl Network {
     /// Creates a new, empty network.
     pub fn new() -> Network {
         let root = Node::new();
-        Network { root }
+        Network { root, selection: Arc::new(Vec::new())  }
     }
 
     pub fn root(&self) -> &Node {

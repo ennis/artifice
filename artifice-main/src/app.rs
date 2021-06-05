@@ -17,6 +17,25 @@ use druid::{
 };
 use std::{fs::File, path::Path, sync::Arc};
 use tracing::{error, info};
+use crate::tree::{TreeModel, TreeNodeWidget, TreeSelectionModel, TreeView};
+
+
+impl TreeModel for Node {
+    fn children_count(&self) -> usize {
+        self.children.len()
+    }
+
+    fn get_child(&self, index: usize) -> &Self where
+        Self: Sized
+    {
+        &self.children[index]
+    }
+
+    fn get_child_mut(&mut self, index: usize) -> &mut Self where
+        Self: Sized {
+        &mut Arc::make_mut(&mut self.children)[index]
+    }
+}
 
 /// Application state
 #[derive(Clone, Data)]
@@ -256,20 +275,17 @@ impl<W: Widget<(NodeList, Node)>> Controller<(NodeList, Node), W> for NodeRename
 
 pub fn node_ui(depth: u32) -> impl Widget<(NodeList, Node)> {
     let indent = Insets::new((depth * 10) as f64, 0.0, 0.0, 0.0);
-
     let mut vbox = Flex::column().cross_axis_alignment(CrossAxisAlignment::Start);
 
     // name row
     vbox.add_child(
         Flex::row()
-            //.must_fill_main_axis(true)
             .with_child(Label::new("Name").padding(indent).fix_width(200.0))
             .with_flex_child(
                 ValueTextBox::new(TextBox::new(), NodeIdentFormatter)
                     .lens(lens!(Node, name))
                     .lens(lens!((NodeList, Node), 1))
                     .controller(NodeRenameController)
-                    .controller(ActionWrapper::new("rename node"))
                     .expand_width(),
                 1.0,
             ),
@@ -298,7 +314,7 @@ pub fn node_ui(depth: u32) -> impl Widget<(NodeList, Node)> {
 }
 
 pub fn ui() -> impl Widget<AppData> {
-    let mut root = Flex::column();
+    let mut root = Flex::column().cross_axis_alignment(CrossAxisAlignment::Start);
 
     root.add_child(
         node_ui(0)
@@ -312,6 +328,24 @@ pub fn ui() -> impl Widget<AppData> {
             .lens(AppData::network_lens())
             .fix_width(600.0),
     );
+
+    root.add_child(
+        TreeView::new(|| Label::new("Node"))
+            .lens(druid::lens::Identity.map(
+                |net: &Network| {
+                    TreeSelectionModel {
+                        selection: net.selection.clone(),
+                        node: net.root.clone()
+                    }
+                },
+                |net: &mut Network, model| {
+                    net.root = model.node;
+                    net.selection = model.selection;
+                }
+            ))
+            .lens(AppData::network_lens())
+    );
+
     root
     //root.debug_paint_layout()
 }

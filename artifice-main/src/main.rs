@@ -1,4 +1,6 @@
 mod app;
+mod tree;
+
 use crate::app::AppData;
 use druid::{AppLauncher, WindowDesc};
 
