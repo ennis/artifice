@@ -54,6 +54,81 @@
                 ),
             ],
         ),
+        "slider_knob": (
+            shape: Path("M 0.5 0.5 L 10.5 0.5 L 10.5 5.5 L 5.5 10.5 L 0.5 5.5 Z"),
+            styles: [
+                (
+                    state_filter: (
+                        value: (
+                            bits: 0,
+                        ),
+                        mask: (
+                            bits: 0,
+                        ),
+                    ),
+                    fill: Some(Gradient(
+                        angle: (
+                            radians: 1.5707963267948966,
+                        ),
+                        ty: Linear,
+                        stops: [
+                            (0, Palette(
+                                index: 6,
+                            )),
+                            (1, Palette(
+                                index: 5,
+                            )),
+                        ],
+                        reverse: false,
+                    )),
+                    borders: [
+                        (
+                            opacity: 1,
+                            blend_mode: Normal,
+                            position: Inside(Dip(0)),
+                            width: Dip(1),
+                            brush: SolidColor(Palette(
+                                index: 9,
+                            )),
+                        ),
+                    ],
+                    inner_shadow: None,
+                    drop_shadow: None,
+                    inner_glow: None,
+                    outer_glow: None,
+                ),
+                (
+                    state_filter: (
+                        value: (
+                            bits: 4,
+                        ),
+                        mask: (
+                            bits: 4,
+                        ),
+                    ),
+                    fill: Some(Gradient(
+                        angle: (
+                            radians: 1.5707963267948966,
+                        ),
+                        ty: Linear,
+                        stops: [
+                            (0, Palette(
+                                index: 8,
+                            )),
+                            (1, Palette(
+                                index: 7,
+                            )),
+                        ],
+                        reverse: false,
+                    )),
+                    borders: [],
+                    inner_shadow: None,
+                    drop_shadow: None,
+                    inner_glow: None,
+                    outer_glow: None,
+                ),
+            ],
+        ),
         "button": (
             shape: RoundedRect(Dip(2)),
             styles: [
@@ -214,81 +289,6 @@
                     fill: Some(SolidColor(Palette(
                         index: 0,
                     ))),
-                    borders: [],
-                    inner_shadow: None,
-                    drop_shadow: None,
-                    inner_glow: None,
-                    outer_glow: None,
-                ),
-            ],
-        ),
-        "slider_knob": (
-            shape: Path("M 0.5 0.5 L 10.5 0.5 L 10.5 5.5 L 5.5 10.5 L 0.5 5.5 Z"),
-            styles: [
-                (
-                    state_filter: (
-                        value: (
-                            bits: 0,
-                        ),
-                        mask: (
-                            bits: 0,
-                        ),
-                    ),
-                    fill: Some(Gradient(
-                        angle: (
-                            radians: 1.5707963267948966,
-                        ),
-                        ty: Linear,
-                        stops: [
-                            (0, Palette(
-                                index: 6,
-                            )),
-                            (1, Palette(
-                                index: 5,
-                            )),
-                        ],
-                        reverse: false,
-                    )),
-                    borders: [
-                        (
-                            opacity: 1,
-                            blend_mode: Normal,
-                            position: Inside(Dip(0)),
-                            width: Dip(1),
-                            brush: SolidColor(Palette(
-                                index: 9,
-                            )),
-                        ),
-                    ],
-                    inner_shadow: None,
-                    drop_shadow: None,
-                    inner_glow: None,
-                    outer_glow: None,
-                ),
-                (
-                    state_filter: (
-                        value: (
-                            bits: 4,
-                        ),
-                        mask: (
-                            bits: 4,
-                        ),
-                    ),
-                    fill: Some(Gradient(
-                        angle: (
-                            radians: 1.5707963267948966,
-                        ),
-                        ty: Linear,
-                        stops: [
-                            (0, Palette(
-                                index: 8,
-                            )),
-                            (1, Palette(
-                                index: 7,
-                            )),
-                        ],
-                        reverse: false,
-                    )),
                     borders: [],
                     inner_shadow: None,
                     drop_shadow: None,

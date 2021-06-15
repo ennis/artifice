@@ -1,8 +1,7 @@
-mod app;
-mod tree;
 
-use crate::app::AppData;
+use artifice::data::AppData;
 use druid::{AppLauncher, WindowDesc};
+use artifice::view::app;
 
 fn main() {
     tracing_subscriber::fmt()

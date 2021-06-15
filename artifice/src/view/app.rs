@@ -1,8 +1,13 @@
+//! Root application view
+use crate::{
+    data::{atom::Atom, network::Network, node::Node, AppData},
+    view::node::node_ui,
+    widgets::tree::TreeView,
+};
 use anyhow::Context;
-use artifice::model::{make_unique_name, Atom, Network, Node};
 use druid::{
-    lens,
     commands::{REDO, UNDO},
+    lens,
     text::{
         format::{Formatter, Validation, ValidationError},
         Selection,
@@ -11,65 +16,13 @@ use druid::{
         Button, Controller, CrossAxisAlignment, Flex, Label, List, MainAxisAlignment, TextBox,
         ValueTextBox,
     },
-    AppDelegate, Command, Data, DelegateCtx, Env, Event, EventCtx, FileDialogOptions, FileInfo,
-    FileSpec, Handled, Insets, Lens, LensExt, LocalizedString, MenuDesc, MenuItem, SysMods, Target,
-    UpdateCtx, Widget, WidgetExt,
+    AppDelegate, BoxConstraints, Command, Data, DelegateCtx, Env, Event, EventCtx,
+    FileDialogOptions, FileInfo, FileSpec, Handled, Insets, LayoutCtx, Lens, LensExt, LifeCycle,
+    LifeCycleCtx, LocalizedString, MenuDesc, MenuItem, PaintCtx, Size, SysMods, Target, UpdateCtx,
+    Widget, WidgetExt, WidgetPod,
 };
 use std::{fs::File, path::Path, sync::Arc};
 use tracing::{error, info};
-use crate::tree::{TreeModel, TreeNodeWidget, TreeSelectionModel, TreeView};
-
-
-impl TreeModel for Node {
-    fn children_count(&self) -> usize {
-        self.children.len()
-    }
-
-    fn get_child(&self, index: usize) -> &Self where
-        Self: Sized
-    {
-        &self.children[index]
-    }
-
-    fn get_child_mut(&mut self, index: usize) -> &mut Self where
-        Self: Sized {
-        &mut Arc::make_mut(&mut self.children)[index]
-    }
-}
-
-/// Application state
-#[derive(Clone, Data)]
-pub struct AppData {
-    /// Network being edited
-    network: Network,
-
-    /// Path to the file being edited, empty if not saved yet
-    #[data(ignore)]
-    current_file_info: Option<FileInfo>,
-}
-
-impl AppData {
-    /// Creates a new, blank application state.
-    pub fn new() -> AppData {
-        AppData {
-            network: Network::new(),
-            current_file_info: None,
-        }
-    }
-
-    /// Saves the current network to the specified file.
-    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
-        let mut file = File::create(path).context("Failed to open file for saving")?;
-        let json = self.network.to_json();
-        serde_json::to_writer_pretty(&mut file, &json).context("failed to write JSON")?;
-        Ok(())
-    }
-
-    /// Returns a lens to the network.
-    pub fn network_lens() -> impl Lens<Self, Network> {
-        druid::lens!(Self, network)
-    }
-}
 
 const FILE_TYPES: &[FileSpec] = &[FileSpec::new("Artifice JSON", &["json"])];
 
@@ -220,7 +173,23 @@ impl AppDelegate<AppData> for Delegate {
                 );
             }
 
-            //data.save_to_json().unwrap();
+            Handled::Yes
+        } else if cmd.is(druid::commands::OPEN_FILE) {
+            let file_info = cmd.get_unchecked(druid::commands::OPEN_FILE);
+            // TODO if the current document is not saved, show save/discard/cancel dialog
+            // TODO if opening fails, don't replace current document
+            // TODO
+            // load the json
+            match data.load(file_info.path()) {
+                Ok(_) => {
+                    data.current_file_info = Some(file_info.clone());
+                    info!("opened {}", file_info.path().display());
+                }
+                Err(e) => {
+                    error!("error opening file: {:?}", e);
+                }
+            }
+
             Handled::Yes
         } else {
             println!("cmd forwarded: {:?}", cmd);
@@ -229,100 +198,16 @@ impl AppDelegate<AppData> for Delegate {
     }
 }
 
-type NodeList = Arc<Vec<Node>>;
-
-/// Formatter that automatically renames the inputted name if it clashes with another node.
-struct NodeIdentFormatter;
-
-impl Formatter<Atom> for NodeIdentFormatter {
-    fn format(&self, name: &Atom) -> String {
-        name.to_string()
-    }
-
-    fn validate_partial_input(&self, input: &str, _sel: &Selection) -> Validation {
-        Validation::success()
-        /*if let Some(unique_name) = make_unique_name(input, self.siblings.iter().map(|n| n.name())) {
-            Validation::success().change_text(unique_name)
-        } else {
-            Validation::success()
-        }*/
-    }
-
-    fn value(&self, input: &str) -> Result<Atom, ValidationError> {
-        Ok(Atom::from(input))
-    }
-}
-
-/// Controller in charge of ensuring that the name of a node is unique within a list of siblings.
-struct NodeRenameController;
-
-impl<W: Widget<(NodeList, Node)>> Controller<(NodeList, Node), W> for NodeRenameController {
-    fn event(
-        &mut self,
-        child: &mut W,
-        ctx: &mut EventCtx,
-        event: &Event,
-        data: &mut (NodeList, Node),
-        env: &Env,
-    ) {
-        let old = data.1.clone();
-        child.event(ctx, event, data, env);
-        if !old.same(&data.1) {
-            data.1.name = make_unique_name(data.1.name.clone(), data.0.iter().map(|n| &n.name));
-        }
-    }
-}
-
-pub fn node_ui(depth: u32) -> impl Widget<(NodeList, Node)> {
-    let indent = Insets::new((depth * 10) as f64, 0.0, 0.0, 0.0);
-    let mut vbox = Flex::column().cross_axis_alignment(CrossAxisAlignment::Start);
-
-    // name row
-    vbox.add_child(
-        Flex::row()
-            .with_child(Label::new("Name").padding(indent).fix_width(200.0))
-            .with_flex_child(
-                ValueTextBox::new(TextBox::new(), NodeIdentFormatter)
-                    .lens(lens!(Node, name))
-                    .lens(lens!((NodeList, Node), 1))
-                    .controller(NodeRenameController)
-                    .expand_width(),
-                1.0,
-            ),
-    );
-
-    // button to add a child
-    vbox.add_child(
-        Button::new("Add child")
-            .on_click(|_, data: &mut (NodeList, Node), _| {
-                data.1.add_child("node".into());
-            })
-            .padding(indent),
-    );
-
-    // children
-    vbox.add_child(
-        List::new(move || node_ui(depth + 1)).lens(druid::lens::Identity.map(
-            |(_, node): &(NodeList, Node)| (node.children.clone(), node.children.clone()),
-            |(_, node): &mut (NodeList, Node), (_, new): (NodeList, NodeList)| {
-                node.children = new;
-            },
-        )),
-    );
-
-    vbox
-}
-
 pub fn ui() -> impl Widget<AppData> {
     let mut root = Flex::column().cross_axis_alignment(CrossAxisAlignment::Start);
 
     root.add_child(
         node_ui(0)
             .lens(druid::lens::Identity.map(
-                |net: &Network| (Arc::new(Vec::new()), net.root().clone()),
+                |net: &Network| (Arc::new(Vec::new()), net.root.node.clone()),
                 |net: &mut Network, (_, new): (_, Node)| {
-                    net.root = new;
-                }
+                    net.root.node = new;
+                },
             ))
             .controller(UndoRedoController::new())
             .lens(AppData::network_lens())
@@ -331,19 +216,9 @@ pub fn ui() -> impl Widget<AppData> {
 
     root.add_child(
         TreeView::new(|| Label::new("Node"))
-            .lens(druid::lens::Identity.map(
-                |net: &Network| {
-                    TreeSelectionModel {
-                        selection: net.selection.clone(),
-                        node: net.root.clone()
-                    }
-                },
-                |net: &mut Network, model| {
-                    net.root = model.node;
-                    net.selection = model.selection;
-                }
-            ))
+            .lens(Network::tree_root_lens())
             .lens(AppData::network_lens())
+            .fix_width(600.0),
     );
 
     root
