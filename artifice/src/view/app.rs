@@ -1,16 +1,15 @@
 //! Root application view
 use crate::{
     data::{atom::Atom, network::Network, node::Node, AppData},
-    view::node::node_ui,
-    widgets::tree::TreeView,
+    view::node::{node_ui, tree_node_label},
+    widgets::tree::{TreeNodeData, TreeView},
 };
 use anyhow::Context;
 use druid::{
     commands::{REDO, UNDO},
     lens,
     text::{
-        format::{Formatter, Validation, ValidationError},
-        Selection,
+        Formatter, Validation, ValidationError, Selection,
     },
     widget::{
         Button, Controller, CrossAxisAlignment, Flex, Label, List, MainAxisAlignment, TextBox,
@@ -18,7 +17,7 @@ use druid::{
     },
     AppDelegate, BoxConstraints, Command, Data, DelegateCtx, Env, Event, EventCtx,
     FileDialogOptions, FileInfo, FileSpec, Handled, Insets, LayoutCtx, Lens, LensExt, LifeCycle,
-    LifeCycleCtx, LocalizedString, MenuDesc, MenuItem, PaintCtx, Size, SysMods, Target, UpdateCtx,
+    LifeCycleCtx, LocalizedString, Menu, MenuItem, PaintCtx, Size, SysMods, Target, UpdateCtx,
     Widget, WidgetExt, WidgetPod,
 };
 use std::{fs::File, path::Path, sync::Arc};
@@ -215,58 +214,60 @@ pub fn ui() -> impl Widget<AppData> {
     );
 
     root.add_child(
-        TreeView::new(|| Label::new("Node"))
+        TreeView::new(|| tree_node_label())
             .lens(Network::tree_root_lens())
             .lens(AppData::network_lens())
             .fix_width(600.0),
     );
 
-    root
-    //root.debug_paint_layout()
+    //root
+    root.debug_widget_id()
 }
 
-pub fn application_menu() -> MenuDesc<AppData> {
-    MenuDesc::new(LocalizedString::new("artifice").with_placeholder("artifice"))
-        .append(
-            MenuDesc::new(LocalizedString::new("artifice.file-menu").with_placeholder("File"))
-                .append(
+pub fn application_menu() -> Menu<AppData> {
+    Menu::new(LocalizedString::new("artifice").with_placeholder("artifice"))
+        .entry(
+            Menu::new(LocalizedString::new("artifice.file-menu").with_placeholder("File"))
+                .entry(
                     MenuItem::new(
                         LocalizedString::new("artifice.open").with_placeholder("Open..."),
+                    )
+                    .command(
                         druid::commands::SHOW_OPEN_PANEL.with(get_default_file_dialog_options()),
                     )
                     .hotkey(SysMods::Cmd, "o"),
                 )
-                .append(
-                    MenuItem::new(
-                        LocalizedString::new("artifice.save").with_placeholder("Save"),
-                        druid::commands::SAVE_FILE,
-                    )
-                    .hotkey(SysMods::Cmd, "s"),
+                .entry(
+                    MenuItem::new(LocalizedString::new("artifice.save").with_placeholder("Save"))
+                        .command(druid::commands::SAVE_FILE)
+                        .hotkey(SysMods::Cmd, "s"),
                 )
-                .append(
+                .entry(
                     MenuItem::new(
                         LocalizedString::new("artifice.save-as").with_placeholder("Save as..."),
+                    )
+                    .command(
                         druid::commands::SHOW_SAVE_PANEL.with(get_default_file_dialog_options()),
                     )
                     .hotkey(SysMods::CmdShift, "s"),
                 )
-                .append_separator()
-                .append(MenuItem::new(
-                    LocalizedString::new("artifice.quit").with_placeholder("Quit"),
-                    druid::commands::QUIT_APP,
-                )),
+                .separator()
+                .entry(
+                    MenuItem::new(LocalizedString::new("artifice.quit").with_placeholder("Quit"))
+                        .command(druid::commands::QUIT_APP),
+                ),
         )
-        .append(
-            MenuDesc::new(LocalizedString::new("artifice.edit-menu").with_placeholder("Edit"))
-                .append(druid::platform_menus::common::undo())
-                .append(druid::platform_menus::common::redo())
-                .append_separator()
-                .append(druid::platform_menus::common::cut())
-                .append(druid::platform_menus::common::copy())
-                .append(druid::platform_menus::common::paste())
-                .append(MenuItem::new(
-                    LocalizedString::new("artifice.redo").with_placeholder("Redo"),
-                    druid::commands::REDO,
-                )),
+        .entry(
+            Menu::new(LocalizedString::new("artifice.edit-menu").with_placeholder("Edit"))
+                .entry(druid::platform_menus::common::undo())
+                .entry(druid::platform_menus::common::redo())
+                .separator()
+                .entry(druid::platform_menus::common::cut())
+                .entry(druid::platform_menus::common::copy())
+                .entry(druid::platform_menus::common::paste())
+                .entry(
+                    MenuItem::new(LocalizedString::new("artifice.redo").with_placeholder("Redo"))
+                        .command(druid::commands::REDO),
+                ),
         )
 }

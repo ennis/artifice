@@ -31,8 +31,34 @@
       <sourceFolder url="file://$MODULE_DIR$/graal/macros/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/graal/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/artifice/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-cairo/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-cairo/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-common/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-common/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-common/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-coregraphics/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-coregraphics/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-direct2d/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-direct2d/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-svg/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-svg/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-web/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-web/examples/basic/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-web/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/bitflags-96817e0194920117/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/crc32fast-b83cb2b36edd6929/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/libc-b31ca4ff826cf7c9/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/log-df5efd264688e667/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/proc-macro2-69ce02784281f132/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/syn-cd7fb322f71e1f3a/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/wasm-bindgen-a036c96b408775c0/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/wasm-bindgen-shared-eb9f625d5e15ef42/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/winapi-e5f120eec1400865/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/winapi-1c07822d4166010d/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kyute-shell/examples" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/ext/piet/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

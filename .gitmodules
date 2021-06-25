@@ -1,3 +1,9 @@
 [submodule "ext/winit"]
 	path = ext/winit
 	url = git@github.com:ennis/winit.git
+[submodule "ext/druid"]
+	path = ext/druid
+	url = git@github.com:ennis/druid.git
+[submodule "ext/piet"]
+	path = ext/piet
+	url = git@github.com:ennis/piet.git

@@ -6,6 +6,13 @@ use druid::{
     UpdateCtx, Widget, WidgetPod, Data
 };
 
+// TODO:
+// - a proper "stepper" widget
+// - multi-dimensional data editors (vec2/vec3/vec4)
+// - button boxes
+// - form layout
+// - 3D views
+
 
 /// Rebuilds a widget with the provided closure whenever the data changes.
 pub struct RebuildOnDataChange<T, W, F> {

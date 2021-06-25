@@ -10,8 +10,8 @@ fn main() {
         .with_span_events(tracing_subscriber::fmt::format::FmtSpan::ACTIVE)
         .init();
 
-    let main_window = WindowDesc::new(app::ui)
-        .menu(app::application_menu())
+    let main_window = WindowDesc::new(app::ui())
+        .menu(|_,_,_| app::application_menu())
         .title("Artifice");
 
     let data = AppData::new();

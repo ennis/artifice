@@ -1859,4 +1859,13 @@ fn main() {
 # Bring graal to a higher level
 The current frame abstraction for graal still doesn't know enough about the rendering to be optimal:
 - it reallocates new resources for transients on every frame, even though they could be reused
-    - this was made so that the graph could change on every frame,
+    - this was made so that the graph could change on every frame
+  
+  
+# Druid: provide a way to render 3D graphics with graal
+- Ideally, this would be a `RenderWidget`, that implements the rendering of the scene
+    - Provide a new trait, `Widget3D` with a `render` method that takes a `graal::Frame`
+    - Problem: it's going to be hard to draw with vulkan in the middle of a Direct2D BeginDraw/EndDraw
+        -> 3D rendering will not follow the widget drawing order
+
+- First target: clear the region of the swapchain, with vulkan

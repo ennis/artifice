@@ -136,6 +136,7 @@ where
 {
     fn event(&mut self, ctx: &mut EventCtx, event: &Event, data: &mut TreeNodeData<T>, env: &Env) {
         let prev_expanded = self.expanded;
+        self.widget.event(ctx, event, data, env);
         self.toggle.event(ctx, event, &mut self.expanded, env);
         for (i, c) in self.children.iter_mut().enumerate() {
             data.with_child_data_mut(i, |child_data| {

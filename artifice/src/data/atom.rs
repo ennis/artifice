@@ -3,7 +3,7 @@ use string_cache::DefaultAtom;
 use std::fmt;
 
 /// Atom (interned string used for names)
-#[derive(Clone, Debug, Eq, PartialEq, Default, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, serde::Serialize)]
 pub struct Atom(DefaultAtom);
 
 impl Deref for Atom {

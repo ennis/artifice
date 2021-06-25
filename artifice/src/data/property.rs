@@ -1,8 +1,9 @@
 use crate::data::atom::Atom;
 use druid::{Data, Lens};
+use crate::data::Value;
 
 /// Node property.
-#[derive(Clone, Debug, serde::Serialize, Data, Lens)]
+#[derive(Clone, Debug, Data, Lens)]
 pub struct Property {
     /// Name of the property. Unique among all properties of a node.
     #[lens(name = "name_lens")]
@@ -12,10 +13,9 @@ pub struct Property {
     #[lens(name = "ty_lens")]
     pub ty: Atom,
 
-    /// Value of the property. It may be null if
+    /// Value of the property.
     #[lens(name = "value_lens")]
-    #[data(same_fn = "PartialEq::eq")]
-    pub value: serde_json::Value,
+    pub value: Value,
 }
 
 impl Property {

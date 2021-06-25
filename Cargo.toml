@@ -13,7 +13,7 @@ members = [
     "kyute-iml",    # user interface library
     "kyute-shell",    # user interface library - windowing, drawing and system integration
 ]
-exclude = ["ext/druid", "ext/directx-rs", "ext/winit"]
+exclude = ["ext/druid", "ext/piet", "ext/winit"]
 
 [profile.release]
 debug = true

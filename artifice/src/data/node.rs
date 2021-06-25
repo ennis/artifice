@@ -5,7 +5,6 @@ use crate::{
     },
     widgets::tree::TreeNodeModel,
 };
-use anyhow::anyhow;
 use druid::{Data, Lens};
 use serde_json::json;
 use std::sync::Arc;
