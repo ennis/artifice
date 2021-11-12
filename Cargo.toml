@@ -12,8 +12,9 @@ members = [
     "kyute",    # user interface library - widgets and application architecture
     "kyute-iml",    # user interface library
     "kyute-shell",    # user interface library - windowing, drawing and system integration
+    "kyute/macros"
 ]
-exclude = ["ext/druid", "ext/piet", "ext/winit"]
+exclude = ["ext/winit"]
 
 [profile.release]
 debug = true

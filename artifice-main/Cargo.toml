@@ -14,7 +14,6 @@ graal = { path = "../graal" }
 glam = "0.15.2"
 serde = { version = "1", features = ["derive"], optional = true }
 native-dialog = "0.5.5"
-druid = { path = "../ext/druid/druid", features = ["im"] }
 serde_json = "1.0"
 anyhow = "1.0"
 tracing = "0.1.26"
