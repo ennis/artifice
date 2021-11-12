@@ -56,6 +56,15 @@
       <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/wasm-bindgen-shared-eb9f625d5e15ef42/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/winapi-e5f120eec1400865/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/winapi-1c07822d4166010d/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/bitflags-40280b3ed7a2f4d1/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/crc32fast-fb928f202d075374/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/libc-b4716a83eb3ade8d/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/log-31bac88202ced75d/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/proc-macro2-d97faacf008b61bc/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/syn-1695f9989cbbe201/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/wasm-bindgen-3387492ac111760c/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/wasm-bindgen-shared-b3fd84c42630918f/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/winapi-8d9daab83f99916f/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kyute-shell/examples" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/ext/piet/target" />

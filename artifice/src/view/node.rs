@@ -67,6 +67,15 @@ pub fn node_ui(depth: u32) -> impl Widget<(NodeList, Node)> {
     let indent = Insets::new((depth * 10) as f64, 0.0, 0.0, 0.0);
     let mut vbox = Flex::column().cross_axis_alignment(CrossAxisAlignment::Start);
 
+    /*ui! {
+        VBox {
+            Row {
+                Label("name"),
+                TextEdit(name: \node.name, onChange: |name| { if validate(list, name) { \node.name = name; })
+            }
+        }
+    }*/
+
     // name row
     vbox.add_child(
         Flex::row()
