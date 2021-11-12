@@ -66,6 +66,7 @@
       <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/wasm-bindgen-shared-b3fd84c42630918f/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/winapi-8d9daab83f99916f/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kyute-shell/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kyute/macros/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/ext/piet/target" />
     </content>
