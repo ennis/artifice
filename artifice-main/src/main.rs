@@ -1,6 +1,5 @@
 
 use artifice::data::AppData;
-use druid::{AppLauncher, WindowDesc};
 use artifice::view::app;
 
 fn main() {
