@@ -2,10 +2,6 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/ext/directx-rs" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/ext/druid" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/ext/piet" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/ext/piet/piet/snapshots" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/ext/winit" vcs="Git" />
   </component>
 </project>
