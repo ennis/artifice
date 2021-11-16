@@ -1,0 +1,13 @@
+
+
+TODO:
+
+- Fix validation errors
+
+    Nov 14 19:07:55.525 ERROR frame: Validation Error: [ VUID-VkImageMemoryBarrier-synchronization2-03857 ] Object 0: handle = 0x2cc5b4f3938, type = VK_OBJECT_TYPE_COMMAND_BUFFER; | MessageID = 0x1feed437 | vkCmdPipelineBarrier(): pImageMemoryBarriers[0].image Barrier using VkImage VkImage 0xcd19f000000009a[skia render target@78] created with sharingMode VK_SHARING_MODE_CONCURRENT, has srcQueueFamilyIndex 0 (VALID) and dstQueueFamilyIndex 0 (VALID). Source or destination queue family must be ignored. The Vulkan spec states: If the synchronization2 feature is not enabled, and image was created with a sharing mode of VK_SHARING_MODE_CONCURRENT, at least one of srcQueueFamilyIndex and dstQueueFamilyIndex must be VK_QUEUE_FAMILY_IGNORED (https://vulkan.lunarg.com/doc/view/1.2.170.0/windows/1.2-extensions/vkspec.html#VUID-VkImageMemoryBarrier-synchronization2-03857) base_serial=78
+    Nov 14 19:07:55.525 ERROR frame: Validation Error: [ UNASSIGNED-CoreValidation-DrawState-SwapchainUnsupportedQueue ] Object 0: handle = 0x4c5b620000000007, type = VK_OBJECT_TYPE_SWAPCHAIN_KHR; | MessageID = 0xe958eb44 | vkQueuePresentKHR: Presenting pSwapchains[0] image without calling vkGetPhysicalDeviceSurfaceSupportKHR base_serial=78
+
+- Handle VK_ERROR_OUT_OF_DATE_KHR during context present
+    - figure out what to do (currently we panic) and how to pass back the result to the caller
+
+Done:
