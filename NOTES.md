@@ -1862,10 +1862,61 @@ The current frame abstraction for graal still doesn't know enough about the rend
     - this was made so that the graph could change on every frame
   
   
-# Druid: provide a way to render 3D graphics with graal
-- Ideally, this would be a `RenderWidget`, that implements the rendering of the scene
-    - Provide a new trait, `Widget3D` with a `render` method that takes a `graal::Frame`
-    - Problem: it's going to be hard to draw with vulkan in the middle of a Direct2D BeginDraw/EndDraw
-        -> 3D rendering will not follow the widget drawing order
+# MLR: draw calls
 
-- First target: clear the region of the swapchain, with vulkan
+We'd like draw calls to be something like this:
+```rust
+fn test() {
+    #[derive(mlr::ShaderArguments)]
+    #[repr(C)]
+    struct SceneArguments {
+        // uniform variables will be put in a single uniform buffer, at location 0
+        u_view_matrix: Mat4,
+        u_proj_matrix: Mat4,
+        u_view_proj_matrix: Mat4,
+        u_inverse_proj_matrix: Mat4,
+    }
+
+    #[derive(mlr::ShaderArguments)]
+    #[repr(C)]
+    struct MaterialArguments<'a> {
+        u_color: Vec4,
+        #[argument(sampled_image,binding=1)] t_color: TextureDescriptor<'a>
+    }
+
+    // must either borrow SceneArguments or copy, since we can't create
+    let scene_args = ArgumentBlock::new(SceneArguments {
+        u_view_matrix: (),
+        u_proj_matrix: (),
+        u_view_proj_matrix: (),
+        u_inverse_proj_matrix: ()
+    });
+
+    for batch in material_batches.iter() {
+        // argblock borrows image until the draw
+        let material_args = ArgumentBlock::new(
+            MaterialArguments {
+                u_color: (),
+                t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
+            });
+
+        for mesh in batch.objects.iter() {
+
+            // Q: is there a memory dependency between the args and the previous draw?
+            // -> we don't care, just create a pass on every
+            ctx.draw(&[&scene_args, &material_args])
+        }
+    }
+}
+```
+
+Problem: this render loop must be located outside of graal's command callbacks.
+Still, we don't want to create a graal pass for each draw call.
+Ideally: we want to coalesce draw calls that don't have memory dependencies between each other.
+Problem: how to determine if two draw calls have a memory dependency?
+
+context: store currently accessed resources, and access kind
+on draw: if read-after-write or write-after-read
+
+Proposal: coalesce draw calls if all bound resources are the same
+=> or rather: build the set of all resource groups, and resources: if they are the same 

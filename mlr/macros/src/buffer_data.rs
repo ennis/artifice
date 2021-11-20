@@ -1,4 +1,4 @@
-use crate::{ensure_repr_c, generate_field_offsets_and_sizes, FieldList, G};
+use crate::{ensure_repr_c, generate_field_offsets_and_sizes, FieldList, CRATE};
 use proc_macro2::TokenStream;
 use quote::quote;
 

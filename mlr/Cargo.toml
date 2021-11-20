@@ -1,0 +1,16 @@
+[package]
+name = "mlr"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+thiserror = "1.0.30"
+graal = { path = "../graal" }
+graal-spirv = { path = "../graal-spirv" }
+slotmap = "1.0.6"
+
+[dev-dependencies]
+inline-spirv = "0.1.2"
+lazy_static = "1.4.0"

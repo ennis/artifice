@@ -1,0 +1,28 @@
+[package]
+name = "mlr-plugin"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]
+
+[target.'cfg(NOT_A_PLATFORM)'.dependencies]
+rustc_ast = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_ast"}
+rustc_attr = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_attr"}
+rustc_codegen_ssa = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_codegen_ssa"}
+rustc_data_structures = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_data_structures"}
+rustc_driver = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_driver"}
+rustc_hir = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_hir"}
+rustc_middle = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_middle"}
+rustc_target = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_target"}
+rustc_span = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_span"}
+rustc_session = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_session"}
+rustc_errors = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_errors"}
+rustc_index = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_index"}
+rustc_interface = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_interface"}
+rustc_metadata = {path = "C:\\Users\\Alexandre\\.rustup\\toolchains\\nightly-x86_64-pc-windows-msvc\\lib\\rustlib\\rustc-src\\rust\\compiler\\rustc_metadata"}
+
+[package.metadata.rust-analyzer]
+rustc_private = true

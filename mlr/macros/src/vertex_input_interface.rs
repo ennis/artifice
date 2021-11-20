@@ -1,4 +1,4 @@
-use crate::{FieldList, G};
+use crate::{FieldList, CRATE};
 use darling::{util::Flag, FromDeriveInput, FromField};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;

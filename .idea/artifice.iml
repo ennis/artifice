@@ -28,7 +28,6 @@
       <sourceFolder url="file://$MODULE_DIR$/graal-fx/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/graal-fx/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal-bench/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/graal/macros/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/graal/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/artifice/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/ext/piet/piet-cairo/examples" isTestSource="false" />
@@ -67,6 +66,12 @@
       <sourceFolder url="file://$MODULE_DIR$/ext/piet/target/debug/build/winapi-8d9daab83f99916f/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kyute-shell/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kyute/macros/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/mlr-plugin/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/mlr-std/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/mlr/macros/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/mlr/macros/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/mlr/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/mlr/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/ext/piet/target" />
     </content>

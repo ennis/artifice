@@ -1,4 +1,4 @@
-use crate::{FieldList, G};
+use crate::{FieldList, CRATE};
 use darling::{
     util::{Flag, SpannedValue},
     FromDeriveInput, FromField,

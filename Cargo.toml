@@ -3,14 +3,17 @@ members = [
     "artifice", # Node, Ops and evaluator
     "artifice-main", # executable
     "artifice/macros", # macros
+    "mlr",    # the mid-level renderer
+    "mlr/macros",    # the mid-level renderer
+    "mlr-plugin",    # the mid-level renderer
+    "mlr-std",    # the mid-level renderer
     "graal",    # graphics resource abstraction layer
     "graal-bench",    # graphics resource abstraction layer - testbench
     #"graal-fx",    # graphics resource abstraction layer - effect files
-    "graal/macros", # graphics resource abstraction layer - proc macros
     "graal-spirv",    # graphics resource abstraction layer - SPIRV reflection utilities
     #"haikara", # shading stylization test
     "kyute",    # user interface library - widgets and application architecture
-    "kyute-iml",    # user interface library
+    #"kyute-iml",    # user interface library
     "kyute-shell",    # user interface library - windowing, drawing and system integration
     "kyute/macros"
 ]

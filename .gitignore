@@ -1,0 +1,4 @@
+/target/
+/docs/build/
+/.idea/
+/frame-*.json

@@ -10,4 +10,6 @@ TODO:
 - Handle VK_ERROR_OUT_OF_DATE_KHR during context present
     - figure out what to do (currently we panic) and how to pass back the result to the caller
 
+- Ensure that an image is in the correct layout before adding it to a group
+
 Done:

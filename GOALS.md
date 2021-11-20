@@ -1,4 +1,4 @@
-Artifice: a code base for graphics experiments with GPU.
++Artifice: a code base for graphics experiments with GPU.
 
 Current pain points when trying stuff with GPU:
 - write from scratch: lots of boilerplate code

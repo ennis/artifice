@@ -8,7 +8,7 @@
 #![recursion_limit = "256"]
 #![feature(proc_macro_diagnostic)]
 
-extern crate darling; // this is a _good crate_
+extern crate darling;
 extern crate proc_macro;
 extern crate quote;
 extern crate syn;
@@ -19,11 +19,11 @@ use syn::spanned::Spanned;
 
 //--------------------------------------------------------------------------------------------------
 struct CrateName;
-const G: CrateName = CrateName;
+const CRATE: CrateName = CrateName;
 
 impl ToTokens for CrateName {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        tokens.append(syn::Ident::new("graal", Span::call_site()))
+        tokens.append(syn::Ident::new("mlr", Span::call_site()))
     }
 }
 
@@ -77,10 +77,10 @@ fn derive_struct(
     result.into()
 }
 
-#[proc_macro_derive(DescriptorSetInterface, attributes(layout))]
-pub fn descriptor_set_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+#[proc_macro_derive(ShaderArguments, attributes(argument))]
+pub fn shader_arguments_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     derive_struct(
-        "DescriptorSetInterface",
+        "ShaderArguments",
         input,
         descriptor_set_interface::generate,
     )
