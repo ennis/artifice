@@ -185,16 +185,73 @@ impl Drop for Shader {
     }
 }
 
+struct PassImageDependency {
+    id: graal::ImageId,
+    access_mask: graal::vk::AccessFlags,
+    stage_mask: graal::vk::PipelineStageFlags,
+    initial_layout: graal::vk::ImageLayout,
+    final_layout: graal::vk::ImageLayout,
+}
 
+struct PassBufferDependency {
+    id: graal::BufferId,
+    access_mask: graal::vk::AccessFlags,
+    stage_mask: graal::vk::PipelineStageFlags,
+}
+
+pub(crate) struct PassDependencies {
+    images: Vec<PassImageDependency>,
+    buffers: Vec<PassBufferDependency>,
+    groups: Vec<graal::ResourceGroupId>,
+}
+
+impl PassDependencies {
+    pub(crate) fn new() -> PassDependencies {
+        PassDependencies {
+            images: vec![],
+            buffers: vec![],
+            groups: vec![]
+        }
+    }
+}
+
+/// Contains all data to create a descriptor set during a pass
+struct DescriptorSetInit {
+    layout: DescriptorSetLayoutId,
+    descriptor_data_offset: usize,
+}
+
+struct ArgumentBlockData {
+    descriptor_data: Vec<u8>,
+}
+
+enum Command {
+    BindDescriptorSet {
+        set: usize,
+        init: DescriptorSetInit
+    }
+}
+
+struct PendingDrawBatch {
+    // can descriptor sets be shared between passes? no
+    // once a batch is flushed, all descriptor sets are discarded
+    descriptor_data: Vec<u8>,
+    commands: Vec<Command>,
+    dependencies: PassDependencies,
+}
+
+// issues: images can be discarded before the pass has been built
+// solution: register dependencies to the context as you go
 
 impl Context {
 
-    fn flush_draw_calls(&mut self) {
+    fn flush_pending_draw_calls(&mut self) {
 
         let descriptor_cache = self.descriptor_cache.clone();
 
         self.context.add_graphics_pass("flush", move |pass| {
-            for img_dep in dependencies.images {
+
+            /*for img_dep in dependencies.images {
                 pass.reference_image(img_dep.id, img_dep.access_mask, img_dep.stage_mask, img_dep.initial_layout, img_dep.final_layout);
             }
             for buf_dep in dependencies.buffers {
@@ -202,7 +259,7 @@ impl Context {
             }
             for group_dep in dependencies.groups {
                 pass.reference_group(group_dep);
-            }
+            }*/
 
             pass.set_commands(move |ctx, cb| {
 
@@ -216,9 +273,37 @@ impl Context {
                 // -> referencing the descriptor set allocator => there should be one per "command builder" thread anyway
                 // -> referencing the data to create the descriptor set => it's just ResourceIds or vk::Buffers
 
+
                 // what to do with frame resources? descriptor sets, image views, etc.
                 // => graal could reclaim them automatically?
                 // => manage them manually anyway
+
+
+                // Proposal: rewrite resource aliasing
+                // => right now, memory assignment is done at the end of the frame
+                // => proposal: perform memory assignment "on the fly"
+                //      - find a compatible resource that is discarded
+                //
+                // Advantage: the memory is bound immediately, can use the resource in a descriptor
+                // Drawbacks: different behavior depending on the order of allocations
+                //      - alloc small, discard, alloc big => will allocate two memory blocks
+                //      - alloc big, discard, alloc small => will fit small inside big
+                //
+                // This kinda goes against the idea of "having a full view of the frame" for better
+                // optimizations.
+                //
+                // But: what about allocating the memory, and also *freeing* the memory block on the
+                // allocator side? (but not really "freeing", just saying that it can alias with other resources).
+
+
+                // Other proposal: remove resource aliasing in graal altogether.
+                // - maybe it's not the right place
+                // - it is, however, the only place where we can do it at such a low level
+                //  (directly aliasing the underlying memory blocks).
+                // - there's probably a shitton of bugs inside the algorithm anyway
+                //
+                // How to do it at a higher level?
+                // - when we already have a graph structure
 
                 let mut pipeline_layout = vk::PipelineLayout::default();
 

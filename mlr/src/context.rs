@@ -15,6 +15,7 @@ pub struct Context {
     pub(crate) context: graal::Context,
     pub(crate) descriptor_set_allocators: SlotMap<DescriptorSetLayoutId, DescriptorSetAllocator>,
     pub(crate) descriptor_set_layout_by_typeid: HashMap<TypeId, DescriptorSetLayoutId>,
+
 }
 
 impl Context {
@@ -39,7 +40,7 @@ impl Context {
     }
 }
 
-impl Context {
+/*impl Context {
     /// Root draw command
     pub fn draw(
         stages: &ShaderStages,
@@ -49,3 +50,4 @@ impl Context {
     ) {
     }
 }
+*/
