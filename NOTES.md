@@ -1908,6 +1908,48 @@ fn test() {
         }
     }
 }
+
+// what's annoying is that since resource allocation is delayed, it's impossible
+// to create the descriptor sets before the time we build the command buffers.
+// This means that we **invariably** end up with an Arc referencing something
+// in the pass callback: the data to create the descriptor set, and the descriptor set
+// allocator.
+//
+// Is this a problem?
+// -> referencing the descriptor set allocator => there should be one per "command builder" thread anyway
+// -> referencing the data to create the descriptor set => it's just ResourceIds or vk::Buffers
+
+
+// what to do with frame resources? descriptor sets, image views, etc.
+// => graal could reclaim them automatically?
+// => manage them manually anyway
+
+
+// Proposal: rewrite resource aliasing
+// => right now, memory assignment is done at the end of the frame
+// => proposal: perform memory assignment "on the fly"
+//      - find a compatible resource that is discarded
+//
+// Advantage: the memory is bound immediately, can use the resource in a descriptor
+// Drawbacks: different behavior depending on the order of allocations
+//      - alloc small, discard, alloc big => will allocate two memory blocks
+//      - alloc big, discard, alloc small => will fit small inside big
+//
+// This kinda goes against the idea of "having a full view of the frame" for better
+// optimizations.
+//
+// But: what about allocating the memory, and also *freeing* the memory block on the
+// allocator side? (but not really "freeing", just saying that it can alias with other resources).
+
+
+// Other proposal: remove resource aliasing in graal altogether.
+// - maybe it's not the right place
+// - it is, however, the only place where we can do it at such a low level
+//  (directly aliasing the underlying memory blocks).
+// - there's probably a shitton of bugs inside the algorithm anyway
+//
+// How to do it at a higher level?
+// - when we already have a graph structure
 ```
 
 Problem: this render loop must be located outside of graal's command callbacks.
@@ -1920,3 +1962,129 @@ on draw: if read-after-write or write-after-read
 
 Proposal: coalesce draw calls if all bound resources are the same
 => or rather: build the set of all resource groups, and resources: if they are the same 
+
+
+## Custom memory allocator
+Allocate blocks of 64 MB on device.
+Sub-allocate blocks.
+
+When allocating, pass last submitted pass serials. 
+E.g. serials 5 6 0 0. Meaning that we just submitted passes 0:5 and 1:6. 
+0:5 allocated block A(0:5)
+
+We want to allocate a block of memory for use in a subsequent pass.
+First, on which queue are we going to use the memory? If we want to use it on pass 
+
+We are at pass 0:7. 
+
+At this point, we don't have any information about the execution dependencies of the current pass, 
+so we can't really alias the allocation without potentially introducing false dependencies :(
+We do have, however, information about the execution dependencies of the previous pass on this queue (0:5).
+
+We know all execution dependencies of the previously submitted pass. 
+Which really doesn't matter, since the current pass (0:7) may not have any exec dep on the previously submitted pass...
+We basically have to rely on heuristics to alias the memory block.
+
+OR, just tell the users of the library that they should register all dependencies before allocating a block of memory 
+for the pass.
+=> it's an API nightmare: depending on the order of calls, you get different optimizations.
+
+
+
+Unfortunately, it's really easier to alias memory once we have information about the whole frame...
+
+
+What about a simple heuristic? Given a memory segment like this:
+
+111122224400011122
+
+We're at pass 5, want to allocate a block of size 10 -> find a segment so that `max(sn)` over the serial is the minimum.
+Pick `1111222244`, with `max(sn) == 4`. Then sync on pass #4 before accessing the resource for the first time.
+With a bit of luck, we might need to be syncing on #4 anyway because of another resource dependency.
+
+............................
+
+Note that currently transient allocation is probably broken: we only update the pass predecessors for XQ deps 
+(probably because within one queue, execution deps are between two stages)
+
+E.G
+
+SN #4: Read T0  - FRAGMENT_SHADER
+       Write C0 - FRAGMENT_SHADER
+Free T0
+Allocate T1
+SN #5: Read C0  - FRAGMENT_SHADER 
+       Write T1 - VERTEX_SHADER     // why not
+
+Execution deps:
+`#4:FRAGMENT_SHADER -> #5:FRAGMENT_SHADER` via C0
+
+Aliasing:
+T0: #4
+in pass #5: the required execution dependency for aliasing T1 with T0 is : `#4:FRAGMENT_SHADER -> #5:VERTEX_SHADER`,
+but the one that we inserted, and added to the reachability matrix, only accounts for the weaker `#4:FRAGMENT_SHADER -> #5:FRAGMENT_SHADER`!
+
+=> the current transient allocation algorithm is incomplete. To fix it: the reachability matrix should include source and destination stages.
+1000 passes : 1000 x 1000 / 2 * 8 => 4MB table
+
+`#4->#5: src_stage, dst_stage`
+when adding a barrier: 
+pass.preds.push((this pass, src, dst))
+
+problem: `#4->#5: VERTEX -> FRAGMENT` + `#5->#6: FRAGMENT->COMPUTE` doesn't mean `#4->#6: VERTEX -> COMPUTE`
+
+```
+M_i,j = (src_stage, dst_stage)
+
+* 4:VS->5:FS + 5:CAO->6:FS
+
+                         4: DI VI VS TCS TES GS FS EFT LFT CAO
+                                 <<X
+             5: DI VI VS TCS TES GS FS EFT LFT CAO
+                     <<Y            X>>                                          
+ 6: DI VI VS TCS TES GS FS EFT LFT CAO
+                        Y>>
+
+Y logically after X, so <<X->Y>> (4:VS->6:FS)
+
+4->6: look at 4-5, 5-6
+                    
+T_i,j 
+```
+
+```rust
+pub struct AllocationCreateDesc<'a> {
+    /// Name of the allocation, for tracking and debugging purposes
+    pub name: &'a str,
+    /// Vulkan memory requirements for an allocation
+    pub requirements: vk::MemoryRequirements,
+    /// Location where the memory allocation should be stored
+    pub location: MemoryLocation,
+    /// If the resource is linear (buffer / linear texture) or a regular (tiled) texture.
+    pub linear: bool,
+    /// Whether the memory must be available immediately.
+    pub no_wait: bool,
+}
+
+pub struct Allocation {
+    offset: u64,
+    size: u64,
+    memory_block_index: usize,
+    memory_type_index: usize,
+    device_memory: vk::DeviceMemory,
+    mapped_ptr: Option<std::ptr::NonNull<std::ffi::c_void>>,
+    wait_source: QueueSerialNumbers,
+    wait_src_stages: [vk::PipelineStageFlags; MAX_QUEUES] 
+}
+
+impl Allocator {
+    pub fn allocate(&mut self, current_serials: QueueSerialNumbers, desc: &AllocationCreateDesc) -> Result<Allocation>
+}
+```
+
+## Decision for memory aliasing
+The gist: memory aliasing as it is done right now forces us to defer the allocation of resources to the end of the frame.
+This prevents us from building and caching auxiliary structures such as descriptor sets and framebuffers, and overall 
+increases the complexity of the mid-level renderer, who has to carry the information to build descriptor sets until command buffer creation.
+Also, the current aliasing algorithm is incomplete as it doesn't take into account precise barriers between pipeline stages.
+

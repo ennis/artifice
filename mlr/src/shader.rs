@@ -98,17 +98,6 @@ unsafe impl<T: DescriptorSource, const N: usize> DescriptorSource for [T; N] {
     }
 }
 
-pub struct ArgumentBlock<'a> {
-    layout: DescriptorSetLayoutId,
-    refs: Vec<(ResourceId, graal::vk::PipelineStageFlags, graal::vk::PipelineStageFlags)>
-}
-
-impl<'a> ArgumentBlock<'a> {
-    pub fn get_resource_references(&self) {
-        //
-    }
-}
-
 pub trait ShaderArguments {
     const DESCRIPTOR_SET_LAYOUT_BINDINGS: &'static [vk::DescriptorSetLayoutBinding];
     /// TODO doc
@@ -221,8 +210,18 @@ struct DescriptorSetInit {
     descriptor_data_offset: usize,
 }
 
-struct ArgumentBlockData {
-    descriptor_data: Vec<u8>,
+pub struct ArgumentBlock<'a> {
+    layout: DescriptorSetLayoutId,
+    dependencies: PassDependencies,
+    descriptor_data_block: Vec<u8>
+}
+
+impl<'a> ArgumentBlock<'a> {
+    pub fn get_resource_references(&self) {
+        //
+    }
+
+    pub fn write_
 }
 
 enum Command {
@@ -232,105 +231,71 @@ enum Command {
     }
 }
 
-struct PendingDrawBatch {
+const MAX_DESCRIPTOR_SETS: usize = 8;
+
+pub(crate) struct Batch {
     // can descriptor sets be shared between passes? no
     // once a batch is flushed, all descriptor sets are discarded
     descriptor_data: Vec<u8>,
     commands: Vec<Command>,
-    dependencies: PassDependencies,
+    batch_index: usize,
+    descriptor_sets: [u64; MAX_DESCRIPTOR_SETS]
 }
-
-// issues: images can be discarded before the pass has been built
-// solution: register dependencies to the context as you go
 
 impl Context {
 
+    fn write_descriptor_data(&mut self, block: &ArgumentBlock) -> usize {
+        // problem: where is the descriptor data?
+    }
+
+    fn bind_argument_block(&mut self, set: usize, block: &ArgumentBlock) {
+        //self.ensure_batch_started();
+
+
+
+        if self.current_batch.descriptor_sets[set] != block.id {
+
+
+            batch.commands.push(Command::BindDescriptorSet {
+                 set,
+
+            })
+        }
+    }
+
     fn flush_pending_draw_calls(&mut self) {
-
         let descriptor_cache = self.descriptor_cache.clone();
-
-        self.context.add_graphics_pass("flush", move |pass| {
-
-            /*for img_dep in dependencies.images {
-                pass.reference_image(img_dep.id, img_dep.access_mask, img_dep.stage_mask, img_dep.initial_layout, img_dep.final_layout);
-            }
-            for buf_dep in dependencies.buffers {
-                pass.reference_buffer(buf_dep.id, buf_dep.access_mask, buf_dep.stage_mask);
-            }
-            for group_dep in dependencies.groups {
-                pass.reference_group(group_dep);
-            }*/
-
-            pass.set_commands(move |ctx, cb| {
-
-                // what's annoying is that since resource allocation is delayed, it's impossible
-                // to create the descriptor sets before the time we build the command buffers.
-                // This means that we **invariably** end up with an Arc referencing something
-                // in the pass callback: the data to create the descriptor set, and the descriptor set
-                // allocator.
-                //
-                // Is this a problem?
-                // -> referencing the descriptor set allocator => there should be one per "command builder" thread anyway
-                // -> referencing the data to create the descriptor set => it's just ResourceIds or vk::Buffers
-
-
-                // what to do with frame resources? descriptor sets, image views, etc.
-                // => graal could reclaim them automatically?
-                // => manage them manually anyway
-
-
-                // Proposal: rewrite resource aliasing
-                // => right now, memory assignment is done at the end of the frame
-                // => proposal: perform memory assignment "on the fly"
-                //      - find a compatible resource that is discarded
-                //
-                // Advantage: the memory is bound immediately, can use the resource in a descriptor
-                // Drawbacks: different behavior depending on the order of allocations
-                //      - alloc small, discard, alloc big => will allocate two memory blocks
-                //      - alloc big, discard, alloc small => will fit small inside big
-                //
-                // This kinda goes against the idea of "having a full view of the frame" for better
-                // optimizations.
-                //
-                // But: what about allocating the memory, and also *freeing* the memory block on the
-                // allocator side? (but not really "freeing", just saying that it can alias with other resources).
-
-
-                // Other proposal: remove resource aliasing in graal altogether.
-                // - maybe it's not the right place
-                // - it is, however, the only place where we can do it at such a low level
-                //  (directly aliasing the underlying memory blocks).
-                // - there's probably a shitton of bugs inside the algorithm anyway
-                //
-                // How to do it at a higher level?
-                // - when we already have a graph structure
-
-                let mut pipeline_layout = vk::PipelineLayout::default();
-
-                for command in batch.commands {
-
-                    match command {
-                        Command::BindDescriptorSet { set, block } => {
-                            let descriptor_set = descriptor_cache.create_descriptor_set(block);
-                            unsafe {
-                                ctx.vulkan_device().cmd_bind_descriptor_sets(
-                                    cb,
-                                    vk::PipelineBindPoint::GRAPHICS,
-                                    pipeline_layout,
-                                    set,
-                                    &[descriptor_set],
-                                    &[],
-                                );
-                            }
+        self.context.pass_commands(move |ctx, cb| {
+            let mut pipeline_layout = vk::PipelineLayout::default();
+            for command in batch.commands {
+                match command {
+                    Command::BindDescriptorSet { set, init } => {
+                        let descriptor_set = descriptor_cache.create_descriptor_set(block);
+                        unsafe {
+                            ctx.vulkan_device().cmd_bind_descriptor_sets(
+                                cb,
+                                vk::PipelineBindPoint::GRAPHICS,
+                                pipeline_layout,
+                                set,
+                                &[descriptor_set],
+                                &[],
+                            );
                         }
                     }
                 }
-            });
+            }
         });
+
+        self.context.end_pass();
     }
+
 
     pub fn draw(&mut self, arg_blocks: &[&ArgumentBlock], vertex_buffers: &[BufferView], index_buffer: Option<BufferView>)
     {
+        for (i,ab) in arg_blocks.iter().enumerate() {
+            self.bind_argument_block()
+        }
+
         let mut new_resource_groups = HashSet::new();
         let mut new_resources = HashSet::new();
 
@@ -355,6 +320,31 @@ impl Context {
     }
 }
 
+
+// RenderTask object
+// -> 'a ref to resources
+// implements RenderTask
+// ->
+
+// RenderTask object moved into the pass callback
+pub trait RenderTask<'a>
+{
+    /// Register resource dependencies.
+    /// It's important to be precise here.
+
+    fn register_dependencies(&self);
+
+    /// runs the pass
+    fn execute(&self, ctx: &mlr::DrawContext);
+}
+
+// e.g
+struct SceneRenderTask<'a> {
+    scene: &'a Scene,
+    camera: Camera,
+}
+
+
 fn test() {
     #[derive(mlr::ShaderArguments)]
     #[repr(C)]
@@ -373,27 +363,51 @@ fn test() {
         #[argument(sampled_image,binding=1)] t_color: TextureDescriptor<'a>
     }
 
-    // must either borrow SceneArguments or copy, since we can't create
-    let scene_args = ArgumentBlock::new(SceneArguments {
-        u_view_matrix: (),
-        u_proj_matrix: (),
-        u_view_proj_matrix: (),
-        u_inverse_proj_matrix: ()
+
+    // issue: the draw pass doesn't know the resources used inside
+    //
+    ctx.draw_pass(|| {
+
+        let scene_args = ctx.create_argument_block(SceneArguments {
+            u_view_matrix: (),
+            u_proj_matrix: (),
+            u_view_proj_matrix: (),
+            u_inverse_proj_matrix: ()
+        });
+
+        for batch in material_batches.iter() {
+            let material_args = ctx.create_argument_block(
+                MaterialArguments {
+                    u_color: (),
+                    t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
+                });
+
+            for mesh in batch.objects.iter() {
+
+                // 1000 objects, 4 materials
+                // => 4000 ArgumentBlocks
+                // => 4000 Arc<[u8]> alive until command buffer generation
+
+                let object_args = ctx.create_argument_block();
+
+                // Q: is there a memory dependency between the args and the previous draw?
+                // -> we don't care, just create a pass on every
+                ctx.draw(&[&scene_args, &material_args, &object_args])
+            }
+        }
     });
 
-    for batch in material_batches.iter() {
-        // argblock borrows image until the draw
-        let material_args = ArgumentBlock::new(
-            MaterialArguments {
-                u_color: (),
-                t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
-            });
+    // other solution: create argument blocks during command buffer generation
 
-        for mesh in batch.objects.iter() {
+    // problem: draw pass must specify dependencies
+    // problem: command generation callback must borrow stuff (scene?)
 
-            // Q: is there a memory dependency between the args and the previous draw?
-            // -> we don't care, just create a pass on every
-            ctx.draw(&[&scene_args, &material_args])
-        }
-    }
+        static_resource_group,
+
+        || {
+        // command generation callback
+
+
+    });
+
 }

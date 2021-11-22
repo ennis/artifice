@@ -1,6 +1,7 @@
 use crate::{
     descriptor::{DescriptorSetAllocator, DescriptorSetLayoutId, FragmentOutput},
     pipeline::GraphicsPipeline,
+    shader::Batch
 };
 use slotmap::SlotMap;
 use std::{
@@ -15,7 +16,7 @@ pub struct Context {
     pub(crate) context: graal::Context,
     pub(crate) descriptor_set_allocators: SlotMap<DescriptorSetLayoutId, DescriptorSetAllocator>,
     pub(crate) descriptor_set_layout_by_typeid: HashMap<TypeId, DescriptorSetLayoutId>,
-
+    pub(crate) current_batch: Batch,
 }
 
 impl Context {
