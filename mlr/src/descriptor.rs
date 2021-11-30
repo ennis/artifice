@@ -2,7 +2,7 @@ use crate::{context::Context, image::ImageAny, shader::ShaderArguments, Buffer, 
 use graal::vk;
 use graal_spirv as spirv;
 use slotmap::SlotMap;
-use std::{any::TypeId, collections::HashMap, mem};
+use std::{any::TypeId, collections::HashMap, mem, sync::Arc};
 
 //-----------------------------------------------------------------------------------------
 const DESCRIPTOR_POOL_PER_TYPE_COUNT: u32 = 1024;
@@ -18,14 +18,16 @@ slotmap::new_key_type! {
 struct TrackedDescriptorSet {
     /// vulkan handle
     handle: vk::DescriptorSet,
-    /// The batch index that last used this descriptor
-    batch: graal::QueueSerialNumbers,
+    /// The frame that last used this descriptor
+    frame: u64,
 }
 
 /// Allocator for descriptor sets of a specific layout.
 #[derive(Debug)]
 pub struct DescriptorSetAllocator {
     layout: vk::DescriptorSetLayout,
+    /// The "canonical" update template for the layout.
+    update_template: Option<vk::DescriptorUpdateTemplate>,
     pool_size_count: u32,
     pool_sizes: [vk::DescriptorPoolSize; 16],
     full_pools: Vec<vk::DescriptorPool>,
@@ -41,16 +43,45 @@ impl DescriptorSetAllocator {
     pub fn new(
         device: &graal::ash::Device,
         descriptor_set_layout_bindings: &[vk::DescriptorSetLayoutBinding],
+        update_template_entries: Option<&[vk::DescriptorUpdateTemplateEntry]>,
     ) -> DescriptorSetAllocator {
-        let descriptor_set_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
-            binding_count: descriptor_set_layout_bindings.len() as u32,
-            p_bindings: descriptor_set_layout_bindings.as_ptr(),
-            ..Default::default()
-        };
+        // --- create layout
         let layout_handle = unsafe {
+            let descriptor_set_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
+                binding_count: descriptor_set_layout_bindings.len() as u32,
+                p_bindings: descriptor_set_layout_bindings.as_ptr(),
+                ..Default::default()
+            };
             device
                 .create_descriptor_set_layout(&descriptor_set_layout_create_info, None)
                 .expect("failed to create descriptor set layout")
+        };
+
+        // --- optional: create canonical update template
+        let update_template = if let Some(update_template_entries) = update_template_entries {
+            unsafe {
+                let descriptor_update_template_create_info =
+                    vk::DescriptorUpdateTemplateCreateInfo {
+                        flags: vk::DescriptorUpdateTemplateCreateFlags::empty(),
+                        descriptor_update_entry_count: update_template_entries.len() as u32,
+                        p_descriptor_update_entries: update_template_entries.as_ptr(),
+                        template_type: vk::DescriptorUpdateTemplateType::DESCRIPTOR_SET,
+                        descriptor_set_layout: Default::default(),
+                        pipeline_bind_point: Default::default(),
+                        pipeline_layout: Default::default(),
+                        set: 0,
+                        ..Default::default()
+                    };
+                let update_template = device
+                    .create_descriptor_update_template(
+                        &descriptor_update_template_create_info,
+                        None,
+                    )
+                    .expect("failed to create descriptor update template");
+                Some(update_template)
+            }
+        } else {
+            None
         };
 
         let mut pool_sizes: [vk::DescriptorPoolSize; 16] = Default::default();
@@ -176,6 +207,7 @@ impl DescriptorSetAllocator {
             pool: None,
             free: vec![],
             used: vec![],
+            update_template,
         }
     }
 
@@ -183,7 +215,7 @@ impl DescriptorSetAllocator {
     pub(crate) fn allocate_set(
         &mut self,
         device: &graal::ash::Device,
-        batch: BatchSerialNumber,
+        frame: u64,
     ) -> vk::DescriptorSet {
         let handle = loop {
             let descriptor_pool = {
@@ -231,16 +263,16 @@ impl DescriptorSetAllocator {
             }
         };
 
-        self.used.push(TrackedDescriptorSet { handle, batch });
+        self.used.push(TrackedDescriptorSet { handle, frame });
         handle
     }
 
     /// Recycles all descriptor sets that are not in use anymore, given new completed serials.
     // TODO "recycle" instead? it doesn't actually free memory
-    pub fn recycle(&mut self, completed: graal::QueueSerialNumbers) {
+    pub fn recycle(&mut self, completed_frame: u64) {
         let mut i = 0;
         while i < self.used.len() {
-            if self.used[i].batch <= completed {
+            if self.used[i].frame <= completed_frame {
                 self.free.push(self.used.swap_remove(i).handle);
             } else {
                 i += 1;
@@ -249,45 +281,62 @@ impl DescriptorSetAllocator {
     }
 }
 
-impl Context {
-    /// Creates a descriptor set allocator.
-    pub fn create_descriptor_set_allocator(
+/// Cache that holds descriptor set layouts.
+///
+/// You can associate a layout to a typeid and query it by typeid.
+pub struct DescriptorSetLayoutCache {
+    device: Arc<graal::Device>,
+    allocators: SlotMap<DescriptorSetLayoutId, DescriptorSetAllocator>,
+    by_typeid: HashMap<TypeId, DescriptorSetLayoutId>,
+}
+
+impl DescriptorSetLayoutCache {
+    /// Creates a new, empty `DescriptorSetLayoutCache`.
+    pub fn new(device: Arc<graal::Device>) -> DescriptorSetLayoutCache {
+        DescriptorSetLayoutCache {
+            device,
+            allocators: SlotMap::with_key(),
+            by_typeid: Default::default(),
+        }
+    }
+
+    /// Creates a descriptor set layout and an associated allocator.
+    pub fn get_or_create_descriptor_set_layout(
         &mut self,
-        descriptor_set_layout_bindings: &[vk::DescriptorSetLayoutBinding],
         type_id: Option<TypeId>,
+        bindings: &[vk::DescriptorSetLayoutBinding],
+        update_template_entries: Option<&[vk::DescriptorUpdateTemplateEntry]>,
     ) -> (vk::DescriptorSetLayout, DescriptorSetLayoutId) {
-
-        let device = self.context.vulkan_device();
-        let mut allocators = &mut self.descriptor_set_allocators;
-
+        let device = &self.device.device;
+        let mut allocators = &mut self.allocators;
         let id = if let Some(type_id) = type_id {
-            *self
-                .descriptor_set_layout_by_typeid
-                .entry(type_id)
-                .or_insert_with(|| allocators.insert(DescriptorSetAllocator::new(device, layout)))
+            *self.by_typeid.entry(type_id).or_insert_with(|| {
+                allocators.insert(DescriptorSetAllocator::new(
+                    device,
+                    bindings,
+                    update_template_entries,
+                ))
+            })
         } else {
-            allocators.insert(DescriptorSetAllocator::new(device, layout))
+            // no typeid, don't
+            allocators.insert(DescriptorSetAllocator::new(
+                device,
+                bindings,
+                update_template_entries,
+            ))
         };
 
-        (self.descriptor_set_allocators.get(id).unwrap().layout, id)
+        (self.allocators.get(id).unwrap().layout, id)
     }
 
     /// Returns the descriptor set allocator for the given layout id.
-    pub(crate) fn descriptor_set_allocator_mut(
+    pub(crate) fn get_descriptor_set_allocator(
         &mut self,
         id: DescriptorSetLayoutId,
     ) -> &mut DescriptorSetAllocator {
-        self.descriptor_set_allocators.get_mut(id).unwrap()
-    }
-
-    pub(crate) fn create_descriptor_set_allocator_from_shader_arguments<T: ShaderArguments>(
-        &mut self,
-    ) -> (vk::DescriptorSetLayout, DescriptorSetLayoutId) {
-        self.create_descriptor_set_allocator(T::DESCRIPTOR_SET_LAYOUT_BINDINGS, Some(T::type_id()))
+        self.allocators.get_mut(id).unwrap()
     }
 }
-
-
 
 pub enum AttachmentLoadOp {
     Load,

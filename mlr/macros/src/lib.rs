@@ -30,68 +30,28 @@ impl ToTokens for CrateName {
 type FieldList = syn::punctuated::Punctuated<syn::Field, syn::Token![,]>;
 
 //--------------------------------------------------------------------------------------------------
-
-mod buffer_data;
+mod vertex_data;
 mod descriptor_set_interface;
-mod fragment_output_interface;
+//mod fragment_output_interface;
 mod struct_layout;
-mod vertex_input_interface;
-//mod pipeline_interface;
-
-pub(crate) use struct_layout::{ensure_repr_c, generate_field_offsets_and_sizes};
-
-fn derive_struct(
-    name: &str,
-    input: proc_macro::TokenStream,
-    generator: fn(&syn::DeriveInput, &FieldList) -> proc_macro2::TokenStream,
-) -> proc_macro::TokenStream {
-    let derive_input: syn::DeriveInput = syn::parse(input).expect("couldn't parse item");
-
-    let result = match derive_input.data {
-        syn::Data::Struct(ref s) => {
-            let fields = match s.fields {
-                syn::Fields::Named(ref fields_named) => &fields_named.named,
-                syn::Fields::Unnamed(ref fields_unnamed) => &fields_unnamed.unnamed,
-                syn::Fields::Unit => {
-                    derive_input
-                        .span()
-                        .unwrap()
-                        .error("`{}` cannot be derived on unit structs")
-                        .emit();
-                    return Default::default();
-                }
-            };
-
-            generator(&derive_input, fields)
-        }
-        _ => {
-            derive_input
-                .span()
-                .unwrap()
-                .error(format!("`{}` can only be derived for struct types", name))
-                .emit();
-            return Default::default();
-        }
-    };
-
-    result.into()
-}
+//mod vertex_input_interface;
 
 #[proc_macro_derive(ShaderArguments, attributes(argument))]
 pub fn shader_arguments_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    derive_struct(
-        "ShaderArguments",
-        input,
-        descriptor_set_interface::generate,
-    )
+    descriptor_set_interface::derive(input).unwrap_or_else(|e| e.into_compile_error()).into()
 }
 
 #[proc_macro_derive(VertexData)]
 pub fn vertex_data_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    derive_struct("VertexData", input, buffer_data::generate_vertex_data)
+    vertex_data::derive(input).unwrap_or_else(|e| e.into_compile_error()).into()
 }
 
-#[proc_macro_derive(VertexInputInterface, attributes(layout))]
+#[proc_macro_derive(StructLayout)]
+pub fn struct_layout_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    struct_layout::derive(input).unwrap_or_else(|e| e.into_compile_error()).into()
+}
+
+/*#[proc_macro_derive(VertexInputInterface, attributes(layout))]
 pub fn vertex_input_interface_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     derive_struct(
         "VertexInputInterface",
@@ -107,7 +67,7 @@ pub fn fragment_output_interface_derive(input: proc_macro::TokenStream) -> proc_
         input,
         fragment_output_interface::generate,
     )
-}
+}*/
 
 /*
 #[proc_macro_derive(PipelineInterface, attributes(descriptor_set))]
@@ -120,14 +80,14 @@ pub fn pipeline_interface_derive(input: proc_macro::TokenStream) -> proc_macro::
 }
 */
 
-#[proc_macro_derive(StructuredBufferData)]
+/*#[proc_macro_derive(StructuredBufferData)]
 pub fn structured_buffer_data_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     derive_struct(
         "StructuredBufferData",
         input,
-        buffer_data::generate_structured_buffer_data,
+        vertex_data::generate_structured_buffer_data,
     )
-}
+}*/
 
 /*
 #[proc_macro_derive(VertexData)]

@@ -1,39 +1,45 @@
-use crate::context::Context;
-use std::sync::Arc;
-
-// issue: usage flags must be set beforehand?
+use crate::{context::Context, TrackingInfo};
+use std::{
+    cell::{Cell, RefCell},
+    sync::Arc,
+};
 
 pub struct ImageAny {
     device: Arc<graal::Device>,
     image: graal::ImageInfo,
-    group: Option<graal::ResourceGroupId>,
 }
 
 impl ImageAny {
     /// Creates a new, uninitialized resource.
     pub fn new(
-        context: &Context,
+        device: &Arc<graal::Device>,
         location: graal::MemoryLocation,
         create_info: graal::ImageResourceCreateInfo,
     ) -> ImageAny {
-        let device = context.device().clone();
+        let device = device.clone();
         let image = device.create_image("", location, &create_info);
-        ImageAny {
-            device,
-            image,
-            group: None,
-        }
+        ImageAny { device, image }
     }
 
-    /// Returns the group that this resource belongs to, or None if it doesn't belong to any resource
-    /// group.
-    pub fn resource_group(&self) -> Option<graal::ResourceGroupId> {
-        self.group
+    pub fn group_id(&self) -> Option<graal::ResourceGroupId> {
+        self.device.get_image_state(self.image.id).map(|s| s.group_id)
+    }
+
+    pub fn id(&self) -> graal::ImageId {
+        self.image.id
+    }
+
+    pub(crate) fn resource_id(&self) -> graal::ResourceId {
+        self.image.id.resource_id()
+    }
+
+    pub fn handle(&self) -> graal::vk::Image {
+        self.image.handle
     }
 }
 
 impl Drop for ImageAny {
     fn drop(&mut self) {
-        self.device.destroy_image(self.id)
+        self.device.destroy_image(self.image.id)
     }
 }

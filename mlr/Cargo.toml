@@ -10,6 +10,9 @@ thiserror = "1.0.30"
 graal = { path = "../graal" }
 graal-spirv = { path = "../graal-spirv" }
 slotmap = "1.0.6"
+bumpalo = "3.8.0"
+tracing = "0.1.29"
+mlr-macros = { path = "macros" }
 
 [dev-dependencies]
 inline-spirv = "0.1.2"

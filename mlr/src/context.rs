@@ -1,8 +1,12 @@
 use crate::{
-    descriptor::{DescriptorSetAllocator, DescriptorSetLayoutId, FragmentOutput},
+    descriptor::{
+        DescriptorSetAllocator, DescriptorSetLayoutCache, DescriptorSetLayoutId, FragmentOutput,
+    },
+    frame::Frame,
     pipeline::GraphicsPipeline,
-    shader::Batch
+    shader::Batch,
 };
+use graal::{vk, GpuFuture};
 use slotmap::SlotMap;
 use std::{
     any::TypeId,
@@ -10,23 +14,31 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+/// Transient objects that should be deleted or recycled once the frame has completed execution.
+struct FrameResources {
+    future: GpuFuture,
+    descriptor_sets: Vec<vk::DescriptorSet>,
+    framebuffers: Vec<vk::Framebuffer>,
+    image_views: Vec<vk::ImageView>,
+}
+
 /// MLR context.
 #[derive(Clone)]
 pub struct Context {
     pub(crate) context: graal::Context,
-    pub(crate) descriptor_set_allocators: SlotMap<DescriptorSetLayoutId, DescriptorSetAllocator>,
-    pub(crate) descriptor_set_layout_by_typeid: HashMap<TypeId, DescriptorSetLayoutId>,
-    pub(crate) current_batch: Batch,
+    pub(crate) arena: bumpalo::Bump,
+    pub(crate) descriptors: DescriptorSetLayoutCache,
 }
 
 impl Context {
     /// Creates a new context.
     pub fn new(device: graal::Device) -> Context {
         let context = graal::Context::with_device(device);
+        let device = context.device().clone();
         Context {
             context,
-            descriptor_set_allocators: SlotMap::with_key(),
-            descriptor_set_layout_by_typeid: Default::default(),
+            arena: Default::default(),
+            descriptors: DescriptorSetLayoutCache::new(device),
         }
     }
 
@@ -36,19 +48,7 @@ impl Context {
     }
 
     /// Returns a reference to the underlying `VkDevice`
-    pub fn vulkan_device(&self) -> &Arc<graal::Device> {
-        self.context.device()
+    pub fn vulkan_device(&self) -> &graal::ash::Device {
+        &self.context.device().device
     }
 }
-
-/*impl Context {
-    /// Root draw command
-    pub fn draw(
-        stages: &ShaderStages,
-        pipeline_params: &GraphicsPipelineParameters,
-
-        fragment_output: &FragmentOutput,
-    ) {
-    }
-}
-*/

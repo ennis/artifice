@@ -1883,30 +1883,31 @@ fn test() {
         u_color: Vec4,
         #[argument(sampled_image,binding=1)] t_color: TextureDescriptor<'a>
     }
+    
+    
+    ctx.start_pass( || {
+        // must either borrow SceneArguments or copy, since we can't create
+        let scene_args = ArgumentBlock::new(SceneArguments {
+            u_view_matrix: (),
+            u_proj_matrix: (),
+            u_view_proj_matrix: (),
+            u_inverse_proj_matrix: ()
+        });
 
-    // must either borrow SceneArguments or copy, since we can't create
-    let scene_args = ArgumentBlock::new(SceneArguments {
-        u_view_matrix: (),
-        u_proj_matrix: (),
-        u_view_proj_matrix: (),
-        u_inverse_proj_matrix: ()
-    });
+        for batch in material_batches.iter() {
+            // argblock borrows image until the draw
+            let material_args = ArgumentBlock::new(
+                MaterialArguments {
+                    u_color: (),
+                    t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
+                });
 
-    for batch in material_batches.iter() {
-        // argblock borrows image until the draw
-        let material_args = ArgumentBlock::new(
-            MaterialArguments {
-                u_color: (),
-                t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
-            });
-
-        for mesh in batch.objects.iter() {
-
-            // Q: is there a memory dependency between the args and the previous draw?
-            // -> we don't care, just create a pass on every
-            ctx.draw(&[&scene_args, &material_args])
+            for mesh in batch.objects.iter() {
+                // issue: validation that batch.texture is in the correct state here.
+                ctx.draw(&[&scene_args, &material_args])
+            }
         }
-    }
+    });
 }
 
 // what's annoying is that since resource allocation is delayed, it's impossible
@@ -2088,3 +2089,89 @@ This prevents us from building and caching auxiliary structures such as descript
 increases the complexity of the mid-level renderer, who has to carry the information to build descriptor sets until command buffer creation.
 Also, the current aliasing algorithm is incomplete as it doesn't take into account precise barriers between pipeline stages.
 
+Another option: allow manual (but optionally checked) resource aliasing, and let the application derive correct aliasing
+info from their own render graph.
+
+## Rendergraph-style API: in graal or MLR?
+
+Three features:
+- autosync
+- resource aliasing
+- pass reordering
+
+Any mix:
+Today: 
+- graal: autosync + aliasing
+- MLR: pass reordering (maybe)
+
+Proposal:
+- graal: autosync
+- MLR: render graph (reordering, aliasing)
+
+Problem: 
+efficient reordering and aliasing needs to consider memory dependencies between passes, so we end up building the 
+same kind of structures as the graal backend.
+=> what **is** this data structure? an unordered graph of passes with memory dependencies between them.
+
+
+Problem: there is not a single metric to optimize for pass reordering (maximize occupancy? minimize peak memory usage?)
+-> the quality of memory aliasing dependends on how passes are ordered
+-> let the app decide, reorder their passes and alias memory as they see fit
+
+
+Quoting webgpu about autosync:
+
+    Inserting optimal Vulkan/D3D12 barriers at the right times appears to be a complex task, especially when taking multiple independent queues into consideration.
+    It requires knowledge ahead of time on how a resource is going to be used in the future, and thus would need us to defer actual command buffer recording until we get more data on how resources are used. 
+    This would add more CPU overhead to command recording.
+
+About aliasing: https://github.com/gpuweb/gpuweb/issues/63
+
+### Current system: autosync
+Currently, graal is a simple autosync system that takes as input an *ordered* list of passes that declare the resources
+that they access. They only access the last version of the resource. For each resource accessed this way, 
+graal automatically syncs on the last read or write (dependending on the requested access).
+Command submission must be delayed because the full sync is not known until all passes are submitted.
+
+Rule: the backend *should not* contain pass reordering, because there is not a single metric to optimize ordering.
+So pass reordering must come as a layer on top.
+
+
+
+Implementing memory aliasing on top? 
+Let's say that, at a higher level, we have a graph of draw ops (like a render graph of a compositing app). 
+Each op has an output image. 
+-> Determine op ordering.
+-> Determine which resources to alias with.
+
+Can we devise a more efficient autosync?
+
+### Proposal: keep current system
+- graal: autosync+aliasing 
+- above: pass reordering
+
+## Problem: descriptor sets and image views
+Not only we can't create descriptor sets in advance, but we can't even write the `VkDescriptorImageInfo` in advance, 
+because we must construct `VkImageViews`, and we don't have memory bound.
+
+Solution?
+* just go f*cking bindless already and forget this descriptor shit
+* 
+
+Decision? 
+* we want a simple API, where we don't have to specify passes: these should be inferred from draw calls
+* 
+
+## Tradeoffs: Render graph VS command stream
+* render graph: easier on the implementation, more precise barriers, automatic aliasing, but *very poor* API
+* command stream: needs rewrite, less precise barriers, limited memory aliasing, but *cleaner* API
+
+Basically, retained vs immediate tradeoffs.
+
+## Alternatively: don't use callbacks for command buffer recording
+Two phases: 
+- phase 1: create the dep graph
+- inter-phase: allocate transients, figure out barriers
+- phase 2: record commands
+
+Resources must live 

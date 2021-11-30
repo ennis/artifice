@@ -1,8 +1,10 @@
-use crate::{ensure_repr_c, generate_field_offsets_and_sizes, FieldList, CRATE};
+use crate::{struct_layout::ensure_repr_c_derive_input, CRATE};
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::spanned::Spanned;
+use crate::struct_layout::generate_repr_c_struct_layout;
 
-pub fn generate_structured_buffer_data(
+/*pub fn generate_structured_buffer_data(
     derive_input: &syn::DeriveInput,
     fields: &FieldList,
 ) -> TokenStream {
@@ -11,7 +13,7 @@ pub fn generate_structured_buffer_data(
     }
 
     let struct_name = &derive_input.ident;
-    let field_offsets_sizes = generate_field_offsets_and_sizes(derive_input);
+    let field_offsets_sizes = generate_repr_c_struct_layout(derive_input);
 
     let mut struct_fields = Vec::new();
     let mut layouts = Vec::new();
@@ -59,38 +61,53 @@ pub fn generate_structured_buffer_data(
             };
         }
     }
-}
+}*/
 
-pub fn generate_vertex_data(derive_input: &syn::DeriveInput, fields: &FieldList) -> TokenStream {
-    if let Err(e) = ensure_repr_c("VertexData", derive_input) {
-        return e;
-    }
+pub fn derive(input: proc_macro::TokenStream) -> Result<TokenStream, syn::Error> {
+    let derive_input: syn::DeriveInput = syn::parse(input)?;
 
-    let struct_name = &derive_input.ident;
-    let field_offsets_sizes = generate_field_offsets_and_sizes(derive_input);
+    // check for struct
+    let fields = match derive_input.data {
+        syn::Data::Struct(ref struct_data) => &struct_data.fields,
+        _ => {
+            return Err(syn::Error::new(
+                derive_input.span(),
+                "`VertexData` can only be derived on structs",
+            ));
+        }
+    };
 
-    let mut attribs = Vec::new();
+    // check for `#[repr(C)]`
+    ensure_repr_c_derive_input(&derive_input)?;
 
-    for (i, f) in fields.iter().enumerate() {
+    // generate field offset constant items
+    let struct_layout = generate_repr_c_struct_layout(&derive_input, &derive_input.vis)?;
+
+    // `VertexAttribute { format: <FieldType as VertexAttributeType>::FORMAT, offset: OFFSET_field_index }`
+    let attribs = fields.iter().enumerate().map(|(i, f)| {
         let field_ty = &f.ty;
-        let offset = &field_offsets_sizes.offsets[i];
+        let offset = &struct_layout.field_offsets[i];
         let offset = &offset.ident;
 
-        attribs.push(quote! {
-            #G::VertexAttribute {
-                format: <#field_ty as #G::VertexAttributeType>::FORMAT,
-                offset: Self::#offset as u32,
+        quote! {
+            #CRATE::VertexAttribute {
+                format: <#field_ty as #CRATE::VertexAttributeType>::FORMAT,
+                offset: #offset as u32,
             }
-        });
-    }
-
-    let field_offsets_sizes_impl = field_offsets_sizes.impl_block;
-
-    quote! {
-        #field_offsets_sizes_impl
-
-        unsafe impl #G::VertexData for #struct_name {
-            const ATTRIBUTES: &'static [#G::VertexAttribute] = &[#(#attribs,)*];
         }
-    }
+    });
+
+    let struct_name = &derive_input.ident;
+    let (impl_generics, ty_generics, where_clause) = derive_input.generics.split_for_impl();
+    let field_offsets = &struct_layout.field_offsets;
+    let field_sizes = &struct_layout.field_sizes;
+    Ok(quote! {
+        unsafe impl #impl_generics #CRATE::VertexData for #struct_name #ty_generics #where_clause {
+            const ATTRIBUTES: &'static [#CRATE::VertexAttribute] = {
+                #(#field_offsets)*
+                #(#field_sizes)*
+                &[#(#attribs,)*]
+            };
+        }
+    })
 }
