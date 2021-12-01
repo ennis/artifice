@@ -1,27 +1,27 @@
-use inline_spirv::{include_spirv, inline_spirv};
-use lazy_static::lazy_static;
 use crate::vk::ClearColorValue;
 use graal::{vk, ImageResourceCreateInfo};
+use inline_spirv::{include_spirv, inline_spirv};
+use lazy_static::lazy_static;
 use mlr::{
-    descriptor::{AttachmentLoadOp, AttachmentStoreOp},
+    descriptor::{AttachmentLoadOp, AttachmentStoreOp, ColorAttachment},
     image::ImageAny,
+    shader::ArgumentBlock,
+    shader::Shader
 };
-use mlr::frame::{ColorAttachment, PassBuilder, PassSubmitCtx, SampledImage};
-use mlr::pipeline::{ColorBlendState, GraphicsPipeline, GraphicsPipelineBuilder};
-use mlr::shader::ArgumentBlock;
-
-static BACKGROUND_SHADER_VERT: &[u32] = include_spirv!("../../graal-bench/shaders/background.vert", vert);
-static BACKGROUND_SHADER_FRAG: &[u32] = include_spirv!("../../graal-bench/shaders/background.frag", frag);
 
 lazy_static! {
-    static ref BACKGROUND_VERTEX_SHADER_MODULE: Shader = Shader::from_spirv_static(include_spirv!("../../graal-bench/shaders/background.vert", vert));
-    static ref BACKGROUND_FRAGMENT_SHADER_MODULE: Shader = Shader::from_spirv_static(include_spirv!("../../graal-bench/shaders/background.frag", frag));
+    static ref BACKGROUND_VERTEX_SHADER_MODULE: Shader = Shader::from_spirv_static(include_spirv!(
+        "../graal-bench/shaders/background.vert",
+        vert
+    ));
+    static ref BACKGROUND_FRAGMENT_SHADER_MODULE: Shader = Shader::from_spirv_static(
+        include_spirv!("../graal-bench/shaders/background.frag", frag)
+    );
 }
 
 #[test]
 fn test_image() {
     let device = graal::Device::new(None);
-
     let mut context = mlr::context::Context::new(device);
     let mut frame = context.start_frame();
 
@@ -45,50 +45,19 @@ fn test_image() {
             },
         );
 
-
-        // `mlr::Pass` returns an anonymous `impl Pass + 'a`.
-        let pass = mlr::pass! {
-            [background_image as mlr::ColorAttachment, group]
+        frame.submit_pass("draw_to_image", |pass_builder| {
+            let color_attachment = ColorAttachment::new(pass_builder, &image);
             move |ctx| {
-                // ... background_image is accessible here, as an object of type `mlr::ColorAttachment`.
-                // can borrow stuff as long as it lives for the duration of the frame
-                // what about resource groups?
-                // resource groups usually live for the duration of the frame, so they can be borrowed
-                // plus, when you "freeze" a resource in some state, you get the mlr::ColorAttachment or mlr::Texture that you need.
-
-                ctx.draw(...);
+                // TODO draw
+                color_attachment;
             }
-        };
-
-
-
-
-        /*frame.submit(MyBackgroundPass {
-            // and then you are fucked, because the image only lives for the scope starting at L27.
-            // pass objects cannot reference any local data.
-            // -> view objects? what about resource groups?
-            //
-            // Options:
-            // - the pass object doesn't borrow the resource
-            //      - but then it may be deleted before it is registered as a dependency
-            // - the pass object borrows, but during setup, create a `PassResources` object.
-            //      - X3 verbosity
-            //      - automatically derive the pass resources?
-            //          - now it's invisible to autocomplete...
-            // - Refcounted resources
-            //      - prevents marking them as unused until finalization of the frame, and thus prevents aliasing: NOPE
-            //
-            // FUCK THIS SHIT
-            //
-            // - Big ol' f*cking macro.
-            //
-            background_image: &image
-        })*/
+        });
     }
 
+    frame.finish();
 }
 
-#[test]
+/*#[test]
 fn test_scene() {
     #[derive(mlr::ShaderArguments)]
     #[repr(C)]
@@ -137,4 +106,4 @@ fn test_scene() {
 
     // alternatively: return an fn
     // see https://media.contentapi.ea.com/content/dam/ea/seed/presentations/wihlidal-halcyonarchitecture-notes.pdf
-}
+}*/

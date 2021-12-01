@@ -1,8 +1,9 @@
 //! Vertex-related types
 
 use graal::vk;
-use std::{marker::PhantomData, mem};
 use graal_spirv::typedesc::TypeDesc;
+use std::{marker::PhantomData, mem};
+use crate::buffer::BufferData;
 
 /// Describes the type of indices contained in an index buffer.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -72,7 +73,7 @@ impl From<f64> for Norm<u16> {
 macro_rules! impl_attrib_type {
     ($t:ty, $equiv:expr, $fmt:ident) => {
         unsafe impl VertexAttributeType for $t {
-            const EQUIVALENT_TYPE: TypeDesc<'static> = $equiv;
+            const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> = $equiv;
             const FORMAT: vk::Format = vk::Format::$fmt;
         }
     };
@@ -81,7 +82,10 @@ macro_rules! impl_attrib_type {
 macro_rules! impl_attrib_prim_type {
     ($t:ty, $prim:ident, $fmt:ident) => {
         unsafe impl VertexAttributeType for $t {
-            const EQUIVALENT_TYPE: TypeDesc<'static> = TypeDesc::Primitive(PrimitiveType::$prim);
+            const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> =
+                graal_spirv::typedesc::TypeDesc::Primitive(
+                    graal_spirv::typedesc::PrimitiveType::$prim,
+                );
             const FORMAT: vk::Format = vk::Format::$fmt;
         }
     };
@@ -90,10 +94,11 @@ macro_rules! impl_attrib_prim_type {
 macro_rules! impl_attrib_vector_type {
     ([$t:ty; $len:expr], $prim:ident, $fmt:ident) => {
         unsafe impl VertexAttributeType for [$t; $len] {
-            const EQUIVALENT_TYPE: TypeDesc<'static> = TypeDesc::Vector {
-                elem_ty: PrimitiveType::$prim,
-                len: $len,
-            };
+            const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> =
+                graal_spirv::typedesc::TypeDesc::Vector {
+                    elem_ty: graal_spirv::typedesc::PrimitiveType::$prim,
+                    len: $len,
+                };
             const FORMAT: vk::Format = vk::Format::$fmt;
         }
     };

@@ -3,7 +3,7 @@ pub mod context;
 pub mod descriptor;
 pub mod frame;
 pub mod image;
-pub mod pipeline;
+//pub mod pipeline;
 pub mod sampler;
 pub mod shader;
 pub mod utils;
@@ -15,6 +15,7 @@ extern crate self as mlr;
 pub use graal::vk;
 pub use mlr_macros::{ShaderArguments, StructLayout, VertexData};
 pub use shader::ShaderArguments;
+pub use descriptor::DescriptorBinding;
 pub use vertex::{VertexAttribute, VertexData};
 
 /*#[derive(Copy, Clone, Debug)]

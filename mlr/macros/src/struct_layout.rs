@@ -125,23 +125,6 @@ pub(crate) fn generate_repr_c_struct_layout(
         (offsets, sizes)
     };
 
-    // --- field layouts ---
-    // `FieldLayout { offset: OFFSET_<field_index>, size: SIZE_<field_index> }`
-    let field_layouts: Vec<_> = fields
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let field_ty = &f.ty;
-            let field_offset = &offsets[i].ident;
-
-            quote! {
-                #CRATE::utils::FieldLayout {
-                    offset: #field_offset,
-                    size: ::std::mem::size_of::<#field_ty>(),
-                }
-            }
-        })
-        .collect();
 
     // `<vis> struct __MyStruct_StructLayout { <fields...> }`
     let layout_struct_name = Ident::new(
@@ -190,9 +173,6 @@ pub(crate) fn generate_repr_c_struct_layout(
         }
     });
 
-    //let offsets_r = &offsets[..];
-    //let sizes_r = &sizes[..];
-
     let layout_expr = syn::parse_quote! {
         {
             #(#offsets)*
@@ -238,7 +218,7 @@ pub fn derive(input: proc_macro::TokenStream) -> Result<TokenStream, syn::Error>
 
     Ok(quote! {
         #layout_struct
-        unsafe impl #impl_generics #struct_name #ty_generics #where_clause {
+        impl #impl_generics #struct_name #ty_generics #where_clause {
             #vis const LAYOUT: #layout_struct_name = #layout_expr;
         }
     })

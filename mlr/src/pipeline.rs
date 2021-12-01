@@ -1,3 +1,4 @@
+use std::mem;
 use graal::vk;
 
 #[derive(Copy, Clone, Debug)]
@@ -467,34 +468,3 @@ pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
     pub color_blend_state: ColorBlendState<'b>,
     //pub dynamic_state: DynamicStateFlags,
 }*/
-
-pub struct GraphicsPipeline {
-
-}
-
-
-impl GraphicsPipeline {
-    pub fn new() {
-
-    }
-
-    pub fn builder() -> GraphicsPipelineBuilder {
-        GraphicsPipelineBuilder {
-
-        }
-    }
-}
-
-pub struct GraphicsPipelineBuilder {
-
-}
-
-impl GraphicsPipelineBuilder {
-
-    pub fn with_color_blend_state(mut self, color_blend_state: ColorBlendState) -> Self {
-        self
-    }
-
-
-    pub fn set_rasterization_state(mut self, rasterization_state: vk::PipelineRasterizationStateCreateInfo)
-}

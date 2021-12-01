@@ -1,8 +1,25 @@
-use crate::{context::Context, TrackingInfo};
-use std::{
-    cell::{Cell, RefCell},
-    sync::Arc,
-};
+use crate::context::Context;
+use std::sync::Arc;
+
+/// Marker trait for data that can be uploaded to a GPU buffer
+pub trait BufferData: 'static {
+    type Element;
+    fn len(&self) -> usize;
+}
+
+impl<T: Copy + 'static> BufferData for T {
+    type Element = T;
+    fn len(&self) -> usize {
+        1
+    }
+}
+
+impl<U: BufferData> BufferData for [U] {
+    type Element = U;
+    fn len(&self) -> usize {
+        (&self as &[U]).len()
+    }
+}
 
 // buffer on the GPU or CPU OR function result OR static data reference OR local owned data
 pub struct BufferAny {
@@ -11,7 +28,7 @@ pub struct BufferAny {
 }
 
 impl BufferAny {
-    /// Creates a new, uninitialized resource.
+    /// Creates a new, uninitialized buffer resource.
     pub fn new(
         device: &Arc<graal::Device>,
         location: graal::MemoryLocation,
@@ -24,7 +41,7 @@ impl BufferAny {
 
     pub fn group_id(&self) -> Option<graal::ResourceGroupId> {
         self.device
-            .get_buffer_state(self.image.id)
+            .get_buffer_state(self.buffer.id)
             .map(|s| s.group_id)
     }
 }

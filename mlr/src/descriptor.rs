@@ -1,8 +1,13 @@
-use crate::{context::Context, image::ImageAny, shader::ShaderArguments, Buffer, ContextCache};
+use crate::{
+    context::{Context, PassBuilder},
+    image::ImageAny,
+    shader::ShaderArguments,
+};
 use graal::vk;
 use graal_spirv as spirv;
+use mlr::context::RecordingContext;
 use slotmap::SlotMap;
-use std::{any::TypeId, collections::HashMap, mem, sync::Arc};
+use std::{any::TypeId, cell::Cell, collections::HashMap, mem, sync::Arc};
 
 //-----------------------------------------------------------------------------------------
 const DESCRIPTOR_POOL_PER_TYPE_COUNT: u32 = 1024;
@@ -25,7 +30,7 @@ struct TrackedDescriptorSet {
 /// Allocator for descriptor sets of a specific layout.
 #[derive(Debug)]
 pub struct DescriptorSetAllocator {
-    layout: vk::DescriptorSetLayout,
+    pub(crate) layout: vk::DescriptorSetLayout,
     /// The "canonical" update template for the layout.
     update_template: Option<vk::DescriptorUpdateTemplate>,
     pool_size_count: u32,
@@ -35,8 +40,6 @@ pub struct DescriptorSetAllocator {
     pool: Option<vk::DescriptorPool>,
     /// Descriptor sets not currently in use.
     free: Vec<vk::DescriptorSet>,
-    /// Descriptor sets that may be in use.
-    used: Vec<TrackedDescriptorSet>,
 }
 
 impl DescriptorSetAllocator {
@@ -206,16 +209,14 @@ impl DescriptorSetAllocator {
             full_pools: vec![],
             pool: None,
             free: vec![],
-            used: vec![],
             update_template,
         }
     }
 
-    /// Gets a descriptor set.
-    pub(crate) fn allocate_set(
+    /// Allocates a descriptor set.
+    pub(crate) fn allocate(
         &mut self,
         device: &graal::ash::Device,
-        frame: u64,
     ) -> vk::DescriptorSet {
         let handle = loop {
             let descriptor_pool = {
@@ -263,78 +264,17 @@ impl DescriptorSetAllocator {
             }
         };
 
-        self.used.push(TrackedDescriptorSet { handle, frame });
         handle
     }
 
-    /// Recycles all descriptor sets that are not in use anymore, given new completed serials.
-    // TODO "recycle" instead? it doesn't actually free memory
-    pub fn recycle(&mut self, completed_frame: u64) {
-        let mut i = 0;
-        while i < self.used.len() {
-            if self.used[i].frame <= completed_frame {
-                self.free.push(self.used.swap_remove(i).handle);
-            } else {
-                i += 1;
-            }
-        }
-    }
-}
-
-/// Cache that holds descriptor set layouts.
-///
-/// You can associate a layout to a typeid and query it by typeid.
-pub struct DescriptorSetLayoutCache {
-    device: Arc<graal::Device>,
-    allocators: SlotMap<DescriptorSetLayoutId, DescriptorSetAllocator>,
-    by_typeid: HashMap<TypeId, DescriptorSetLayoutId>,
-}
-
-impl DescriptorSetLayoutCache {
-    /// Creates a new, empty `DescriptorSetLayoutCache`.
-    pub fn new(device: Arc<graal::Device>) -> DescriptorSetLayoutCache {
-        DescriptorSetLayoutCache {
-            device,
-            allocators: SlotMap::with_key(),
-            by_typeid: Default::default(),
-        }
+    /// Frees the specified descriptor set. It must have been allocated with this allocator.
+    pub fn free(&mut self, ds: vk::DescriptorSet) {
+        self.free.push(ds);
     }
 
-    /// Creates a descriptor set layout and an associated allocator.
-    pub fn get_or_create_descriptor_set_layout(
-        &mut self,
-        type_id: Option<TypeId>,
-        bindings: &[vk::DescriptorSetLayoutBinding],
-        update_template_entries: Option<&[vk::DescriptorUpdateTemplateEntry]>,
-    ) -> (vk::DescriptorSetLayout, DescriptorSetLayoutId) {
-        let device = &self.device.device;
-        let mut allocators = &mut self.allocators;
-        let id = if let Some(type_id) = type_id {
-            *self.by_typeid.entry(type_id).or_insert_with(|| {
-                allocators.insert(DescriptorSetAllocator::new(
-                    device,
-                    bindings,
-                    update_template_entries,
-                ))
-            })
-        } else {
-            // no typeid, don't
-            allocators.insert(DescriptorSetAllocator::new(
-                device,
-                bindings,
-                update_template_entries,
-            ))
-        };
-
-        (self.allocators.get(id).unwrap().layout, id)
-    }
-
-    /// Returns the descriptor set allocator for the given layout id.
-    pub(crate) fn get_descriptor_set_allocator(
-        &mut self,
-        id: DescriptorSetLayoutId,
-    ) -> &mut DescriptorSetAllocator {
-        self.allocators.get_mut(id).unwrap()
+    /// Returns the descriptor update template associated to the layout.
+    pub fn update_template(&mut self) -> Option<vk::DescriptorUpdateTemplate> {
+        self.update_template
     }
 }
 
@@ -398,5 +338,155 @@ impl<'a> FragmentOutputBuilder<'a> {
 
     pub fn build(self) -> FragmentOutput<'a> {
         self.inner
+    }
+}
+
+const MAX_TRACKED_DESCRIPTOR_SETS: usize = 24;
+
+pub unsafe trait DescriptorBinding {
+    /// Descriptor type.
+    const DESCRIPTOR_TYPE: vk::DescriptorType;
+    /// Number of descriptors represented in this object.
+    const DESCRIPTOR_COUNT: usize;
+    /// Which shader stages can access a resource for this binding.
+    const SHADER_STAGES: vk::ShaderStageFlags;
+    /// Offset to the descriptor update data within this object.
+    const UPDATE_OFFSET: usize;
+    /// Stride of the descriptor update data within this object.
+    const UPDATE_STRIDE: usize;
+
+    /// Prepares the descriptor update data during pass evaluation.
+    ///
+    /// # Note
+    /// Implementations can access the submission context to upload uniform data, create image views,
+    /// create samplers, etc.
+    /// This cannot be done before evaluation since resources may not have memory bound to them at that point.
+    fn prepare_update(&mut self, ctx: &mut RecordingContext);
+}
+
+/// Sampled image accessor.
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+#[derive(mlr::StructLayout)]
+pub struct SampledImage2D {
+    image: graal::ImageId,
+    handle: vk::Image,
+    format: vk::Format,
+    descriptor: vk::DescriptorImageInfo,
+}
+
+unsafe impl DescriptorBinding for SampledImage2D {
+    const DESCRIPTOR_TYPE: vk::DescriptorType = vk::DescriptorType::SAMPLED_IMAGE;
+    const SHADER_STAGES: vk::ShaderStageFlags = vk::ShaderStageFlags::ALL;
+    const DESCRIPTOR_COUNT: usize = 1;
+    const UPDATE_OFFSET: usize = SampledImage2D::LAYOUT.descriptor.offset;
+    const UPDATE_STRIDE: usize = SampledImage2D::LAYOUT.descriptor.size;
+
+    fn prepare_update(&mut self, ctx: &mut RecordingContext) {
+        // SAFETY: TODO
+        let image_view = unsafe {
+            let create_info = vk::ImageViewCreateInfo {
+                flags: vk::ImageViewCreateFlags::empty(),
+                image: self.handle,
+                view_type: vk::ImageViewType::TYPE_2D,
+                format: self.format,
+                components: vk::ComponentMapping::default(),
+                subresource_range: vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: vk::REMAINING_MIP_LEVELS,
+                    base_array_layer: 0,
+                    layer_count: vk::REMAINING_ARRAY_LAYERS,
+                },
+                ..Default::default()
+            };
+            ctx.create_image_view(&create_info)
+        };
+
+        self.descriptor = vk::DescriptorImageInfo {
+            sampler: Default::default(),
+            image_view,
+            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        }
+    }
+}
+
+impl SampledImage2D {
+    /// Creates a new `SampledImage` accessor for use in the current pass.
+    pub fn new(builder: &mut PassBuilder, image: &ImageAny) -> SampledImage2D {
+        // TODO encode precise stages in const generics.
+        let stages = vk::PipelineStageFlags::VERTEX_SHADER
+            | vk::PipelineStageFlags::FRAGMENT_SHADER
+            | vk::PipelineStageFlags::GEOMETRY_SHADER
+            | vk::PipelineStageFlags::TESSELLATION_CONTROL_SHADER
+            | vk::PipelineStageFlags::TESSELLATION_EVALUATION_SHADER
+            | vk::PipelineStageFlags::COMPUTE_SHADER;
+        builder.frame.pass_image_dependency(
+            image.id(),
+            vk::AccessFlags::SHADER_READ,
+            stages,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+        );
+        SampledImage2D {
+            image: image.id(),
+            handle: image.handle(),
+            format: image.format(),
+            descriptor: Default::default(),
+        }
+    }
+}
+
+/// Color attachment accessor.
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+pub struct ColorAttachment {
+    image: graal::ImageId,
+    handle: graal::vk::Image,
+    format: graal::vk::Format,
+    view: vk::ImageView,
+}
+
+impl ColorAttachment {
+    /// Creates a new `ColorAttachment` accessor for use in the current pass.
+    pub fn new(builder: &mut PassBuilder, image: &ImageAny) -> ColorAttachment {
+        let stages = vk::PipelineStageFlags::FRAGMENT_SHADER;
+        builder.frame.pass_image_dependency(
+            image.id(),
+            vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            stages,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        );
+        ColorAttachment {
+            image: image.id(),
+            handle: image.handle(),
+            format: image.format(),
+            view: Default::default(),
+        }
+    }
+
+    pub(crate) fn prepare_update(&mut self, ctx: &mut RecordingContext) {
+        // SAFETY: TODO
+        let image_view = unsafe {
+            let create_info = vk::ImageViewCreateInfo {
+                flags: vk::ImageViewCreateFlags::empty(),
+                image: self.handle,
+                view_type: vk::ImageViewType::TYPE_2D,
+                format: self.format,
+                components: vk::ComponentMapping::default(),
+                subresource_range: vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    base_mip_level: 0,
+                    level_count: vk::REMAINING_MIP_LEVELS,
+                    base_array_layer: 0,
+                    layer_count: vk::REMAINING_ARRAY_LAYERS,
+                },
+                ..Default::default()
+            };
+            ctx.create_image_view(&create_info)
+        };
+
+        self.view = image_view;
     }
 }
