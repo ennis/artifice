@@ -15,6 +15,7 @@ extern crate syn;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, TokenStreamExt};
+use std::{error, fmt, fmt::Formatter};
 use syn::spanned::Spanned;
 
 //--------------------------------------------------------------------------------------------------
@@ -30,25 +31,25 @@ impl ToTokens for CrateName {
 type FieldList = syn::punctuated::Punctuated<syn::Field, syn::Token![,]>;
 
 //--------------------------------------------------------------------------------------------------
-mod vertex_data;
 mod descriptor_set_interface;
+mod vertex_data;
 //mod fragment_output_interface;
 mod struct_layout;
 //mod vertex_input_interface;
 
-#[proc_macro_derive(ShaderArguments, attributes(argument))]
-pub fn shader_arguments_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    descriptor_set_interface::derive(input).unwrap_or_else(|e| e.into_compile_error()).into()
+#[proc_macro_derive(Arguments, attributes(argument))]
+pub fn arguments_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    descriptor_set_interface::derive(input).into()
 }
 
 #[proc_macro_derive(VertexData)]
 pub fn vertex_data_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    vertex_data::derive(input).unwrap_or_else(|e| e.into_compile_error()).into()
+    vertex_data::derive(input).into()
 }
 
 #[proc_macro_derive(StructLayout)]
 pub fn struct_layout_derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    struct_layout::derive(input).unwrap_or_else(|e| e.into_compile_error()).into()
+    struct_layout::derive(input).into()
 }
 
 /*#[proc_macro_derive(VertexInputInterface, attributes(layout))]

@@ -1,10 +1,10 @@
 //! Shader
 use crate::{
     buffer::BufferAny,
-    context::{Context, RecordingContext},
+    context::Context,
     descriptor::DescriptorSetLayoutId,
     image::ImageAny,
-    sampler::Sampler,
+    //sampler::Sampler,
 };
 use graal::{
     vk,
@@ -15,32 +15,7 @@ use graal_spirv::typedesc;
 use std::sync::Arc;
 use thiserror::Error;
 
-/// Shader arguments (uniforms, textures, etc.).
-///
-/// Maps to a descriptor set.
-/// TODO DOC: descriptor data, layout, update template
-pub trait ShaderArguments {
-    /// Returns a unique ID for the type of this structure, or None if it's unique.
-    fn unique_type_id(&self) -> Option<std::any::TypeId>;
 
-    /// Returns the descriptor set layout for this argument.
-    fn get_descriptor_set_layout_bindings(&self) -> &[vk::DescriptorSetLayoutBinding];
-
-    /// Returns the descriptor set update template entries for this argument.
-    fn get_descriptor_set_update_template_entries(
-        &self,
-    ) -> Option<&[vk::DescriptorUpdateTemplateEntry]>;
-
-    /// Updates a descriptor set with the data contained in the arguments.
-    unsafe fn update_descriptor_set(
-        &mut self,
-        ctx: &mut RecordingContext,
-        set: vk::DescriptorSet,
-        update_template: Option<vk::DescriptorUpdateTemplate>,
-    );
-}
-
-//Note: `Clone` would require `WithSpan: Clone`.
 #[derive(Debug, Error)]
 pub enum CreateShaderError {
     #[error(transparent)]
@@ -104,20 +79,6 @@ impl Drop for Shader {
     }
 }
 
-/// Argument blocks
-///
-/// Actually they are just descriptor sets.
-pub struct ArgumentBlock {
-    pub(crate) descriptor_set: vk::DescriptorSet,
-}
-
-impl ArgumentBlock {
-    /// Creates a new argument block from the specified arguments.
-    pub fn new<T: ShaderArguments>(ctx: &mut RecordingContext, mut args: T) -> ArgumentBlock {
-        ctx.create_argument_block(args)
-    }
-}
-
 /*fn test() {
     #[derive(mlr::ShaderArguments)]
     #[repr(C)]
@@ -131,10 +92,9 @@ impl ArgumentBlock {
 
     #[derive(mlr::ShaderArguments)]
     #[repr(C)]
-    struct MaterialArguments<'a> {
+    struct MaterialArguments {
         u_color: Vec4,
-        #[argument(sampled_image, binding = 1)]
-        t_color: TextureDescriptor<'a>,
+        #[argument(binding=1)] t_color: SampledImage<sampler::Linear_ClampToEdge>,
     }
 
     // issue: the draw pass doesn't know the resources used inside

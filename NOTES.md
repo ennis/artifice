@@ -1885,29 +1885,28 @@ fn test() {
     }
     
     
-    ctx.start_pass( || {
-        // must either borrow SceneArguments or copy, since we can't create
-        let scene_args = ArgumentBlock::new(SceneArguments {
-            u_view_matrix: (),
-            u_proj_matrix: (),
-            u_view_proj_matrix: (),
-            u_inverse_proj_matrix: ()
-        });
-
-        for batch in material_batches.iter() {
-            // argblock borrows image until the draw
-            let material_args = ArgumentBlock::new(
-                MaterialArguments {
-                    u_color: (),
-                    t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
-                });
-
-            for mesh in batch.objects.iter() {
-                // issue: validation that batch.texture is in the correct state here.
-                ctx.draw(&[&scene_args, &material_args])
-            }
-        }
+    // must either borrow SceneArguments or copy, since we can't create
+    let scene_args = ctx.create_argument_block(SceneArguments {
+        u_view_matrix: (),
+        u_proj_matrix: (),
+        u_view_proj_matrix: (),
+        u_inverse_proj_matrix: ()
     });
+    
+    let render_pass = ctx.start_render_pass(...);   // specify (borrow) target images
+    
+    for batch in material_batches.iter() {
+        let material_args = render_pass.create_argument_block(
+            MaterialArguments {
+                u_color: (),
+                t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
+            });
+
+        for mesh in batch.objects.iter() {
+            // issue: validation that batch.texture is in the correct state here.
+            render_pass.draw(&[&scene_args, &material_args])
+        }
+    }
 }
 
 // what's annoying is that since resource allocation is delayed, it's impossible
@@ -2175,3 +2174,39 @@ Two phases:
 - phase 2: record commands
 
 Resources must live 
+
+
+# Issue: upload buffers during recording
+Problem: we can upload data to buffers during recording. For example, inline uniforms contained in `ShaderArguments` impls
+are uploaded when creating `ArgumentBuffers`, which can **only** be created during recording because they need memory to be 
+bound to the images & buffers they reference (in order to create descriptor sets).
+
+However, we need to add a dependency on the upload buffer when using it in a pass.
+This is problematic because we can't add the dependency during the recording stage, which in turns means that:
+- we must eagerly add a dependency on the upload buffer even if it's not going to be used in a pass
+- OR we must require the user to add this dependency by hand => god please no
+- the UPB resource must be known at pass building time, and cannot change => we can't allocate another UPB if we run out of space during recording.
+
+Options:
+- require users to put all uniforms in buffers, and upload during setup => can't have inline uniforms as part of argbuffers, **big ergonomics fail**
+- do something special with UPBs:
+  - manually insert pipeline barriers before commands that
+
+=> Actually, no barrier is needed! because of [Host Write Ordering Guarantees](https://www.khronos.org/registry/vulkan/specs/1.2-extensions/html/vkspec.html#synchronization-submission-host-writes) .
+
+
+# Ergonomics of the render graph API
+
+In short: not very good compared to a straight recording process with inferred pipeline barriers. 
+We need to:
+1. manually split the work in passes
+2. for each pass, create small accessors/descriptors/whatever during setup to access the resource safely during the pass callback.
+
+Maybe, at some point, consider switching to wgpu for real. 
+It's not possible right now because we can't really mix native vulkan code and wgpu. 
+Also, there's no way of aliasing the memory between two resources, and there's an ongoing debate about a more precise
+autosync (the current barriers are very conservative), and there's no multi-queue?
+
+However:
+- it's developed and used by a lot of people
+- it has good docs? a good spec?

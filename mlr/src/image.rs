@@ -1,6 +1,8 @@
-use crate::context::Context;
+use crate::{arguments::SampledImage2D, context::Context, sampler::SamplerType, vk};
+use mlr::arguments::CombinedImageSampler2D;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub struct ImageAny {
     device: Arc<graal::Device>,
     image: graal::ImageInfo,
@@ -48,6 +50,35 @@ impl ImageAny {
     /// Returns the format of this image.
     pub fn format(&self) -> graal::vk::Format {
         self.format
+    }
+
+    ///
+    pub fn to_sampled_image_2d(&self) -> SampledImage2D {
+        SampledImage2D {
+            image: self,
+            // leave uninitialized
+            descriptor: vk::DescriptorImageInfo {
+                sampler: Default::default(),
+                image_view: Default::default(),
+                image_layout: Default::default(),
+            },
+        }
+    }
+
+    pub fn to_combined_image_sampler_2d<S: SamplerType>(
+        &self,
+        sampler: S,
+    ) -> CombinedImageSampler2D<S> {
+        CombinedImageSampler2D {
+            image: self,
+            sampler,
+            // leave uninitialized
+            descriptor: vk::DescriptorImageInfo {
+                sampler: Default::default(),
+                image_view: Default::default(),
+                image_layout: Default::default(),
+            },
+        }
     }
 }
 

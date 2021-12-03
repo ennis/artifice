@@ -1,11 +1,12 @@
 use crate::{
-    context::{Context, PassBuilder},
+    context::{Context, ContextResources, PassBuilder},
+    device::Device,
     image::ImageAny,
-    shader::ShaderArguments,
+    vk::{DescriptorType, ShaderStageFlags},
 };
 use graal::vk;
 use graal_spirv as spirv;
-use mlr::context::RecordingContext;
+use mlr::sampler::SamplerType;
 use slotmap::SlotMap;
 use std::{any::TypeId, cell::Cell, collections::HashMap, mem, sync::Arc};
 
@@ -214,10 +215,7 @@ impl DescriptorSetAllocator {
     }
 
     /// Allocates a descriptor set.
-    pub(crate) fn allocate(
-        &mut self,
-        device: &graal::ash::Device,
-    ) -> vk::DescriptorSet {
+    pub(crate) fn allocate(&mut self, device: &graal::ash::Device) -> vk::DescriptorSet {
         let handle = loop {
             let descriptor_pool = {
                 if let Some(pool) = self.pool {
@@ -343,100 +341,6 @@ impl<'a> FragmentOutputBuilder<'a> {
 
 const MAX_TRACKED_DESCRIPTOR_SETS: usize = 24;
 
-pub unsafe trait DescriptorBinding {
-    /// Descriptor type.
-    const DESCRIPTOR_TYPE: vk::DescriptorType;
-    /// Number of descriptors represented in this object.
-    const DESCRIPTOR_COUNT: usize;
-    /// Which shader stages can access a resource for this binding.
-    const SHADER_STAGES: vk::ShaderStageFlags;
-    /// Offset to the descriptor update data within this object.
-    const UPDATE_OFFSET: usize;
-    /// Stride of the descriptor update data within this object.
-    const UPDATE_STRIDE: usize;
-
-    /// Prepares the descriptor update data during pass evaluation.
-    ///
-    /// # Note
-    /// Implementations can access the submission context to upload uniform data, create image views,
-    /// create samplers, etc.
-    /// This cannot be done before evaluation since resources may not have memory bound to them at that point.
-    fn prepare_update(&mut self, ctx: &mut RecordingContext);
-}
-
-/// Sampled image accessor.
-#[derive(Copy, Clone, Debug)]
-#[repr(C)]
-#[derive(mlr::StructLayout)]
-pub struct SampledImage2D {
-    image: graal::ImageId,
-    handle: vk::Image,
-    format: vk::Format,
-    descriptor: vk::DescriptorImageInfo,
-}
-
-unsafe impl DescriptorBinding for SampledImage2D {
-    const DESCRIPTOR_TYPE: vk::DescriptorType = vk::DescriptorType::SAMPLED_IMAGE;
-    const SHADER_STAGES: vk::ShaderStageFlags = vk::ShaderStageFlags::ALL;
-    const DESCRIPTOR_COUNT: usize = 1;
-    const UPDATE_OFFSET: usize = SampledImage2D::LAYOUT.descriptor.offset;
-    const UPDATE_STRIDE: usize = SampledImage2D::LAYOUT.descriptor.size;
-
-    fn prepare_update(&mut self, ctx: &mut RecordingContext) {
-        // SAFETY: TODO
-        let image_view = unsafe {
-            let create_info = vk::ImageViewCreateInfo {
-                flags: vk::ImageViewCreateFlags::empty(),
-                image: self.handle,
-                view_type: vk::ImageViewType::TYPE_2D,
-                format: self.format,
-                components: vk::ComponentMapping::default(),
-                subresource_range: vk::ImageSubresourceRange {
-                    aspect_mask: vk::ImageAspectFlags::COLOR,
-                    base_mip_level: 0,
-                    level_count: vk::REMAINING_MIP_LEVELS,
-                    base_array_layer: 0,
-                    layer_count: vk::REMAINING_ARRAY_LAYERS,
-                },
-                ..Default::default()
-            };
-            ctx.create_image_view(&create_info)
-        };
-
-        self.descriptor = vk::DescriptorImageInfo {
-            sampler: Default::default(),
-            image_view,
-            image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        }
-    }
-}
-
-impl SampledImage2D {
-    /// Creates a new `SampledImage` accessor for use in the current pass.
-    pub fn new(builder: &mut PassBuilder, image: &ImageAny) -> SampledImage2D {
-        // TODO encode precise stages in const generics.
-        let stages = vk::PipelineStageFlags::VERTEX_SHADER
-            | vk::PipelineStageFlags::FRAGMENT_SHADER
-            | vk::PipelineStageFlags::GEOMETRY_SHADER
-            | vk::PipelineStageFlags::TESSELLATION_CONTROL_SHADER
-            | vk::PipelineStageFlags::TESSELLATION_EVALUATION_SHADER
-            | vk::PipelineStageFlags::COMPUTE_SHADER;
-        builder.frame.pass_image_dependency(
-            image.id(),
-            vk::AccessFlags::SHADER_READ,
-            stages,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        );
-        SampledImage2D {
-            image: image.id(),
-            handle: image.handle(),
-            format: image.format(),
-            descriptor: Default::default(),
-        }
-    }
-}
-
 /// Color attachment accessor.
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
@@ -466,7 +370,7 @@ impl ColorAttachment {
         }
     }
 
-    pub(crate) fn prepare_update(&mut self, ctx: &mut RecordingContext) {
+    pub(crate) fn prepare_update(&mut self, ctx: &mut ContextResources) {
         // SAFETY: TODO
         let image_view = unsafe {
             let create_info = vk::ImageViewCreateInfo {
@@ -484,7 +388,7 @@ impl ColorAttachment {
                 },
                 ..Default::default()
             };
-            ctx.create_image_view(&create_info)
+            ctx.create_transient_image_view(&create_info)
         };
 
         self.view = image_view;

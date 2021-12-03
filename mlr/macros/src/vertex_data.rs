@@ -1,8 +1,11 @@
-use crate::{struct_layout::ensure_repr_c_derive_input, CRATE};
+use crate::{
+    struct_layout::{ensure_repr_c_derive_input, generate_repr_c_struct_layout},
+    CRATE,
+};
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::spanned::Spanned;
-use crate::struct_layout::generate_repr_c_struct_layout;
+use syn::{__private::str, spanned::Spanned};
+use crate::struct_layout::has_repr_c_attr;
 
 /*pub fn generate_structured_buffer_data(
     derive_input: &syn::DeriveInput,
@@ -63,51 +66,79 @@ use crate::struct_layout::generate_repr_c_struct_layout;
     }
 }*/
 
-pub fn derive(input: proc_macro::TokenStream) -> Result<TokenStream, syn::Error> {
-    let derive_input: syn::DeriveInput = syn::parse(input)?;
+pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
+    let derive_input: syn::DeriveInput = match syn::parse(input) {
+        Ok(input) => input,
+        Err(e) => return e.into_compile_error(),
+    };
 
     // check for struct
     let fields = match derive_input.data {
         syn::Data::Struct(ref struct_data) => &struct_data.fields,
         _ => {
-            return Err(syn::Error::new(
+            return syn::Error::new(
                 derive_input.span(),
                 "`VertexData` can only be derived on structs",
-            ));
+            )
+            .into_compile_error();
         }
     };
 
     // check for `#[repr(C)]`
-    ensure_repr_c_derive_input(&derive_input)?;
+    let repr_c_check = if !has_repr_c_attr(&derive_input) {
+        syn::Error::new(
+            derive_input.span(),
+            format!("`VertexData` can only be derived on `repr(C)` structs"),
+        ).into_compile_error()
+    } else {
+        quote! {}
+    };
 
     // generate field offset constant items
-    let struct_layout = generate_repr_c_struct_layout(&derive_input, &derive_input.vis)?;
+    let struct_layout = match generate_repr_c_struct_layout(&derive_input, &derive_input.vis) {
+        Ok(struct_layout) => struct_layout,
+        Err(e) => return e.into_compile_error(),
+    };
 
     // `VertexAttribute { format: <FieldType as VertexAttributeType>::FORMAT, offset: OFFSET_field_index }`
     let attribs = fields.iter().enumerate().map(|(i, f)| {
         let field_ty = &f.ty;
-        let offset = &struct_layout.field_offsets[i];
-        let offset = &offset.ident;
-
-        quote! {
-            #CRATE::VertexAttribute {
-                format: <#field_ty as #CRATE::VertexAttributeType>::FORMAT,
-                offset: #offset as u32,
+        match f.ident {
+            Some(ref ident) => {
+                quote! {
+                    #CRATE::VertexAttribute {
+                        format: <#field_ty as #CRATE::VertexAttributeType>::FORMAT,
+                        offset: Self::layout().#ident.offset as u32,
+                    }
+                }
+            }
+            None => {
+                let index = syn::Index::from(i);
+                quote! {
+                    #CRATE::VertexAttribute {
+                        format: <#field_ty as #CRATE::VertexAttributeType>::FORMAT,
+                        offset: Self::layout().#index.offset as u32,
+                    }
+                }
             }
         }
     });
 
     let struct_name = &derive_input.ident;
     let (impl_generics, ty_generics, where_clause) = derive_input.generics.split_for_impl();
-    let field_offsets = &struct_layout.field_offsets;
-    let field_sizes = &struct_layout.field_sizes;
-    Ok(quote! {
+    let layout_struct = &struct_layout.layout_struct;
+    let layout_const_fn = &struct_layout.layout_const_fn;
+
+    quote! {
+        #repr_c_check
+        #layout_struct
+        impl #impl_generics #struct_name #ty_generics #where_clause {
+            #layout_const_fn
+        }
         unsafe impl #impl_generics #CRATE::VertexData for #struct_name #ty_generics #where_clause {
             const ATTRIBUTES: &'static [#CRATE::VertexAttribute] = {
-                #(#field_offsets)*
-                #(#field_sizes)*
                 &[#(#attribs,)*]
             };
         }
-    })
+    }
 }

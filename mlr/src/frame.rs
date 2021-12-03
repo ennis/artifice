@@ -2,7 +2,6 @@ use crate::{
     buffer::BufferAny,
     context::Context,
     image::ImageAny,
-    shader::{ArgumentBlock, ShaderArguments},
 };
 use graal::{
     ash::vk::{DescriptorType, ShaderStageFlags},

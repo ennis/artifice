@@ -2,12 +2,8 @@ use crate::vk::ClearColorValue;
 use graal::{vk, ImageResourceCreateInfo};
 use inline_spirv::{include_spirv, inline_spirv};
 use lazy_static::lazy_static;
-use mlr::{
-    descriptor::{AttachmentLoadOp, AttachmentStoreOp, ColorAttachment},
-    image::ImageAny,
-    shader::ArgumentBlock,
-    shader::Shader
-};
+use mlr::{descriptor::{AttachmentLoadOp, AttachmentStoreOp, ColorAttachment}, image::ImageAny, SampledImage2D, shader::ArgumentBlock, shader::Shader};
+use mlr::descriptor::CombinedImageSampler2D;
 
 lazy_static! {
     static ref BACKGROUND_VERTEX_SHADER_MODULE: Shader = Shader::from_spirv_static(include_spirv!(
@@ -45,8 +41,10 @@ fn test_image() {
             },
         );
 
-        frame.submit_pass("draw_to_image", |pass_builder| {
-            let color_attachment = ColorAttachment::new(pass_builder, &image);
+        frame.submit_pass("draw_to_image", |pass| {
+
+            let color_attachment = ColorAttachment::new(pass, &image);
+
             move |ctx| {
                 // TODO draw
                 color_attachment;
@@ -57,7 +55,7 @@ fn test_image() {
     frame.finish();
 }
 
-/*#[test]
+#[test]
 fn test_scene() {
     #[derive(mlr::ShaderArguments)]
     #[repr(C)]
@@ -73,8 +71,9 @@ fn test_scene() {
     #[repr(C)]
     struct MaterialArguments {
         u_color: Vec4,
-        #[argument(binding=1)] t_color: SampledImage,
+        #[argument(sampled_image, binding=1)] t_color: SampledImage,
     }
+
 
     ctx.submit_pass(|pass| {
         // split borrows will help here
@@ -89,7 +88,7 @@ fn test_scene() {
             });
 
             for batch in material_batches.iter() {
-                let material_args = ArgumentBlock::new(
+                let material_args = ArgumentBlock::new(ctx,
                     MaterialArguments {
                         u_color: (),
                         t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
@@ -102,8 +101,4 @@ fn test_scene() {
             }
         }
     });
-
-
-    // alternatively: return an fn
-    // see https://media.contentapi.ea.com/content/dam/ea/seed/presentations/wihlidal-halcyonarchitecture-notes.pdf
-}*/
+}

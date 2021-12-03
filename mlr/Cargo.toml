@@ -13,8 +13,11 @@ slotmap = "1.0.6"
 bumpalo = "3.8.0"
 tracing = "0.1.29"
 bitflags = "1.3.2"
+bytemuck = "1.7.2"
 mlr-macros = { path = "macros" }
 
 [dev-dependencies]
 inline-spirv = "0.1.2"
 lazy_static = "1.4.0"
+openimageio = { path = "../../openimageio-rs" }
+
