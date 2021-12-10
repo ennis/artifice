@@ -1,9 +1,10 @@
 use crate::vk::ClearColorValue;
-use graal::{vk, ImageResourceCreateInfo};
+use graal::{ImageResourceCreateInfo, vk};
 use inline_spirv::{include_spirv, inline_spirv};
 use lazy_static::lazy_static;
-use mlr::{descriptor::{AttachmentLoadOp, AttachmentStoreOp, ColorAttachment}, image::ImageAny, SampledImage2D, shader::ArgumentBlock, shader::Shader};
-use mlr::descriptor::CombinedImageSampler2D;
+use graal::descriptor::{AttachmentLoadOp, AttachmentStoreOp, ColorAttachment};
+use mlr::{image::ImageAny, SampledImage2D, shader::ArgumentBlock, shader::ShaderModule};
+use graal::descriptor::CombinedImageSampler2D;
 
 lazy_static! {
     static ref BACKGROUND_VERTEX_SHADER_MODULE: Shader = Shader::from_spirv_static(include_spirv!(
@@ -55,6 +56,12 @@ fn test_image() {
     frame.finish();
 }
 
+/*/// Problem: I'd like to directly pass arguments there, but I wouldn't be able outside of a recording callback.
+/// Which means that I need to manually do the same setup/record for simple passes.
+fn draw_screen_quad(pipeline: &mlr::GraphicsPipeline, args: ?) {
+
+}*/
+
 #[test]
 fn test_scene() {
     #[derive(mlr::ShaderArguments)]
@@ -71,12 +78,13 @@ fn test_scene() {
     #[repr(C)]
     struct MaterialArguments {
         u_color: Vec4,
-        #[argument(sampled_image, binding=1)] t_color: SampledImage,
+        #[argument(binding=1)] t_color: SampledImage,
+        #[argument(binding=2)] t_specular: SampledImage,
     }
 
 
     ctx.submit_pass(|pass| {
-        // split borrows will help here
+        // this is annoying, because we have to duplicate every access
         let target = ColorAttachment::new(pass, &background_image);
 
         move |ctx| {

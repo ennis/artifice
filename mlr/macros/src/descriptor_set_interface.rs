@@ -9,7 +9,7 @@ use darling::{
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
-use syn::{spanned::Spanned, Data, DeriveInput, GenericParam, Generics, Token};
+use syn::{spanned::Spanned, Data, DeriveInput, Fields, GenericParam, Generics, Token};
 
 const VK_DESCRIPTOR_UPDATE_DATA_LEN: usize = 24;
 const VK_DESCRIPTOR_IMAGE_INFO_LEN: usize = 24;
@@ -128,8 +128,8 @@ struct ArgumentAttr {
     }
 }*/
 
-struct ImplGenericsWithoutLifetimesOrBounds<'a>(&'a Generics);          // <const N: usize, T: Copy>
-struct TypeGenericsWithoutLifetimes<'a>(&'a Generics);          // <N,T>
+struct ImplGenericsWithoutLifetimesOrBounds<'a>(&'a Generics); // <const N: usize, T: Copy>
+struct TypeGenericsWithoutLifetimes<'a>(&'a Generics); // <N,T>
 
 // modified from syn
 impl<'a> ToTokens for ImplGenericsWithoutLifetimesOrBounds<'a> {
@@ -207,6 +207,11 @@ struct Binding<'a> {
     binding: u32,
 }
 
+struct PrimaryUniform<'a> {
+    field: &'a syn::Field,
+    field_index: usize,
+}
+
 pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
     let derive_input: syn::DeriveInput = match syn::parse(input) {
         Ok(input) => input,
@@ -264,7 +269,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
                     })
                 } else {
                     // assume this is a primary uniform
-                    primary_uniform_fields.push(field);
+                    primary_uniform_fields.push(PrimaryUniform { field, field_index });
                 }
             }
             Err(e) => attrib_errors.push(e.write_errors()),
@@ -275,7 +280,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
     let type_params = derive_input.generics.declared_type_params();
     let primary_uniform_type_param_idents = primary_uniform_fields
         .iter()
-        .map(|x| *x)
+        .map(|x| x.field)
         .collect_type_params(&Purpose::Declare.into(), &type_params);
     let primary_uniform_type_params: Vec<_> = primary_uniform_type_param_idents
         .iter()
@@ -315,6 +320,30 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         })
         .collect();
 
+    // --- Primary UBO binding (binding=#0) ---
+    let primary_ubo = if !primary_uniform_fields.is_empty() {
+        quote! {
+            #CRATE::vk::DescriptorSetLayoutBinding {
+                binding              : 0,
+                stage_flags          : #CRATE::vk::ShaderStageFlags::ALL,
+                descriptor_type      : #CRATE::vk::DescriptorType::UNIFORM_BUFFER,
+                descriptor_count     : 1,
+                p_immutable_samplers : ::std::ptr::null()
+            },
+        }
+    } else {
+        quote! {}
+    };
+
+
+    /* quote! {
+        // upload inline uniforms
+        #[repr(C)]
+        struct PrimaryUniforms < #(#primary_uniform_type_params,)* > {
+            #(#primary_uniform_fields,)*
+        }
+    };*/
+
     // --- Generate update template entries ---
     let descriptor_update_template_entries: Vec<_> = bindings
         .iter()
@@ -334,7 +363,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         })
         .collect();
 
-    // --- Descriptor update code ---
+    // --- Descriptor update statements ---
     let descriptor_prepare_update_statements: Vec<_> = bindings
         .iter()
         .map(|b| {
@@ -347,7 +376,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         })
         .collect();
 
-    // --- resource visitor code ---
+    // --- resource visitor statements ---
     let descriptor_visit_stmts: Vec<_> = bindings
         .iter()
         .map(|b| {
@@ -360,6 +389,57 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         })
         .collect();
 
+    // --- primary uniform upload block
+    let primary_uniform_upload_stmts = if !primary_uniform_fields.is_empty() {
+
+        // --- Primary uniform struct ---
+        let primary_uniforms_struct = match fields {
+            Fields::Named(named) => {
+                let fields_2 = primary_uniform_fields.iter().map(|f| &f.field);
+                quote! {
+                    #[derive(Copy,Clone)]
+                    #[repr(C)]
+                    struct PrimaryUniforms < #(#primary_uniform_type_params,)* > {
+                        #(#fields_2)*
+                    }
+                }
+            }
+            Fields::Unnamed(unnamed) => {
+                let fields_2 = primary_uniform_fields.iter().map(|f| &f.field.ty);
+                quote! {
+                    #[derive(Copy,Clone)]
+                    #[repr(C)]
+                    struct PrimaryUniforms < #(#primary_uniform_type_params,)* >(#(#fields_2)*)
+                }
+            }
+            Fields::Unit => { quote!{} }
+        };
+
+        let primary_uniforms_field_init: Vec<_> = primary_uniform_fields
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                if let Some(ref ident) = f.field.ident {
+                    quote! { #ident : self.#ident }
+                } else {
+                    let i = syn::Index::from(i);
+                    let field_index = syn::Index::from(f.field_index);
+                    quote! { #i: self.#field_index }
+                }
+            })
+            .collect();
+
+        quote!{
+            // upload inline uniforms
+            #primary_uniforms_struct
+            // TODO we could allocate the struct directly in the upload buffer and fill it there
+            let primary_uniforms = PrimaryUniforms { #(#primary_uniforms_field_init,)* };
+            let (buffer, offset) = ctx.upload_slice(::std::slice::from_ref(&primary_uniforms), #CRATE::vk::BufferUsageFlags::UNIFORM_BUFFER);
+        }
+    } else {
+        quote!{}
+    };
+
     let struct_name = &derive_input.ident;
     let (impl_generics, ty_generics, where_clause) = s.generics.split_for_impl();
     let unique_type_name =
@@ -369,7 +449,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
     // TODO recursively replace inner lifetimes with 'static => PITA
     let impl_generics_without_lifetimes = ImplGenericsWithoutLifetimesOrBounds(&s.generics);
     let type_generics_without_lifetimes = TypeGenericsWithoutLifetimes(&s.generics);
-    let type_params : Vec<_> = s.generics.type_params().map(|tp| &tp.ident).collect();
+    let type_params: Vec<_> = s.generics.type_params().map(|tp| &tp.ident).collect();
 
     quote! {
         // potential compile_errors
@@ -394,7 +474,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
 
             fn get_descriptor_set_layout_bindings(&self) -> &[#CRATE::vk::DescriptorSetLayoutBinding]
             {
-                &[#(#descriptor_set_layout_bindings,)*]
+                &[#primary_ubo #(#descriptor_set_layout_bindings,)*]
             }
 
             fn get_descriptor_set_update_template_entries(
@@ -416,13 +496,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
                 if let Some(update_template) = update_template {
                     device.update_descriptor_set_with_template(set, update_template, self as *const _ as *const ::std::ffi::c_void);
                 }
-
-                // upload inline uniforms
-                #[repr(C)]
-                struct PrimaryUniforms < #(#primary_uniform_type_params,)* > {
-                    #(#primary_uniform_fields,)*
-                }
-
+                #primary_uniform_upload_stmts
             }
         }
     }

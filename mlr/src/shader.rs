@@ -2,18 +2,18 @@
 use crate::{
     buffer::BufferAny,
     context::Context,
-    descriptor::DescriptorSetLayoutId,
     image::ImageAny,
     //sampler::Sampler,
 };
 use graal::{
-    vk,
-    vk::{AccessFlags, ImageLayout, PipelineStageFlags},
-    BufferId, ImageId, ResourceGroupId, ResourceId,
+    BufferId,
+    ImageId,
+    ResourceGroupId, ResourceId, vk, vk::{AccessFlags, ImageLayout, PipelineStageFlags},
 };
 use graal_spirv::typedesc;
 use std::sync::Arc;
 use thiserror::Error;
+use graal::descriptor::DescriptorSetLayoutId;
 
 
 #[derive(Debug, Error)]
@@ -23,18 +23,18 @@ pub enum CreateShaderError {
 }
 
 /// Shaders
-pub struct Shader {
+pub struct ShaderModule {
     static_spirv: Option<&'static [u32]>,
     device: Option<Arc<graal::Device>>,
-    shader_module: vk::ShaderModule,
+    pub(crate) shader_module: vk::ShaderModule,
 }
 
-impl Shader {
+impl ShaderModule {
     /// Creates a new shader.
     ///
     /// The compilation of the shader module is deferred to its first use in a `Context`.
-    pub fn from_spirv_static(spirv: &'static [u32]) -> Shader {
-        Shader {
+    pub fn from_spirv_static(spirv: &'static [u32]) -> ShaderModule {
+        ShaderModule {
             static_spirv: Some(spirv),
             device: None,
             shader_module: Default::default(),
@@ -42,7 +42,7 @@ impl Shader {
     }
 
     /// Creates a new shader immediately.
-    pub fn from_spirv(context: &Context, spirv: &[u32]) -> Result<Shader, CreateShaderError> {
+    pub fn from_spirv(context: &Context, spirv: &[u32]) -> Result<ShaderModule, CreateShaderError> {
         let device = context.device().clone();
         let vk_device = &device.device;
 
@@ -58,7 +58,7 @@ impl Shader {
             )?
         };
 
-        Ok(Shader {
+        Ok(ShaderModule {
             static_spirv: None,
             device: Some(device),
             shader_module,
@@ -66,7 +66,7 @@ impl Shader {
     }
 }
 
-impl Drop for Shader {
+impl Drop for ShaderModule {
     fn drop(&mut self) {
         unsafe {
             // TODO safety

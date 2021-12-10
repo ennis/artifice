@@ -20,4 +20,8 @@ mlr-macros = { path = "macros" }
 inline-spirv = "0.1.2"
 lazy_static = "1.4.0"
 openimageio = { path = "../../openimageio-rs" }
+winit = "0.24.0"
+obj = "0.10.2"
+tracing-subscriber = { version = "0.2.17", features = ["fmt"] }
+raw-window-handle = "0.3.3"
 

@@ -2210,3 +2210,130 @@ autosync (the current barriers are very conservative), and there's no multi-queu
 However:
 - it's developed and used by a lot of people
 - it has good docs? a good spec?
+
+The problem with RG API is that it's difficult to have building blocks like this:
+```rust
+fn run_screen_pass(pipeline: Pipeline, args: &ArgumentBlock) -> ImageAny {
+    // do stuff
+}
+
+fn render(frame: &Frame) {
+    let args = frame.create_argument_block(Args { input: input.to_sampled_image_2d() });
+    let output = run_screen_pass(pipeline, args);
+}
+```
+because we can't infer dependencies from an argblock in this state.
+So instead, the building block is something that must be wrapped manually in its own pass:
+```rust
+fn run_screen_pass(record: &mut RecordingContext, pipeline: Pipeline, args: &ArgumentBlock, output: ColorAttachment) {
+    // do stuff
+}
+
+// problem: can't pass anything other than simple data uniforms in the provided arguments   
+fn run_screen_pass_2<T: Arguments>(frame: &mut Frame, pipeline: &Pipeline, input: &ImageAny, args: Arguments, output: &ImageAny) 
+{
+    frame.graphics_pass(|setup| {
+        let input = input.to_sampled_image_2d(setup);
+        let output = output.to_color_attachment(setup);
+
+        move |record| {
+            let args = record.create_argument_block(args);
+            // ...
+        }
+    });
+}
+
+fn render(frame: &Frame) {
+    frame.graphics_pass(|setup| {
+        let input = texture.to_sampled_image_2d(setup);
+        let output = texture_2.to_color_attachment(setup);
+        
+        move |record| {
+            let args = record.create_argument_block(Args { input: input.to_sampled_image_2d() });
+            run_screen_pass(record, pipeline, args, output);
+        }
+    });
+}
+```
+
+Anyway, it shouldn't be too hard to go back to the callback-based mechanism if need be.
+
+# Pipelines and pipeline arguments
+To build a pipeline we need:
+- a description of the _fragment output interface_, to create the render pass
+- a description of the _shader resource interface_, i.e. all _descriptor set layouts_
+- a description of the _vertex input interface_, i.e. all vertex buffers
+
+We could encode all of that into a type, like so:
+```rust
+#[derive(PipelineInterface)]
+struct MyPipelineInterface {
+    #[vertex_input] input: VertexInputInterface,
+    #[arguments(set=0)] args: ArgumentBlock<BackgroundParams>,
+    #[arguments(set=1)] textures: ArgumentBlock<GlobalTextures>,
+    #[fragment_output] output: FragmentOutputInterface
+}
+```
+but then we have to avoid redundant CmdBindDescriptorSets/CmdBindVertexBuffers by keeping track of the current bound blocks.
+
+Alternative:
+```rust
+fn main() {
+    let pipeline : GraphicsPipeline = GraphicsPipeline::builder()
+        .with_arguments::<SceneArguments>(0)
+        .with_arguments::<MaterialArguments>(1)
+        .with_arguments::<ObjectArguments>(2)
+        .with_fragment_output::<MyFragmentOutput>()
+        .with_vertex_input::<MyVertexInput>().build().expect();
+    // -> can already validate stuff, so that's good
+    
+    // note that the pipeline may not be created in advance:
+    // - the vertex input can be left unspecified
+    // - the color attachment formats may be left unspecified
+    // - specialization constants?
+
+    // could possibly wrap it in a generic type that specifies the VertexInput and FragmentOutput, for extra type safety.
+}
+```
+
+# Graal: device/context split
+
+Currently: the _device_ owns the underlying vulkan device 
+and holds the resources (buffers and images), whereas the _context_ holds frame submission state: the current SN / frame number, 
+in flight passes, etc.
+However, the split does not make a lot of sense considering that the context stores tracking information directly in
+resources, inside the device, so there's a bit of context state inside the device. Also it doesn't make sense to have multiple contexts
+on one device.
+
+This split is useful, however, to differentiate resource management from command submission. A separate context object
+can be borrowed mutably (e.g. when building a frame) without locking the device used to allocate resources => thus 
+you have only one interface to allocate resources, available at any time.
+
+If there was only one object, the context:
+
+```rust
+fn main() {
+    let ctx = Context::new();
+    
+    // does not borrow context
+    let image = ctx.create_image();
+    
+    // does not borrow, because otherwise it would be impossible to allocate resources
+    let mut frame = ctx.start_frame();
+    
+    // the following is invalid, will panic
+    // ctx.start_frame();
+    
+    let another_image = ctx.create_image();
+    
+    // holds a
+    frame.();
+    
+    ctx.finish_frame(frame);
+    
+}
+```
+
+
+mlr::Context owns the Context
+mlr::Frame owns Frame, which borrows from Context, and thus borrows from mlr::Context

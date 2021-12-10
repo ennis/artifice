@@ -1,24 +1,61 @@
-use std::mem;
+use crate::{shader::ShaderModule, vk::GraphicsPipelineCreateInfo};
+use bitflags::bitflags;
 use graal::vk;
+use mlr::{Arguments, Device};
+use std::{mem, os::raw::c_char, ptr, sync::Arc};
 
-#[derive(Copy, Clone, Debug)]
-pub struct GraphicsShaderStages<'a, 're, B: Backend> {
-    //pub format: ShaderFormat,
-    pub vertex: ShaderModule<'a, 're, B>,
-    pub geometry: Option<ShaderModule<'a, 're, B>>,
-    pub fragment: Option<ShaderModule<'a, 're, B>>,
-    pub tess_eval: Option<ShaderModule<'a, 're, B>>,
-    pub tess_control: Option<ShaderModule<'a, 're, B>>,
+#[repr(transparent)]
+pub struct ArgumentLayout {
+    // FIXME these are never deleted, for now
+    layout: vk::DescriptorSetLayout,
 }
 
-impl<'a, 're, B: Backend> GraphicsShaderStages<'a, 're, B> {
+pub struct PipelineLayoutDescriptor<'a> {
+    layouts: &'a [ArgumentLayout],
+}
+
+pub struct PipelineLayout {
+    // FIXME these are never deleted, for now
+    layout: vk::PipelineLayout,
+}
+
+impl PipelineLayout {
+    pub fn new(device: &graal::Device, descriptor: &PipelineLayoutDescriptor) -> PipelineLayout {
+        unsafe {
+            let create_info = vk::PipelineLayoutCreateInfo {
+                flags: vk::PipelineLayoutCreateFlags::empty(),
+                set_layout_count: descriptor.layouts.len() as u32,
+                p_set_layouts: descriptor.layouts.as_ptr() as *const vk::DescriptorSetLayout,
+                push_constant_range_count: 0,
+                p_push_constant_ranges: ptr::null(),
+                ..Default::default()
+            };
+            let layout = device
+                .device
+                .create_pipeline_layout(&create_info, None)
+                .expect("failed to create pipeline layout");
+            PipelineLayout { layout }
+        }
+    }
+}
+
+pub struct GraphicsShaderStages {
+    //pub format: ShaderFormat,
+    pub vertex: ShaderModule,
+    pub geometry: Option<ShaderModule>,
+    pub fragment: Option<ShaderModule>,
+    pub tess_eval: Option<ShaderModule>,
+    pub tess_control: Option<ShaderModule>,
+}
+
+impl GraphicsShaderStages {
     pub fn new_vertex_fragment(
-        vertex: ShaderModule<'a, 're, B>,
-        fragment: ShaderModule<'a, 're, B>,
-    ) -> GraphicsShaderStages<'a, 're, B> {
+        vertex: ShaderModule,
+        fragment: ShaderModule,
+    ) -> GraphicsShaderStages {
         GraphicsShaderStages {
             vertex,
-            fragment: fragment.into(),
+            fragment: Some(fragment),
             geometry: None,
             tess_control: None,
             tess_eval: None,
@@ -26,445 +63,465 @@ impl<'a, 're, B: Backend> GraphicsShaderStages<'a, 're, B> {
     }
 }
 
-bitflags! {
-    #[derive(Default)]
-    pub struct CullModeFlags: u32 {
-        const NONE = 0;
-        const FRONT = 1;
-        const BACK = 2;
-        const FRONT_AND_BACK = Self::FRONT.bits | Self::BACK.bits;
+#[derive(Copy, Clone, Debug)]
+pub struct VertexInputState<'a> {
+    bindings: &'a [vk::VertexInputBindingDescription],
+    attributes: &'a [vk::VertexInputAttributeDescription],
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum CompareFunction {
+    Never,
+    Less,
+    Equal,
+    LessEqual,
+    Greater,
+    NotEqual,
+    GreaterEqual,
+    Always,
+}
+
+impl CompareFunction {
+    /// Returns true if the comparison depends on the reference value.
+    pub fn needs_ref_value(self) -> bool {
+        match self {
+            Self::Never | Self::Always => false,
+            _ => true,
+        }
     }
 }
 
-bitflags! {
-    #[derive(Default)]
-    pub struct DynamicStateFlags: u32 {
-        const VIEWPORT = (1 << 0);
-        const SCISSOR = (1 << 1);
-        const LINE_WIDTH = (1 << 2);
-        const DEPTH_BIAS = (1 << 3);
-        const BLEND_CONSTANTS = (1 << 4);
-        const DEPTH_BOUNDS = (1 << 5);
-        const STENCIL_COMPARE_MASK = (1 << 6);
-        const STENCIL_WRITE_MASK = (1 << 7);
-        const STENCIL_REFERENCE = (1 << 8);
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct StencilFaceState {
+    pub compare: CompareFunction,
+    pub fail_op: StencilOperation,
+    pub depth_fail_op: StencilOperation,
+    pub pass_op: StencilOperation,
+}
+
+impl StencilFaceState {
+    /// Ignore the stencil state for the face.
+    pub const IGNORE: Self = StencilFaceState {
+        compare: CompareFunction::Always,
+        fail_op: StencilOperation::Keep,
+        depth_fail_op: StencilOperation::Keep,
+        pass_op: StencilOperation::Keep,
+    };
+
+    /// Returns true if the face state uses the reference value for testing or operation.
+    pub fn needs_ref_value(&self) -> bool {
+        self.compare.needs_ref_value()
+            || self.fail_op == StencilOperation::Replace
+            || self.depth_fail_op == StencilOperation::Replace
+            || self.pass_op == StencilOperation::Replace
     }
+}
+
+impl Default for StencilFaceState {
+    fn default() -> Self {
+        Self::IGNORE
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum StencilOperation {
+    Keep,
+    Zero,
+    Replace,
+    Invert,
+    IncrementClamp,
+    DecrementClamp,
+    IncrementWrap,
+    DecrementWrap,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct StencilState {
+    pub front: StencilFaceState,
+    pub back: StencilFaceState,
+    pub read_mask: u32,
+    pub write_mask: u32,
+}
+
+impl StencilState {
+    /// Returns true if the stencil test is enabled.
+    pub fn is_enabled(&self) -> bool {
+        (self.front != StencilFaceState::IGNORE || self.back != StencilFaceState::IGNORE)
+            && (self.read_mask != 0 || self.write_mask != 0)
+    }
+    /// Returns true if the state doesn't mutate the target values.
+    pub fn is_read_only(&self) -> bool {
+        self.write_mask == 0
+    }
+    /// Returns true if the stencil state uses the reference value for testing.
+    pub fn needs_ref_value(&self) -> bool {
+        todo!()
+        //self.front.needs_ref_value() || self.back.needs_ref_value()
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct DepthStencilState {
+    pub format: vk::Format,
+    pub depth_write_enabled: bool,
+    pub depth_compare: vk::CompareOp,
+    pub stencil: StencilState,
+    pub bias: DepthBiasState,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct DepthBiasState {
+    pub constant: i32,
+    pub slope_scale: f32,
+    pub clamp: f32,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct BlendComponent {
+    pub src_factor: vk::BlendFactor,
+    pub dst_factor: vk::BlendFactor,
+    pub operation: vk::BlendOp,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct BlendState {
+    pub color: BlendComponent,
+    pub alpha: BlendComponent,
+}
+
+bitflags::bitflags! {
+    /// Color write mask. Disabled color channels will not be written to.
+    #[repr(transparent)]
+    pub struct ColorWrites: u32 {
+        /// Enable red channel writes
+        const RED = 1 << 0;
+        /// Enable green channel writes
+        const GREEN = 1 << 1;
+        /// Enable blue channel writes
+        const BLUE = 1 << 2;
+        /// Enable alpha channel writes
+        const ALPHA = 1 << 3;
+        /// Enable red, green, and blue channel writes
+        const COLOR = Self::RED.bits | Self::GREEN.bits | Self::BLUE.bits;
+        /// Enable writes to all channels.
+        const ALL = Self::RED.bits | Self::GREEN.bits | Self::BLUE.bits | Self::ALPHA.bits;
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct ColorTargetState {
+    pub format: vk::Format,
+    pub blend: Option<BlendState>,
+    pub write_mask: ColorWrites,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum IndexFormat {
+    Uint16,
+    Uint32,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum PolygonMode {
     Line,
     Fill,
+    Point,
+}
+
+impl PolygonMode {
+    fn to_vk(&self) -> vk::PolygonMode {
+        match self {
+            PolygonMode::Line => vk::PolygonMode::LINE,
+            PolygonMode::Fill => vk::PolygonMode::FILL,
+            PolygonMode::Point => vk::PolygonMode::POINT,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum FrontFace {
-    Clockwise,
     CounterClockwise,
+    Clockwise,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum DepthBias {
-    Disabled,
-    Enabled {
-        constant_factor: NotNan<f32>,
-        clamp: NotNan<f32>,
-        slope_factor: NotNan<f32>,
-    },
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct RasterisationState {
-    pub depth_clamp_enable: bool,
-    pub rasterizer_discard_enable: bool,
-    pub polygon_mode: PolygonMode,
-    pub cull_mode: CullModeFlags,
-    pub depth_bias: DepthBias,
-    pub front_face: FrontFace,
-    pub line_width: NotNan<f32>,
-}
-
-impl RasterisationState {
-    pub const DEFAULT: RasterisationState = RasterisationState {
-        depth_clamp_enable: false,
-        rasterizer_discard_enable: false,
-        polygon_mode: PolygonMode::Fill,
-        cull_mode: CullModeFlags::NONE,
-        depth_bias: DepthBias::Disabled,
-        front_face: FrontFace::Clockwise,
-        line_width: unsafe { mem::transmute(1.0f32) },
-    };
-}
-
-impl Default for RasterisationState {
-    fn default() -> Self {
-        Self::DEFAULT
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[repr(C)]
-pub struct Viewport {
-    pub x: NotNan<f32>,
-    pub y: NotNan<f32>,
-    pub width: NotNan<f32>,
-    pub height: NotNan<f32>,
-    pub min_depth: NotNan<f32>,
-    pub max_depth: NotNan<f32>,
-}
-
-impl From<(u32, u32)> for Viewport {
-    fn from((w, h): (u32, u32)) -> Self {
-        Viewport {
-            x: 0.0.into(),
-            y: 0.0.into(),
-            width: (w as f32).into(),
-            height: (h as f32).into(),
-            min_depth: 0.0.into(),
-            max_depth: 1.0.into(),
+impl FrontFace {
+    fn to_vk(&self) -> vk::FrontFace {
+        match self {
+            FrontFace::CounterClockwise => vk::FrontFace::COUNTER_CLOCKWISE,
+            FrontFace::Clockwise => vk::FrontFace::CLOCKWISE,
         }
     }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-#[repr(C)]
-pub struct ScissorRect {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
+pub enum Face {
+    Front,
+    Back,
+}
+
+impl Face {
+    /*fn to_vk(&self) -> vk::FrontFace {
+        match self {
+            Face::Front => vk::FrontFace::COUNTER_CLOCKWISE,
+            Face::Back => vk::FrontFace::CLOCKWISE,
+        }
+    }*/
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Scissor {
-    Enabled(ScissorRect),
-    Disabled,
+pub enum PrimitiveTopology {
+    PointList,
+    LineList,
+    LineStrip,
+    TriangleList,
+    TriangleStrip,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Viewports<'a> {
-    Static(&'a [Viewport]),
-    Dynamic,
-}
-
-impl<'a> From<Viewports<'a>> for ViewportsOwned {
-    fn from(v: Viewports) -> Self {
-        match v {
-            Viewports::Static(v) => ViewportsOwned::Static(v.to_vec()),
-            Viewports::Dynamic => ViewportsOwned::Dynamic,
+impl PrimitiveTopology {
+    fn to_vk(&self) -> vk::PrimitiveTopology {
+        match self {
+            PrimitiveTopology::PointList => vk::PrimitiveTopology::POINT_LIST,
+            PrimitiveTopology::LineList => vk::PrimitiveTopology::LINE_LIST,
+            PrimitiveTopology::LineStrip => vk::PrimitiveTopology::LINE_STRIP,
+            PrimitiveTopology::TriangleList => vk::PrimitiveTopology::TRIANGLE_LIST,
+            PrimitiveTopology::TriangleStrip => vk::PrimitiveTopology::TRIANGLE_STRIP,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ViewportsOwned {
-    Static(Vec<Viewport>),
-    Dynamic,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum Scissors<'a> {
-    Static(&'a [Scissor]),
-    Dynamic,
-}
-
-impl<'a> From<Scissors<'a>> for ScissorsOwned {
-    fn from(s: Scissors) -> Self {
-        match s {
-            Scissors::Static(s) => ScissorsOwned::Static(s.to_vec()),
-            Scissors::Dynamic => ScissorsOwned::Dynamic,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ScissorsOwned {
-    Static(Vec<Scissor>),
-    Dynamic,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ViewportState<'a> {
-    pub viewports: Viewports<'a>,
-    pub scissors: Scissors<'a>,
-}
-
-impl<'a> Default for ViewportState<'a> {
-    fn default() -> Self {
-        ViewportState {
-            scissors: Scissors::Static(&[Scissor::Disabled]),
-            viewports: Viewports::Dynamic,
-        }
-    }
-}
-
-impl<'a> ViewportState<'a> {
-    pub const DYNAMIC_VIEWPORT_SCISSOR: ViewportState<'static> = ViewportState {
-        viewports: Viewports::Dynamic,
-        scissors: Scissors::Dynamic,
-    };
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct InputAssemblyState {
+#[derive(Copy, Clone, Debug)]
+pub struct PrimitiveState {
     pub topology: PrimitiveTopology,
-    pub primitive_restart_enable: bool,
+    pub strip_index_format: Option<IndexFormat>,
+    pub front_face: FrontFace,
+    pub cull_mode: Option<Face>,
+    pub clamp_depth: bool,
+    pub polygon_mode: PolygonMode,
+    pub conservative: bool,
 }
 
-impl Default for InputAssemblyState {
-    fn default() -> Self {
-        InputAssemblyState {
-            topology: PrimitiveTopology::TriangleList,
-            primitive_restart_enable: false,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum SampleShading {
-    Disabled,
-    Enabled { min_sample_shading: NotNan<f32> },
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug)]
 pub struct MultisampleState {
-    pub rasterization_samples: u32,
-    pub sample_shading: SampleShading,
-    pub alpha_to_coverage_enable: bool,
-    pub alpha_to_one_enable: bool,
+    pub count: u32,
+    pub mask: u64,
+    pub alpha_to_coverage_enabled: bool,
 }
 
-impl Default for MultisampleState {
-    fn default() -> Self {
-        MultisampleState {
-            rasterization_samples: 1,
-            sample_shading: SampleShading::Disabled,
-            alpha_to_coverage_enable: false,
-            alpha_to_one_enable: false,
+pub struct GraphicsPipelineDescriptor<'a> {
+    vertex_input: VertexInputState<'a>,
+    vertex_shader: &'a ShaderModule,
+    fragment_shader: &'a ShaderModule,
+    primitive_state: PrimitiveState,
+    multisample_state: MultisampleState,
+    depth_stencil_state: Option<DepthStencilState>,
+    color_attachments: &'a [ColorTargetState],
+}
+
+pub struct GraphicsPipeline {
+    device: Arc<graal::Device>,
+    pipeline: vk::Pipeline,
+}
+
+impl Device {
+    pub fn create_graphics_pipeline(
+        &mut self,
+        desc: &GraphicsPipelineDescriptor,
+    ) -> GraphicsPipeline {
+        let mut pipeline_shader_stages = Vec::new();
+        pipeline_shader_stages.push(vk::PipelineShaderStageCreateInfo {
+            flags: vk::PipelineShaderStageCreateFlags::empty(),
+            stage: vk::ShaderStageFlags::VERTEX,
+            module: desc.vertex_shader.shader_module,
+            p_name: b"main\0".as_ptr() as *const c_char,
+            p_specialization_info: ::std::ptr::null(),
+            ..Default::default()
+        });
+        pipeline_shader_stages.push(vk::PipelineShaderStageCreateInfo {
+            flags: vk::PipelineShaderStageCreateFlags::empty(),
+            stage: vk::ShaderStageFlags::FRAGMENT,
+            module: desc.fragment_shader.shader_module,
+            p_name: b"main\0".as_ptr() as *const c_char,
+            p_specialization_info: ::std::ptr::null(),
+            ..Default::default()
+        });
+
+        let vertex_input_state = vk::PipelineVertexInputStateCreateInfo {
+            flags: vk::PipelineVertexInputStateCreateFlags::empty(),
+            vertex_binding_description_count: desc.vertex_input.bindings.len() as u32,
+            p_vertex_binding_descriptions: desc.vertex_input.bindings.as_ptr(),
+            vertex_attribute_description_count: desc.vertex_input.attributes.len() as u32,
+            p_vertex_attribute_descriptions: desc.vertex_input.attributes.as_ptr(),
+            ..Default::default()
+        };
+
+        let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
+            flags: vk::PipelineInputAssemblyStateCreateFlags::empty(),
+            topology: desc.primitive_state.topology.to_vk(),
+            primitive_restart_enable: vk::FALSE,
+            ..Default::default()
+        };
+
+        let tessellation_state = vk::PipelineTessellationStateCreateInfo::default();
+
+        let viewport_state = vk::PipelineViewportStateCreateInfo {
+            flags: vk::PipelineViewportStateCreateFlags::empty(),
+            viewport_count: 1,
+            p_viewports: ptr::null(),
+            scissor_count: 1,
+            p_scissors: ptr::null(),
+            ..Default::default()
+        };
+
+        let rasterization_state = vk::PipelineRasterizationStateCreateInfo {
+            flags: Default::default(),
+            depth_clamp_enable: vk::FALSE,
+            rasterizer_discard_enable: vk::FALSE,
+            polygon_mode: desc.primitive_state.polygon_mode.to_vk(),
+            cull_mode: vk::CullModeFlags::NONE, // TODO
+            front_face: desc.primitive_state.front_face.to_vk(),
+            depth_bias_enable: vk::FALSE, // TODO
+            depth_bias_constant_factor: 0.0,
+            depth_bias_clamp: 0.0,
+            depth_bias_slope_factor: 0.0,
+            line_width: 1.0,
+            ..Default::default()
+        };
+
+        let multisample_state = vk::PipelineMultisampleStateCreateInfo {
+            flags: Default::default(),
+            rasterization_samples: match desc.multisample_state.count {
+                1 => vk::SampleCountFlags::TYPE_1,
+                2 => vk::SampleCountFlags::TYPE_2,
+                4 => vk::SampleCountFlags::TYPE_4,
+                8 => vk::SampleCountFlags::TYPE_8,
+                16 => vk::SampleCountFlags::TYPE_16,
+                32 => vk::SampleCountFlags::TYPE_32,
+                64 => vk::SampleCountFlags::TYPE_64,
+                _ => panic!("unsupported sample count"),
+            },
+            sample_shading_enable: vk::FALSE,
+            min_sample_shading: 0.0,
+            p_sample_mask: ptr::null(),
+            alpha_to_coverage_enable: if desc.multisample_state.alpha_to_coverage_enabled {
+                vk::TRUE
+            } else {
+                vk::FALSE
+            },
+            alpha_to_one_enable: vk::FALSE,
+            ..Default::default()
+        };
+
+        let depth_stencil_state = if let Some(ref dss) = desc.depth_stencil_state {
+            vk::PipelineDepthStencilStateCreateInfo {
+                flags: Default::default(),
+                depth_test_enable: vk::TRUE,
+                depth_write_enable: if dss.depth_write_enabled {
+                    vk::TRUE
+                } else {
+                    vk::FALSE
+                },
+                depth_compare_op: dss.depth_compare,
+                depth_bounds_test_enable: 0,
+                stencil_test_enable: vk::FALSE, // TODO
+                front: Default::default(),
+                back: Default::default(),
+                min_depth_bounds: 0.0,
+                max_depth_bounds: 0.0,
+                ..Default::default()
+            }
+        } else {
+            vk::PipelineDepthStencilStateCreateInfo {
+                flags: Default::default(),
+                depth_test_enable: vk::FALSE,
+                depth_write_enable: vk::FALSE,
+                depth_compare_op: Default::default(),
+                depth_bounds_test_enable: 0,
+                stencil_test_enable: 0,
+                front: Default::default(),
+                back: Default::default(),
+                min_depth_bounds: 0.0,
+                max_depth_bounds: 0.0,
+                ..Default::default()
+            }
+        };
+
+        let mut color_blend_attachments = Vec::with_capacity(desc.color_attachments.len());
+        for cts in desc.color_attachments {
+            let color_blend_attachment = if let Some(blend) = cts.blend {
+                vk::PipelineColorBlendAttachmentState {
+                    blend_enable: vk::TRUE,
+                    src_color_blend_factor: blend.color.src_factor,
+                    dst_color_blend_factor: blend.color.dst_factor,
+                    color_blend_op: blend.color.operation,
+                    src_alpha_blend_factor: blend.alpha.src_factor,
+                    dst_alpha_blend_factor: blend.alpha.dst_factor,
+                    alpha_blend_op: blend.alpha.operation,
+                    color_write_mask: vk::ColorComponentFlags::from_raw(cts.write_mask.bits),
+                }
+            } else {
+                vk::PipelineColorBlendAttachmentState {
+                    blend_enable: vk::FALSE,
+                    src_color_blend_factor: Default::default(),
+                    dst_color_blend_factor: Default::default(),
+                    color_blend_op: Default::default(),
+                    src_alpha_blend_factor: Default::default(),
+                    dst_alpha_blend_factor: Default::default(),
+                    alpha_blend_op: Default::default(),
+                    color_write_mask: vk::ColorComponentFlags::from_raw(cts.write_mask.bits),
+                }
+            };
+            color_blend_attachments.push(color_blend_attachment);
+        }
+
+        let color_blend_state = vk::PipelineColorBlendStateCreateInfo {
+            flags: Default::default(),
+            logic_op_enable: vk::FALSE, // TODO
+            logic_op: Default::default(),
+            attachment_count: color_blend_attachments.len() as u32,
+            p_attachments: color_blend_attachments.as_ptr(),
+            blend_constants: [0.0f32; 4],
+            ..Default::default()
+        };
+
+        let dynamic_states = &[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
+
+        let dynamic_state = vk::PipelineDynamicStateCreateInfo {
+            flags: Default::default(),
+            dynamic_state_count: dynamic_states.len() as u32,
+            p_dynamic_states: dynamic_states.as_ptr(),
+            ..Default::default()
+        };
+
+        let create_info = vk::GraphicsPipelineCreateInfo {
+            flags: vk::PipelineCreateFlags::empty(),
+            stage_count: pipeline_shader_stages.len() as u32,
+            p_stages: pipeline_shader_stages.as_ptr(),
+            p_vertex_input_state: &vertex_input_state,
+            p_input_assembly_state: &input_assembly_state,
+            p_tessellation_state: &tessellation_state,
+            p_viewport_state: &viewport_state,
+            p_rasterization_state: &rasterization_state,
+            p_multisample_state: &multisample_state,
+            p_depth_stencil_state: &depth_stencil_state,
+            p_color_blend_state: &color_blend_state,
+            p_dynamic_state: &dynamic_state,
+            layout: Default::default(),
+            render_pass: Default::default(),
+            subpass: 0,
+            base_pipeline_handle: Default::default(),
+            base_pipeline_index: 0,
+            ..Default::default()
+        };
+
+        unsafe {
+            let device = self.vulkan_device();
+            let pipelines = device
+                .create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
+                .expect("failed to create pipeline");
+            GraphicsPipeline {
+                device: self.backend.clone(),
+                pipeline: pipelines[0],
+            }
         }
     }
 }
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct AttachmentDescription {
-    pub format: Format,
-    pub samples: u32,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct AttachmentLayout<'a> {
-    pub input_attachments: &'a [AttachmentDescription],
-    pub depth_attachment: Option<AttachmentDescription>,
-    pub color_attachments: &'a [AttachmentDescription],
-    //pub resolve_attachments: &'a [AttachmentDescription]
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum CompareOp {
-    Never = 0,
-    Less = 1,
-    Equal = 2,
-    LessOrEqual = 3,
-    Greater = 4,
-    NotEqual = 5,
-    GreaterOrEqual = 6,
-    Always = 7,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum StencilOp {
-    Keep = 0,
-    Zero = 1,
-    Replace = 2,
-    IncrementAndClamp = 3,
-    DecrementAndClamp = 4,
-    Invert = 5,
-    IncrementAndWrap = 6,
-    DecrementAndWrap = 7,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct StencilOpState {
-    pub fail_op: StencilOp,
-    pub pass_op: StencilOp,
-    pub depth_fail_op: StencilOp,
-    pub compare_op: CompareOp,
-    pub compare_mask: u32,
-    pub write_mask: u32,
-    pub reference: u32,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum DepthBoundTest {
-    Disabled,
-    Enabled {
-        min_depth_bounds: NotNan<f32>,
-        max_depth_bounds: NotNan<f32>,
-    },
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum StencilTest {
-    Disabled,
-    Enabled {
-        front: StencilOpState,
-        back: StencilOpState,
-    },
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct DepthStencilState {
-    pub depth_test_enable: bool,
-    pub depth_write_enable: bool,
-    pub depth_compare_op: CompareOp,
-    pub depth_bounds_test: DepthBoundTest,
-    pub stencil_test: StencilTest,
-}
-
-impl Default for DepthStencilState {
-    fn default() -> Self {
-        DepthStencilState {
-            depth_test_enable: false,
-            depth_write_enable: false,
-            depth_compare_op: CompareOp::Less,
-            depth_bounds_test: DepthBoundTest::Disabled,
-            stencil_test: StencilTest::Disabled,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum LogicOp {
-    Clear = 0,
-    And = 1,
-    AndReverse = 2,
-    Copy = 3,
-    AndInverted = 4,
-    NoOp = 5,
-    Xor = 6,
-    Or = 7,
-    Nor = 8,
-    Equivalent = 9,
-    Invert = 10,
-    OrReverse = 11,
-    CopyInverted = 12,
-    OrInverted = 13,
-    Nand = 14,
-    Set = 15,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum BlendFactor {
-    Zero = 0,
-    One = 1,
-    SrcColor = 2,
-    OneMinusSrcColor = 3,
-    DstColor = 4,
-    OneMinusDstColor = 5,
-    SrcAlpha = 6,
-    OneMinusSrcAlpha = 7,
-    DstAlpha = 8,
-    OneMinusDstAlpha = 9,
-    ConstantColor = 10,
-    OneMinusConstantColor = 11,
-    ConstantAlpha = 12,
-    OneMinusConstantAlpha = 13,
-    SrcAlphaSaturate = 14,
-    Src1Color = 15,
-    OneMinusSrc1Color = 16,
-    Src1Alpha = 17,
-    OneMinusSrc1Alpha = 18,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum BlendOp {
-    Add = 0,
-    Subtract = 1,
-    ReverseSubtract = 2,
-    Min = 3,
-    Max = 4,
-}
-
-bitflags! {
-    pub struct ColorComponentFlags: u32 {
-        const R = 0x0000_0001;
-        const G = 0x0000_0002;
-        const B = 0x0000_0004;
-        const A = 0x0000_0008;
-        const RGBA = Self::R.bits | Self::G.bits | Self::B.bits  | Self::A.bits;
-        const ALL = Self::R.bits | Self::G.bits | Self::B.bits  | Self::A.bits;
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ColorBlendAttachmentState {
-    Disabled,
-    Enabled {
-        src_color_blend_factor: BlendFactor,
-        dst_color_blend_factor: BlendFactor,
-        color_blend_op: BlendOp,
-        src_alpha_blend_factor: BlendFactor,
-        dst_alpha_blend_factor: BlendFactor,
-        alpha_blend_op: BlendOp,
-        color_write_mask: ColorComponentFlags,
-    },
-}
-
-impl ColorBlendAttachmentState {
-    pub const DISABLED: ColorBlendAttachmentState = ColorBlendAttachmentState::Disabled;
-    pub const ALPHA_BLENDING: ColorBlendAttachmentState = ColorBlendAttachmentState::Enabled {
-        color_blend_op: BlendOp::Add,
-        src_color_blend_factor: BlendFactor::SrcAlpha,
-        dst_color_blend_factor: BlendFactor::OneMinusSrcAlpha,
-        alpha_blend_op: BlendOp::Add,
-        src_alpha_blend_factor: BlendFactor::One,
-        dst_alpha_blend_factor: BlendFactor::Zero,
-        color_write_mask: ColorComponentFlags::ALL,
-    };
-}
-
-impl Default for ColorBlendAttachmentState {
-    fn default() -> Self {
-        ColorBlendAttachmentState::Disabled
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ColorBlendAttachments<'a> {
-    All(&'a ColorBlendAttachmentState),
-    Separate(&'a [ColorBlendAttachmentState]),
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ColorBlendState<'a> {
-    pub logic_op: Option<LogicOp>,
-    pub attachments: ColorBlendAttachments<'a>,
-    pub blend_constants: [NotNan<f32>; 4],
-}
-
-impl<'a> ColorBlendState<'a> {
-    pub const DISABLED: ColorBlendState<'static> = ColorBlendState {
-        attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::Disabled),
-        blend_constants: [unsafe { mem::transmute(0.0f32) }; 4],
-        logic_op: None,
-    };
-
-    pub const ALPHA_BLENDING: ColorBlendState<'static> = ColorBlendState {
-        attachments: ColorBlendAttachments::All(&ColorBlendAttachmentState::ALPHA_BLENDING),
-        blend_constants: [unsafe { mem::transmute(0.0f32) }; 4],
-        logic_op: None,
-    };
-}
-
-/*#[derive(Copy, Clone)]
-pub struct GraphicsPipelineCreateInfo<'a, 'b, B: Backend> {
-    /// Shaders
-    pub shader_stages: GraphicsShaderStages<'a, 'b, B>,
-    pub viewport_state: ViewportState<'b>,
-    pub rasterization_state: RasterisationState,
-    pub multisample_state: MultisampleState,
-    pub depth_stencil_state: DepthStencilState,
-    pub input_assembly_state: InputAssemblyState,
-    pub color_blend_state: ColorBlendState<'b>,
-    //pub dynamic_state: DynamicStateFlags,
-}*/

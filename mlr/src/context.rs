@@ -1,20 +1,22 @@
 use crate::{
-    arguments::{ArgumentBlock, Arguments},
-    descriptor::{DescriptorSetAllocator, DescriptorSetLayoutId},
+    arguments::{ArgumentBlock, Arguments, StaticArguments},
 };
-use graal::{ash, swapchain::Swapchain, vk, Device, FrameNumber};
-use mlr::{buffer::BufferData, sampler::SamplerType};
-use slotmap::SlotMap;
+use graal::{ash, FrameNumber, swapchain::Swapchain, vk};
+use mlr::{buffer::BufferData, image::ImageAny, sampler::SamplerType};
+use slotmap::{SecondaryMap, SlotMap};
 use std::{
     alloc::Layout,
     any::TypeId,
     collections::{HashMap, VecDeque},
     hash::Hash,
-    mem, ptr,
+    mem,
+    ops::{Deref, DerefMut},
+    ptr,
     ptr::slice_from_raw_parts,
     slice,
     sync::Arc,
 };
+use graal::descriptor::{DescriptorSetAllocator, DescriptorSetLayoutId};
 
 unsafe fn place_aligned(layout: &Layout, ptr: &mut *mut u8, space: &mut usize) -> *mut u8 {
     let ptr_usize = *ptr as usize;
@@ -111,30 +113,6 @@ impl Default for InFlightFrameResources {
             current_upload_chunk: None,
         }
     }
-}
-
-/*/// Hashable wrapper over `vk::SamplerCreateInfo`.
-#[derive(Copy, Clone, Debug)]
-#[repr(transparent)]
-pub(crate) struct WrapHash<T: Copy+'static>(pub(crate) T);
-
-impl<T> Hash for WrapHash<T> where WrapHash<T>: bytemuck::Pod {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        todo!()
-    }
-}*/
-
-pub(crate) struct EvalContext {
-    descriptor_allocators: SlotMap<DescriptorSetLayoutId, DescriptorSetAllocator>,
-    descriptor_set_layout_by_typeid: HashMap<TypeId, DescriptorSetLayoutId>,
-    sampler_by_typeid: HashMap<TypeId, vk::Sampler>,
-    in_flight: VecDeque<InFlightFrameResources>,
-    frame_resources: InFlightFrameResources,
-}
-
-/// Context passed to the pass setup closure.
-pub struct PassBuilder<'a, 'b> {
-    pub(crate) frame: &'a mut graal::Frame<'b, EvalContext>,
 }
 
 /*/// Context for recording commands during pass evaluation.
@@ -272,72 +250,51 @@ impl<'a> Frame<'a> {
     pub fn present(&mut self) {}
 
     /// Finishes this frame.
-    pub fn finish(mut self) {
-        self.context.eval_ctx.frame_resources.frame_number = self.backend.frame_number();
-
-        let _frame_future = self.context.backend.finish_frame(
-            self.backend,
-            &mut self.context.eval_ctx,
-            |eval_context, device, frame_number| {
-                while let Some(in_flight_frame) = eval_context.in_flight.pop_front() {
-                    if in_flight_frame.frame_number <= frame_number {
-                        // this frame has finished: destroy or recycle all objects not in use anymore
-                        unsafe {
-                            for fb in in_flight_frame.framebuffers {
-                                device.device.destroy_framebuffer(fb, None);
-                            }
-                            for iv in in_flight_frame.image_views {
-                                device.device.destroy_image_view(iv, None);
-                            }
-                            for (layout, ds) in in_flight_frame.descriptor_sets {
-                                let allocator = eval_context.get_descriptor_set_allocator(layout);
-                                allocator.free(ds);
-                            }
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            },
-        );
-
-        let in_flight_frame_resources = mem::take(&mut self.context.eval_ctx.frame_resources);
-        self.context
-            .eval_ctx
-            .in_flight
-            .push_back(in_flight_frame_resources);
-    }
 }
 
 impl EvalContext {
-
 }*/
 
-pub struct ContextResources {
-    device: Arc<graal::Device>,
-    descriptor_allocators: SlotMap<DescriptorSetLayoutId, DescriptorSetAllocator>,
-    descriptor_set_layout_by_typeid: HashMap<TypeId, DescriptorSetLayoutId>,
-    sampler_by_typeid: HashMap<TypeId, vk::Sampler>,
-    in_flight: VecDeque<InFlightFrameResources>,
-    frame_resources: InFlightFrameResources,
+
+#[derive(Copy, Clone, Debug)]
+pub enum AttachmentLoadOp<V> {
+    Load,
+    Clear { value: V },
+    DontCare,
 }
 
-impl ContextResources {
-    fn new(device: Arc<Device>) -> ContextResources {
-        ContextResources {
-            device,
-            descriptor_allocators: SlotMap::with_key(),
-            descriptor_set_layout_by_typeid: Default::default(),
-            sampler_by_typeid: Default::default(),
-            in_flight: Default::default(),
-            frame_resources: Default::default(),
-        }
-    }
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum AttachmentStoreOp {
+    Store,
+    DontCare,
+}
 
-    pub fn vulkan_device(&self) -> &graal::ash::Device {
-        &self.device.device
-    }
+/// Basically taken from wgpu.
+#[derive(Copy, Clone, Debug)]
+pub struct RenderPassColorAttachment<'a> {
+    /// TODO subresources
+    pub attachment: &'a ImageAny,
+    pub load_op: AttachmentLoadOp<[f64; 4]>,
+    pub store_op: AttachmentStoreOp,
+}
 
+#[derive(Copy, Clone, Debug)]
+pub struct RenderPassDepthStencilAttachment<'a> {
+    /// TODO subresources
+    pub attachment: &'a ImageAny,
+    /// TODO separate depth/stencil ops
+    pub load_op: AttachmentLoadOp<[f64; 4]>,
+    pub store_op: AttachmentStoreOp,
+}
+
+/// Basically taken from wgpu.
+#[derive(Copy, Clone, Debug)]
+pub struct RenderPassDescriptor<'a, 'b> {
+    pub color_attachments: &'b [RenderPassColorAttachment<'a>],
+    pub depth_stencil_attachment: Option<RenderPassDepthStencilAttachment<'a>>,
+}
+
+impl<'a> Frame<'a> {
     /// Creates a transient image view that will be deleted at the end of the frame.
     ///
     /// # Safety
@@ -347,68 +304,12 @@ impl ContextResources {
         &mut self,
         create_info: &vk::ImageViewCreateInfo,
     ) -> vk::ImageView {
-        let device = &self.device.device;
+        let device = &self.context.vulkan_device();
         let image_view = device.create_image_view(create_info, None).unwrap();
-        self.frame_resources.image_views.push(image_view);
+        self.resources.image_views.push(image_view);
         image_view
     }
 
-    /// Creates a sampler object.
-    ///
-    /// The returned object lives as long as the context is alive.
-    pub(crate) unsafe fn get_or_create_sampler(
-        &mut self,
-        sampler: impl SamplerType,
-    ) -> vk::Sampler {
-        let device = &self.device.device;
-        if let Some(type_id) = sampler.unique_type_id() {
-            *self
-                .sampler_by_typeid
-                .entry(type_id)
-                .or_insert_with(|| sampler.to_sampler(device))
-        } else {
-            todo!()
-        }
-    }
-
-    /// Creates a descriptor set layout and an associated allocator.
-    pub(crate) fn get_or_create_descriptor_set_layout(
-        &mut self,
-        type_id: Option<TypeId>,
-        bindings: &[vk::DescriptorSetLayoutBinding],
-        update_template_entries: Option<&[vk::DescriptorUpdateTemplateEntry]>,
-    ) -> (vk::DescriptorSetLayout, DescriptorSetLayoutId) {
-        let device = &self.device.device;
-        let mut allocators = &mut self.descriptor_allocators;
-        let id = if let Some(type_id) = type_id {
-            *self
-                .descriptor_set_layout_by_typeid
-                .entry(type_id)
-                .or_insert_with(|| {
-                    allocators.insert(DescriptorSetAllocator::new(
-                        device,
-                        bindings,
-                        update_template_entries,
-                    ))
-                })
-        } else {
-            allocators.insert(DescriptorSetAllocator::new(
-                device,
-                bindings,
-                update_template_entries,
-            ))
-        };
-
-        (self.descriptor_allocators.get(id).unwrap().layout, id)
-    }
-
-    /*/// Returns the descriptor set allocator for the given layout id.
-    pub(crate) fn get_descriptor_set_allocator(
-        &mut self,
-        id: DescriptorSetLayoutId,
-    ) -> &mut DescriptorSetAllocator {
-        self.descriptor_allocators.get_mut(id).unwrap()
-    }*/
 
     /// Allocates a descriptor set.
     pub(crate) fn allocate_descriptor_set_for_arguments<T: Arguments>(
@@ -488,7 +389,7 @@ impl ContextResources {
         }
     }
 
-    pub(crate) fn upload_slice<T: BufferData>(
+    pub fn upload_slice<T: BufferData>(
         &mut self,
         data: &[T],
         usage: vk::BufferUsageFlags,
@@ -499,45 +400,151 @@ impl ContextResources {
         (buffer.handle, buffer.offset)
     }
 
-    /// Creates an argument block.
-    pub(crate) fn create_argument_block<T: Arguments>(&mut self, mut args: T) -> ArgumentBlock {
-        let (_, layout_id) = self.get_or_create_descriptor_set_layout(
-            args.unique_type_id(),
-            args.get_descriptor_set_layout_bindings(),
-            args.get_descriptor_set_update_template_entries(),
-        );
-        let allocator = self.descriptor_allocators.get_mut(layout_id).unwrap();
-        let update_template = allocator.update_template();
-        let descriptor_set = allocator.allocate(&self.device.device);
-        self.frame_resources
-            .descriptor_sets
-            .push((layout_id, descriptor_set));
+}
 
-        // SAFETY: TODO?
-        unsafe {
-            args.update_descriptor_set(self, descriptor_set, update_template);
+pub struct Frame<'a> {
+    context: &'a mut Context,
+    backend: graal::Frame<'a, Context>,
+    resources: InFlightFrameResources,
+}
+
+impl<'a> Frame<'a> {
+    /// Starts a render pass.
+    pub fn start_render_pass<'b>(&'b mut self, desc: &RenderPassDescriptor) -> RenderPass<'a, 'b> {
+        RenderPass {
+            frame: self,
+            commands: vec![],
         }
+    }
 
-        ArgumentBlock { descriptor_set }
+    /// Finishes this frame
+    pub fn finish(mut self) {
+        self.resources.frame_number = self.backend.frame_number();
+
+        let _frame_future = self.context.backend.finish_frame(
+            self.backend,
+            self.context,
+            |context, device, frame_number| {
+                while let Some(in_flight_frame) = context.in_flight.pop_front() {
+                    if in_flight_frame.frame_number <= frame_number {
+                        // this frame has finished: destroy or recycle all objects not in use anymore
+                        unsafe {
+                            for fb in in_flight_frame.framebuffers {
+                                device.device.destroy_framebuffer(fb, None);
+                            }
+                            for iv in in_flight_frame.image_views {
+                                device.device.destroy_image_view(iv, None);
+                            }
+                            for (layout, ds) in in_flight_frame.descriptor_sets {
+                                let allocator = eval_context.get_descriptor_set_allocator(layout);
+                                allocator.free(ds);
+                            }
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            },
+        );
+
+        let in_flight_frame_resources = mem::take(&mut self.context.eval_ctx.frame_resources);
+        self.context
+            .eval_ctx
+            .in_flight
+            .push_back(in_flight_frame_resources);
+    }
+}
+
+pub enum Command {
+    BindDescriptorSet {
+        number: u32,
+        descriptor_set: vk::DescriptorSet,
+    },
+    Draw {
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    },
+}
+
+pub struct RenderPass<'a, 'b> {
+    frame: &'b mut Frame<'a>,
+    commands: Vec<Command>,
+}
+
+impl<'a, 'b> RenderPass<'a, 'b> {
+
+    /// vkCmdBindDescriptorSet
+    pub fn bind_argument_block<T: Arguments>(&mut self, number: u32, args: ArgumentBlock<T>) {
+        // ideally, I'd like to start recording the buffer now
+        self.commands.push(Command::BindDescriptorSet {
+            number,
+            descriptor_set: args.descriptor_set.get(),
+        });
+    }
+
+    /// vkCmdDraw
+    pub fn draw(
+        &mut self,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) {
+        self.commands.push(Command::Draw {
+            vertex_count,
+            instance_count,
+            first_vertex,
+            first_instance,
+        })
+    }
+
+    pub fn finish(self) {
+        let commands = self.commands;
+
+        self.frame
+            .backend
+            .pass_set_record_callback(move |record, ctx, command_buffer| {
+                let device = record.context.vulkan_device();
+
+                let mut current_pipeline_layout = vk::PipelineLayout::default();
+
+                // translate commands
+                unsafe {
+                    for cmd in commands {
+                        match cmd {
+                            Command::BindDescriptorSet {
+                                number,
+                                descriptor_set,
+                            } => {
+                                // TODO dynamic offsets
+                                device.cmd_bind_descriptor_sets(
+                                    command_buffer,
+                                    vk::PipelineBindPoint::GRAPHICS,
+                                    current_pipeline_layout,
+                                    number,
+                                    &[descriptor_set],
+                                    &[],
+                                );
+                            }
+                            Command::Draw { .. } => {}
+                        }
+                    }
+                }
+            });
+
+        self.frame.backend.end_pass();
     }
 }
 
 /// MLR context.
 pub struct Context {
     pub(crate) backend: graal::Context,
-    pub(crate) resources: ContextResources,
+    pub(crate) in_flight: VecDeque<InFlightFrameResources>,
 }
 
 impl Context {
-    /// Creates a new context.
-    pub fn new(device: graal::Device) -> Context {
-        let backend = graal::Context::with_device(device);
-        let device = backend.device().clone();
-        Context {
-            backend,
-            resources: ContextResources::new(device),
-        }
-    }
 
     /// Returns a reference to the underlying `graal::Device`
     pub fn device(&self) -> &Arc<graal::Device> {
@@ -549,7 +556,7 @@ impl Context {
         &self.backend.device().device
     }
 
-    /*/// Starts a frame.
+    /// Starts a frame.
     ///
     /// To finish building the frame, call `Frame::finish`.
     pub fn start_frame(&mut self) -> Frame {
@@ -561,6 +568,7 @@ impl Context {
         Frame {
             context: self,
             backend: frame_backend,
+            resources: Default::default()
         }
-    }*/
+    }
 }

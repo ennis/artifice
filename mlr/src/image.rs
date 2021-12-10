@@ -1,6 +1,7 @@
 use crate::{arguments::SampledImage2D, context::Context, sampler::SamplerType, vk};
-use mlr::arguments::CombinedImageSampler2D;
+use mlr::{arguments::CombinedImageSampler2D, Device};
 use std::sync::Arc;
+use crate::device::Device;
 
 #[derive(Debug)]
 pub struct ImageAny {
@@ -10,21 +11,6 @@ pub struct ImageAny {
 }
 
 impl ImageAny {
-    /// Creates a new, uninitialized resource.
-    pub fn new(
-        device: &Arc<graal::Device>,
-        location: graal::MemoryLocation,
-        create_info: graal::ImageResourceCreateInfo,
-    ) -> ImageAny {
-        let device = device.clone();
-        let image = device.create_image("", location, &create_info);
-        ImageAny {
-            device,
-            image,
-            format: create_info.format,
-        }
-    }
-
     /// Returns the ID of the resource group that this image belongs to.
     pub fn group_id(&self) -> Option<graal::ResourceGroupId> {
         self.device
@@ -78,6 +64,22 @@ impl ImageAny {
                 image_view: Default::default(),
                 image_layout: Default::default(),
             },
+        }
+    }
+}
+
+impl Device {
+    /// Creates a new, uninitialized image.
+    pub fn create_image(
+        &self,
+        location: graal::MemoryLocation,
+        create_info: graal::ImageResourceCreateInfo,
+    ) -> ImageAny {
+        let image = self.backend.create_image("", location, &create_info);
+        ImageAny {
+            device: self.backend.clone(),
+            image,
+            format: create_info.format,
         }
     }
 }

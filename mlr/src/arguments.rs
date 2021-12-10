@@ -1,11 +1,17 @@
+use std::cell::Cell;
 use crate::{
     buffer::BufferAny,
+    context::FrameResources,
     image::ImageAny,
     sampler::SamplerType,
     vk,
     vk::{DescriptorType, ShaderStageFlags},
 };
-use mlr::context::{Context, ContextResources};
+use mlr::{
+    context::{Context, ContextResources},
+    Frame,
+};
+use graal::descriptor::DescriptorSetLayoutId;
 
 pub trait ResourceVisitor {
     fn visit_image(
@@ -29,6 +35,13 @@ pub trait ResourceHolder {
     fn walk_resources(&self, visitor: &mut dyn ResourceVisitor);
 }
 
+/// Arguments with statically known descriptor set layout.
+pub trait StaticArguments {
+    const TYPE_ID: std::any::TypeId;
+    const LAYOUT: &'static [vk::DescriptorSetLayoutBinding];
+    const UPDATE_TEMPLATE_ENTRIES: Option<&'static [vk::DescriptorUpdateTemplateEntry]>;
+}
+
 /// Shader arguments (uniforms, textures, etc.).
 pub trait Arguments: ResourceHolder {
     /// Returns a unique ID for the type of this structure, or None if it's unique.
@@ -45,7 +58,7 @@ pub trait Arguments: ResourceHolder {
     /// Updates a descriptor set with the data contained in the arguments.
     unsafe fn update_descriptor_set(
         &mut self,
-        ctx: &mut ContextResources,
+        frame: &mut FrameResources,
         set: vk::DescriptorSet,
         update_template: Option<vk::DescriptorUpdateTemplate>,
     );
@@ -69,7 +82,7 @@ pub unsafe trait DescriptorBinding {
     /// Implementations can access the submission context to upload uniform data, create image views,
     /// create samplers, etc.
     /// This cannot be done before evaluation since resources may not have memory bound to them at that point.
-    fn prepare_descriptors(&mut self, ctx: &mut ContextResources);
+    fn prepare_descriptors(&mut self, frame: &mut FrameResources);
 
     fn visit(&self, visitor: &mut dyn ResourceVisitor);
 }
@@ -92,7 +105,7 @@ unsafe impl<'a> DescriptorBinding for UniformBuffer<'a> {
     const UPDATE_OFFSET: usize = Self::layout().descriptor.offset;
     const UPDATE_STRIDE: usize = Self::layout().descriptor.size;
 
-    fn prepare_descriptors(&mut self, ctx: &mut ContextResources) {
+    fn prepare_descriptors(&mut self, frame: &mut FrameResources) {
         todo!()
     }
 
@@ -119,7 +132,7 @@ unsafe impl<'a> DescriptorBinding for SampledImage2D<'a> {
     const UPDATE_OFFSET: usize = Self::layout().descriptor.offset;
     const UPDATE_STRIDE: usize = Self::layout().descriptor.size;
 
-    fn prepare_descriptors(&mut self, ctx: &mut ContextResources) {
+    fn prepare_descriptors(&mut self, frame: &mut FrameResources) {
         // SAFETY: TODO
         let image_view = unsafe {
             let create_info = vk::ImageViewCreateInfo {
@@ -138,14 +151,14 @@ unsafe impl<'a> DescriptorBinding for SampledImage2D<'a> {
                 ..Default::default()
             };
             /// FIXME: this should probably be cached into the image
-            ctx.create_transient_image_view(&create_info)
+            frame.create_transient_image_view(&create_info)
         };
 
         self.descriptor = vk::DescriptorImageInfo {
             sampler: Default::default(),
             image_view,
             image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-        }
+        };
     }
 
     fn visit(&self, visitor: &mut dyn ResourceVisitor) {
@@ -183,7 +196,7 @@ unsafe impl<'a, S: SamplerType> DescriptorBinding for CombinedImageSampler2D<'a,
     const UPDATE_OFFSET: usize = Self::layout().descriptor.offset;
     const UPDATE_STRIDE: usize = Self::layout().descriptor.size;
 
-    fn prepare_descriptors(&mut self, ctx: &mut ContextResources) {
+    fn prepare_descriptors(&mut self, frame: &mut FrameResources) {
         // SAFETY: TODO
         let image_view = unsafe {
             let create_info = vk::ImageViewCreateInfo {
@@ -202,10 +215,10 @@ unsafe impl<'a, S: SamplerType> DescriptorBinding for CombinedImageSampler2D<'a,
                 ..Default::default()
             };
             /// FIXME: this should probably be cached into the image
-            ctx.create_transient_image_view(&create_info)
+            frame.create_transient_image_view(&create_info)
         };
 
-        let sampler = self.sampler.to_sampler(ctx.vulkan_device());
+        let sampler = self.sampler.to_sampler(frame.vulkan_device());
         self.descriptor = vk::DescriptorImageInfo {
             sampler,
             image_view,
@@ -228,6 +241,10 @@ unsafe impl<'a, S: SamplerType> DescriptorBinding for CombinedImageSampler2D<'a,
 /// Argument blocks
 ///
 /// Actually they are just descriptor sets.
-pub struct ArgumentBlock {
-    pub(crate) descriptor_set: vk::DescriptorSet,
+pub struct ArgumentBlock<T: Arguments> {
+    pub(crate) args: T,
+    pub(crate) set_layout_id: DescriptorSetLayoutId,
+    pub(crate) set_layout: vk::DescriptorSetLayout,
+    pub(crate) update_template: vk::DescriptorUpdateTemplate,
+    pub(crate) descriptor_set: Cell<vk::DescriptorSet>, // allocated on first use
 }
