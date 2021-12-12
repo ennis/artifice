@@ -12,17 +12,10 @@ use graal::descriptor::DescriptorSetAllocator;
 use mlr::sampler::SamplerInner;
 use crate::sampler::{Sampler, SamplerType};
 
-
-// Same architecture as graal, but for everything other than buffers & images
 pub(crate) struct DeviceInner {
     current_frame: graal::FrameNumber,
-    descriptor_set_layouts: ObjectTracker<DescriptorSetLayoutId, vk::DescriptorSetLayout>,
-    samplers: ObjectTracker<SamplerId, vk::Sampler>,
-    pipeline_layouts: ObjectTracker<PipelineLayoutId, vk::PipelineLayout>,
-    pipelines: ObjectTracker<PipelineId, vk::Pipeline>,
-    descriptor_allocators: SecondaryMap<DescriptorSetLayoutId, DescriptorSetAllocator>,
-    descriptor_set_layout_by_typeid: HashMap<TypeId, DescriptorSetLayoutId>,
-    sampler_by_typeid: HashMap<TypeId, Sampler>,
+    descriptor_set_layout_by_typeid: HashMap<TypeId, graal::DescriptorSetLayoutId>,
+    sampler_by_typeid: HashMap<TypeId, graal::SamplerId>,
 }
 
 #[derive(Clone)]
@@ -32,31 +25,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub unsafe fn create_device_and_context(
-        present_surface: Option<vk::SurfaceKHR>,
-    ) -> (Device, Context) {
-        let (backend_device, backend_context) =
-            graal::Device::create_device_and_context(present_surface);
-        (
-            Device {
-                inner: Arc::new(Mutex::new(DeviceInner {
-                    current_frame: Default::default(),
-                    descriptor_set_layouts: Default::default(),
-                    descriptor_set_layout_by_typeid: Default::default(),
-                    sampler_by_typeid: Default::default(),
-                    samplers: Default::default(),
-                    pipeline_layouts: Default::default(),
-                    pipelines: Default::default(),
-                    descriptor_allocators: SecondaryMap::default(),
-                })),
-                backend: backend_device,
-            },
-            Context {
-                backend: backend_context,
-                in_flight: VecDeque::new(),
-            },
-        )
-    }
+
 
     /// Returns the underlying `graal::Device`.
     pub fn backend(&self) -> &Arc<graal::Device> {
@@ -204,4 +173,31 @@ impl Device {
         )
         .0
     }
+}
+
+pub unsafe fn create_device_and_context(
+    present_surface: Option<vk::SurfaceKHR>,
+) -> (Device, Context) {
+    let (backend_device, backend_context) = graal::create_device_and_context(present_surface);
+
+
+    (
+        Device {
+            inner: Arc::new(Mutex::new(DeviceInner {
+                current_frame: Default::default(),
+                descriptor_set_layouts: Default::default(),
+                descriptor_set_layout_by_typeid: Default::default(),
+                sampler_by_typeid: Default::default(),
+                samplers: Default::default(),
+                pipeline_layouts: Default::default(),
+                pipelines: Default::default(),
+                descriptor_allocators: SecondaryMap::default(),
+            })),
+            backend: backend_device,
+        },
+        Context {
+            backend: backend_context,
+            in_flight: VecDeque::new(),
+        },
+    )
 }

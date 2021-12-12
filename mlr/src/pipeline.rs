@@ -3,6 +3,7 @@ use bitflags::bitflags;
 use graal::vk;
 use mlr::{Arguments, Device};
 use std::{mem, os::raw::c_char, ptr, sync::Arc};
+use crate::device::Device;
 
 #[repr(transparent)]
 pub struct ArgumentLayout {

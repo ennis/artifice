@@ -67,14 +67,14 @@ pub trait Arguments: ResourceHolder {
 pub unsafe trait DescriptorBinding {
     /// Descriptor type.
     const DESCRIPTOR_TYPE: vk::DescriptorType;
-    /// Number of descriptors represented in this object.
-    const DESCRIPTOR_COUNT: u32;
     /// Which shader stages can access a resource for this binding.
     const SHADER_STAGES: vk::ShaderStageFlags;
     /// Offset to the descriptor update data within this object.
     const UPDATE_OFFSET: usize;
     /// Stride of the descriptor update data within this object.
     const UPDATE_STRIDE: usize;
+    /// Number of descriptors represented in this object.
+    const DESCRIPTOR_COUNT: u32;
 
     /// Prepares the descriptor update data during pass evaluation.
     ///
@@ -87,32 +87,6 @@ pub unsafe trait DescriptorBinding {
     fn visit(&self, visitor: &mut dyn ResourceVisitor);
 }
 
-//--------------------------------------------------------------------------------------------------
-
-/// Uniform buffer descriptors.
-#[derive(Copy, Clone, Debug)]
-#[repr(C)]
-#[derive(mlr::StructLayout)]
-pub struct UniformBuffer<'a> {
-    pub(crate) buffer: &'a BufferAny,
-    pub(crate) descriptor: vk::DescriptorImageInfo,
-}
-
-unsafe impl<'a> DescriptorBinding for UniformBuffer<'a> {
-    const DESCRIPTOR_TYPE: DescriptorType = vk::DescriptorType::UNIFORM_BUFFER;
-    const DESCRIPTOR_COUNT: u32 = 1;
-    const SHADER_STAGES: ShaderStageFlags = vk::ShaderStageFlags::ALL;
-    const UPDATE_OFFSET: usize = Self::layout().descriptor.offset;
-    const UPDATE_STRIDE: usize = Self::layout().descriptor.size;
-
-    fn prepare_descriptors(&mut self, frame: &mut FrameResources) {
-        todo!()
-    }
-
-    fn visit(&self, visitor: &mut dyn ResourceVisitor) {
-        todo!()
-    }
-}
 
 //--------------------------------------------------------------------------------------------------
 
@@ -238,12 +212,50 @@ unsafe impl<'a, S: SamplerType> DescriptorBinding for CombinedImageSampler2D<'a,
 
 //--------------------------------------------------------------------------------------------------
 
+/// Uniform buffer slice.
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+#[derive(mlr::StructLayout)]
+pub struct UniformBuffer<'a> {
+    pub(crate) buffer: &'a BufferAny,
+    pub(crate) offset: vk::DeviceSize,
+    pub(crate) range: vk::DeviceSize,
+    pub(crate) descriptor: vk::DescriptorBufferInfo,
+}
+
+unsafe impl<'a> DescriptorBinding for UniformBuffer<'a> {
+    const DESCRIPTOR_TYPE: vk::DescriptorType = vk::DescriptorType::UNIFORM_BUFFER;
+    const SHADER_STAGES: vk::ShaderStageFlags = vk::ShaderStageFlags::ALL;
+    const UPDATE_OFFSET: usize = Self::layout().descriptor.offset;
+    const UPDATE_STRIDE: usize = Self::layout().descriptor.size;
+    const DESCRIPTOR_COUNT: u32 = 1;
+
+    fn prepare_descriptors(&mut self, frame: &mut FrameResources) {
+        self.descriptor = vk::DescriptorBufferInfo {
+            buffer: self.buffer.handle(),
+            offset: self.offset,
+            range: self.range
+        }
+    }
+
+    fn visit(&self, visitor: &mut dyn ResourceVisitor) {
+        visitor.visit_buffer(
+            self.buffer,
+            vk::AccessFlags::UNIFORM_READ,
+            vk::PipelineStageFlags::ALL_COMMANDS,
+        );
+    }
+}
+
+
+//--------------------------------------------------------------------------------------------------
+
 /// Argument blocks
 ///
 /// Actually they are just descriptor sets.
 pub struct ArgumentBlock<T: Arguments> {
     pub(crate) args: T,
-    pub(crate) set_layout_id: DescriptorSetLayoutId,
+    pub(crate) set_layout_id: graal::DescriptorSetLayoutId,
     pub(crate) set_layout: vk::DescriptorSetLayout,
     pub(crate) update_template: vk::DescriptorUpdateTemplate,
     pub(crate) descriptor_set: Cell<vk::DescriptorSet>, // allocated on first use

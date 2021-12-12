@@ -119,7 +119,7 @@ fn main() {
     let mut swapchain_size: (u32, u32) = window.inner_size().into();
     let surface = graal::surface::get_vulkan_surface(window.raw_window_handle());
 
-    let (device, mut context) = unsafe { mlr::Device::create_device_and_context(Some(surface)) };
+    let (device, mut context) = unsafe { mlr::create_device_and_context(Some(surface)) };
 
     let mut swapchain =
         unsafe { Swapchain::new(device.backend(), surface, window.inner_size().into()) };

@@ -1,10 +1,14 @@
 //! Sampler objects
-use std::any::{Any, TypeId};
-use std::sync::Arc;
-use crate::vk::SamplerCreateInfo;
-use graal::vk;
-use crate::Device;
-use crate::device::{Device, SamplerId};
+use crate::{
+    device::{Device, SamplerId},
+    vk::SamplerCreateInfo,
+    Device,
+};
+use graal::{vk, SamplerId};
+use std::{
+    any::{Any, TypeId},
+    sync::Arc,
+};
 
 // TODO should be called just "sampler"
 pub trait SamplerType: Copy {
@@ -55,11 +59,16 @@ impl_static_sampler_type!(pub Linear_ClampToEdge, LINEAR, LINEAR, LINEAR, CLAMP_
 impl_static_sampler_type!(pub Nearest_ClampToEdge, NEAREST, NEAREST, NEAREST, CLAMP_TO_EDGE, CLAMP_TO_EDGE, CLAMP_TO_EDGE);
 
 pub(crate) struct SamplerInner {
-    pub(crate) device: Device,
+    pub(crate) device: Arc<graal::Device>,
     pub(crate) id: SamplerId,
     pub(crate) sampler: vk::Sampler,
 }
 
+impl Drop for SamplerInner {
+    fn drop(&mut self) {
+        self.device.destroy_sampler(self.id)
+    }
+}
+
 #[derive(Clone)]
 pub struct Sampler(pub(crate) Arc<SamplerInner>);
-
