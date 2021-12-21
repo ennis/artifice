@@ -1,5 +1,5 @@
 
-use artifice::data::AppData;
+use artifice::model::AppData;
 use artifice::view::app;
 
 fn main() {

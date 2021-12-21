@@ -1,24 +1,32 @@
-use crate::data::atom::Atom;
-use druid::{Data, Lens};
-use crate::data::Value;
+use anyhow::Error;
+use crate::model::atom::Atom;
+use kyute::Data;
+use crate::json;
+use crate::model::{NamedObject, Value};
 
-/// Node property.
-#[derive(Clone, Debug, Data, Lens)]
+/// Node property. Has a type and a current value.
+#[derive(Clone, Debug, Data)]
 pub struct Property {
-    /// Name of the property. Unique among all properties of a node.
-    #[lens(name = "name_lens")]
-    pub name: Atom,
+    /// Base named object.
+    pub base: NamedObject,
 
     /// Type identifier
-    #[lens(name = "ty_lens")]
     pub ty: Atom,
 
     /// Value of the property.
-    #[lens(name = "value_lens")]
     pub value: Value,
 }
 
 impl Property {
+
+    /// Creates a property from a JSON value.
+    pub fn from_json(value: json::Value) -> Result<Property, Error> {
+        let base = NamedObject::from_json(value);
+        todo!()
+
+        // problem:
+    }
+
     /// Name of the property
     pub fn name(&self) -> &Atom {
         &self.name
@@ -29,9 +37,9 @@ impl Property {
         &self.ty
     }
 
-    pub fn dump(&self, indent: usize) {
+    /*pub fn dump(&self, indent: usize) {
         println!("{:indent$}name  : {}", "", self.name, indent = indent);
         println!("{:indent$}type  : {}", "", self.ty, indent = indent);
         println!("{:indent$}value : {:?}", "", self.value, indent = indent);
-    }
+    }*/
 }

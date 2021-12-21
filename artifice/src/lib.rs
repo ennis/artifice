@@ -1,8 +1,10 @@
 // macro support
 extern crate self as artifice;
 
+use serde_json as json;
+
 pub mod core;
 pub mod util;
 pub mod view;
-pub mod data;
+pub mod model;
 pub mod widgets;

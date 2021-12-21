@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use string_cache::DefaultAtom;
 use std::fmt;
+use lazy_static::lazy_static;
 
 /// Atom (interned string used for names)
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Default, serde::Serialize)]

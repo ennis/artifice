@@ -1,7 +1,13 @@
 use crate::{
     arguments::{ArgumentBlock, Arguments, StaticArguments},
+    frame::Frame,
 };
-use graal::{ash, FrameNumber, swapchain::Swapchain, vk};
+use graal::{
+    ash,
+    descriptor::{DescriptorSetAllocator, DescriptorSetLayoutId},
+    swapchain::Swapchain,
+    vk, FrameNumber,
+};
 use mlr::{buffer::BufferData, image::ImageAny, sampler::SamplerType};
 use slotmap::{SecondaryMap, SlotMap};
 use std::{
@@ -16,7 +22,6 @@ use std::{
     slice,
     sync::Arc,
 };
-use graal::descriptor::{DescriptorSetAllocator, DescriptorSetLayoutId};
 
 /*/// Context for recording commands during pass evaluation.
 pub struct RecordingContext<'a, 'b> {
@@ -158,26 +163,12 @@ impl<'a> Frame<'a> {
 impl EvalContext {
 }*/
 
-
-
 /// MLR context.
 pub struct Context {
     pub(crate) backend: graal::Context,
-    pub(crate) in_flight: VecDeque<InFlightFrameResources>,
 }
 
 impl Context {
-
-    /// Returns a reference to the underlying `graal::Device`
-    pub fn device(&self) -> &Arc<graal::Device> {
-        self.backend.device()
-    }
-
-    /// Returns a reference to the underlying `VkDevice`
-    pub fn vulkan_device(&self) -> &graal::ash::Device {
-        &self.backend.device().device
-    }
-
     /// Starts a frame.
     ///
     /// To finish building the frame, call `Frame::finish`.
@@ -190,7 +181,7 @@ impl Context {
         Frame {
             context: self,
             backend: frame_backend,
-            resources: Default::default()
+            resources: Default::default(),
         }
     }
 }

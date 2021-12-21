@@ -1,11 +1,10 @@
-use crate::{data::node::Node, widgets::tree::TreeNodeData};
-use druid::{Lens,Data};
+use crate::model::node::Node;
+use std::sync::Arc;
 
 /// A hierarchical set of interconnected nodes.
-#[derive(Clone, Debug, Data, druid::Lens)]
+#[derive(Clone, Debug, Data)]
 pub struct Network {
-    #[lens(name = "root_lens")]
-    pub root: TreeNodeData<Node>,
+    pub root: Arc<Node>,
 }
 
 impl Network {
@@ -36,7 +35,7 @@ impl Network {
     pub fn from_json(value: &serde_json::Value) -> anyhow::Result<Network> {
         let root_node = Node::from_json(value)?;
         Ok(Network {
-            root: TreeNodeData::new(root_node)
+            root: TreeNodeData::new(root_node),
         })
     }
 }

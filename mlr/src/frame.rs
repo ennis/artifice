@@ -1,12 +1,17 @@
-use crate::{ArgumentBlock, Arguments, buffer::BufferAny, context::Context, image::ImageAny};
-use graal::{
-    ash::vk::{DescriptorType, ShaderStageFlags},
-    vk, Device, FrameCreateInfo, ImageId, ResourceGroupId, ResourceId,
+use crate::{
+    buffer::{BufferAny, BufferData},
+    context::Context,
+    image::ImageAny,
+    ArgumentBlock, Arguments,
 };
+use graal::{vk, Device, FrameCreateInfo, ImageId, ResourceGroupId, ResourceId};
+use mlr::ResourceVisitor;
 use std::{
+    alloc::Layout,
     cell::Cell,
     collections::{HashMap, HashSet},
     io::Write,
+    mem, ptr,
     sync::Arc,
 };
 
@@ -83,23 +88,41 @@ pub enum Command {
 // to users. Instead, require the user to pass their own upload buffers. This way they can size
 // the chunks as required.
 
-
 pub struct RenderPass<'a, 'b> {
     //frame: &'b mut Frame<'a>,
     pass: graal::PassBuilder<'b, 'a, Context>,
     commands: Vec<Command>,
 }
 
-impl<'a, 'b> RenderPass<'a, 'b> {
+impl<'a, 'b> ResourceVisitor for RenderPass<'a, 'b> {
+    fn visit_image(
+        &mut self,
+        image: &ImageAny,
+        access_mask: vk::AccessFlags,
+        stage_mask: vk::PipelineStageFlags,
+        layout: vk::ImageLayout,
+    ) -> bool {
+        self.pass
+            .add_image_dependency(image.id(), access_mask, stage_mask, layout, layout);
+        true
+    }
 
+    fn visit_buffer(
+        &mut self,
+        buffer: &BufferAny,
+        access_mask: vk::AccessFlags,
+        stage_mask: vk::PipelineStageFlags,
+    ) -> bool {
+        self.pass
+            .add_buffer_dependency(buffer.id(), access_mask, stage_mask);
+        true
+    }
+}
+
+impl<'a, 'b> RenderPass<'a, 'b> {
     /// vkCmdBindDescriptorSet
     pub fn bind_argument_block<T: Arguments>(&mut self, number: u32, args: &ArgumentBlock<T>) {
-
-        struct ResourceVisitor<'a,'b,'c> {
-            pass: &'c graal::PassBuilder<'b, 'a, >
-        }
-
-
+        args.args.walk_resources(self);
         // ideally, I'd like to start recording the buffer now
         self.commands.push(Command::BindDescriptorSet {
             number,
@@ -123,10 +146,11 @@ impl<'a, 'b> RenderPass<'a, 'b> {
         })
     }
 
-    pub fn finish(self) {
+    pub fn finish(mut self) {
         let commands = self.commands;
 
-        self.pass.set_record_callback(move |record, ctx, command_buffer| {
+        self.pass
+            .set_record_callback(move |record, ctx, command_buffer| {
                 let device = record.context.vulkan_device();
                 let mut current_pipeline_layout = vk::PipelineLayout::default();
                 // translate commands
@@ -231,18 +255,17 @@ const UPLOAD_CHUNK_SIZE: usize = 4 * 1024 * 1024;
 const UPLOAD_DEDICATED_THRESHOLD_SIZE: usize = 1024 * 1024;
 
 /// Transient objects that should be deleted or recycled once the frame has completed execution.
-struct FrameObjects {
+struct FrameResources {
     frame_number: graal::FrameNumber,
     descriptor_sets: Vec<(graal::DescriptorSetLayoutId, vk::DescriptorSet)>,
-    //framebuffers: Vec<vk::Framebuffer>,
     image_views: Vec<vk::ImageView>,
     upload_chunks: Vec<UploadChunk>,
     current_upload_chunk: Option<UploadChunk>,
 }
 
-impl Default for FrameObjects {
+impl Default for FrameResources {
     fn default() -> Self {
-        FrameObjects {
+        FrameResources {
             frame_number: Default::default(),
             descriptor_sets: vec![],
             //framebuffers: vec![],
@@ -253,10 +276,12 @@ impl Default for FrameObjects {
     }
 }
 
+impl FrameResources {}
+
 pub struct Frame<'a> {
-    context: &'a mut Context,
-    backend: graal::Frame<'a, Context>,
-    objects: FrameObjects,
+    pub(crate) context: &'a mut Context,
+    pub(crate) backend: graal::Frame<'a, Context>,
+    pub(crate) resources: FrameResources,
 }
 
 impl<'a> Frame<'a> {
@@ -363,7 +388,6 @@ impl<'a> Frame<'a> {
         unsafe { ptr::copy_nonoverlapping(data.as_ptr(), buffer.ptr as *mut T, data.len()) }
         (buffer.handle, buffer.offset)
     }
-
 }
 
 impl<'a> Frame<'a> {
@@ -379,10 +403,9 @@ impl<'a> Frame<'a> {
     pub fn finish(mut self) {
         self.resources.frame_number = self.backend.frame_number();
 
-        let _frame_future = self.context.backend.finish_frame(
-            self.backend,
+        let _frame_future = self.backend.finish(
             self.context,
-            |context, device, frame_number| {
+            /*|context, device, frame_number| {
                 while let Some(in_flight_frame) = context.in_flight.pop_front() {
                     if in_flight_frame.frame_number <= frame_number {
                         // this frame has finished: destroy or recycle all objects not in use anymore
@@ -402,13 +425,13 @@ impl<'a> Frame<'a> {
                         break;
                     }
                 }
-            },
+            }*/
         );
 
-        let in_flight_frame_resources = mem::take(&mut self.context.eval_ctx.frame_resources);
-        self.context
-            .eval_ctx
-            .in_flight
-            .push_back(in_flight_frame_resources);
+        // destroy transient resources (the backend handles the actual deferred deletion)
+        let device = self.context.backend.device();
+        for image_view in self.resources.image_views {
+            unsafe { device.destroy_image_view(image_view) }
+        }
     }
 }

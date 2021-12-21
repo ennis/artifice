@@ -682,7 +682,7 @@ immediate mode:
         - source code (can be an attribute, can be evaluated)
 
 - Problem: a lot of things can be attributes, and can be bound to an expression, etc.
-    - Given a Node (primit  ive type), create schema objects that access an aspect of the node
+    - Given a Node (primitive type), create schema objects that access an aspect of the node
     - schema ~ traits
     
 - Attributes that can be both a connection or a value?
@@ -2154,12 +2154,9 @@ Not only we can't create descriptor sets in advance, but we can't even write the
 because we must construct `VkImageViews`, and we don't have memory bound.
 
 Solution?
-* just go f*cking bindless already and forget this descriptor shit
-* 
-
+* just go fcking bindless already and forget this descriptor shit
 Decision? 
 * we want a simple API, where we don't have to specify passes: these should be inferred from draw calls
-* 
 
 ## Tradeoffs: Render graph VS command stream
 * render graph: easier on the implementation, more precise barriers, automatic aliasing, but *very poor* API

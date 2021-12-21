@@ -1,5 +1,5 @@
 use crate::{
-    data::{
+    model::{
         atom::{make_unique_name, Atom},
         property::Property,
     },
@@ -10,22 +10,21 @@ use serde_json::json;
 use std::sync::Arc;
 use thiserror::Error;
 
-pub type NodeList = Arc<Vec<Node>>;
 
 #[derive(Debug,Error)]
 #[error("invalid JSON document structure")]
 pub struct InvalidDocumentStructure;
 
+pub type NodeList = rpds::Vector<Vec<Node>>;
+
 /// Nodes
-#[derive(Clone, Debug, Data, Lens)]
+#[derive(Clone, Debug, Data)]
 pub struct Node {
-    /// Name of this node
-    //#[lens(name = "name_lens")]
+    /// Base named object.
     pub name: Atom,
 
     /// Properties
-    #[lens(name = "properties_lens")]
-    pub properties: Arc<Vec<Property>>,
+    pub properties: rpds::Vector<Property>,
 
     /// Child nodes
     pub children: NodeList,

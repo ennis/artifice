@@ -51,6 +51,11 @@ impl BufferAny {
         self.buffer.handle
     }
 
+    /// Returns the vulkan handle (`VkBuffer`) of this buffer.
+    pub fn id(&self) -> graal::BufferId {
+        self.buffer.id
+    }
+
 }
 
 impl Drop for BufferAny {

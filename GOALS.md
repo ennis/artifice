@@ -9,3 +9,199 @@ Current pain points when trying stuff with GPU:
 Also:
 - interactivity/tweakability is key
 
+
+- "Excel" for rendering
+- Free-form experimentation
+
+- Visualizers
+	- vector fields
+	- scalar fields
+	- other
+	- color conversions
+	- Zoom/pan 
+	- Save to file
+
+- "excel"-type viewport/viewer
+	- put any number of images in any layout (side by side, grid, overlay, whatever)
+	- infinite canvas
+	- some ops can provide custom behaviors on the viewer
+		- painting
+		- drawing curves
+		- selection rectangles
+		- picking objects
+
+- Object database
+	- VFS containing shaders / node instances / assets / images
+	- access by standardized path syntax
+	- shaders can refer to other shaders by path
+
+- Node graph
+
+	- Structured edges
+		- Group related images together (G-buffers?)
+			- "buses": groups of coherent images 
+
+	- Hide useless connections
+	- Focus on single node
+
+	- enforced layouts
+		- vertical/horizontal stack
+
+	- snap everything to grid, always
+	- notes/comments
+
+	- Nodes
+		- not all drawn the same
+		- dots
+		- for buses: splice out / splice in nodes 
+
+
+- Properties panel
+	- Built-in GUIs
+		- Gradients
+		- Curve editors
+
+- Scene import
+	- USD?
+
+- Shaders
+	- Shader templates that are recompiled based on the current node inputs
+	- shader libraries => contain many entry points
+	- menu to pick any compatible entry point from shader libs in the VFS
+
+- Ops
+	- blueprint for nodes
+	- can add dynamic params or other inputs
+
+- Builtin nodes:
+	- blur, resampling, color conversion, quantization, vector field ops, gradient, laplacian...
+	- blending
+
+- Networks:
+	- have global (ambient) params
+
+- Undo/redo:
+	- via immutable data model
+
+- Serialization
+	- sqlite 
+
+
+
+# Internals
+
+
+## Data model basic concepts:
+
+Basic concepts:
+Nodes, properties and share groups.
+
+Nodes and Properties are NamedObjects, which have a name.
+Nodes have child nodes.
+Nodes have properties.
+Properties have a type and a value or a share group.
+
+Are the list of child nodes and properties ordered?
+(or rather, is the order kept?)
+-> No, since JSON parsers usually don't
+-> For UI, store UI order separately
+
+## Serialization
+
+Problem: stream serialization versus share groups.
+We want to serialize share groups only once, but they are referenced multiple times (one for each share).
+Same with connections, etc. The object graph is a DAG, not a tree, so traversal is weird.
+Same for loading: connections/share groups must be loaded after.
+
+Alternatives:
+- load/store in a database (sqlite)
+- don't serialize serially (pass SerializationContext, add stuff inside)
+
+## SQLite data backend
+
+After the in-memory data model is update, write it back to disk, *but* only write what has changed.
+How do we know what has changed? 
+Need sync between database and data model => increased complexity.
+What about undo/redo? do we write to the database when undoing stuff? do we rollback a transation? what if it somehow 
+becomes out-of-sync with the in-memory model? 
+Many chances to get stuff wrong.
+
+Better option: write out a diff between two revisions of the in-memory data model.
+But how to diff the app data? How to diff lists?
+
+Problem with hierarchies: the data model is a hierarchy of nodes, so loading a node (e.g. the root) means to load the 
+whole file recursively.
+
+### Data model
+- Nodes & properties
+
+### Presentation model
+- Current root node
+- Position in the graph
+- data model
+
+UI update: has the presentation model changed?
+Yes:
+Node view update:
+- query root node, compare with previous version
+
+Problem: how to compare two nodes?
+Arc-equality not enough since nodes don't "own" their children anymore. 
+I.e. you can modify a property in the DB without changing the Arc-equality of the node.
+
+=> the data is not the node, but the node *and its complete list of descendants*.
+
+However:
+- must query the DB for all descendant nodes/properties + share groups to check for changes
+- must store this result somewhere in a materialized form
+
+Q: do nodes have a materialized hierarchy? (a DAG of Arc<Node>) or does this hierarchy only lives in the DB?
+
+The main question: when do we want to update the "authoritative" data source?
+- traditional: when saving the file
+- DB: possibly on every operation
+
+
+Web: query data from the server, convert to internal data objects, display
+=> on change: send update to the server, get updated data and convert to internal data objects, display
+
+Problem: how to rebuild only the data that changed.
+
+UI: 
+- emits a command when an update of the value of a property, or share group etc. is requested
+- this command defines a subtree of affected nodes
+- execute update
+- now rebuild the objects of affected paths (recursive process)
+	- unaffected paths are just copied over to the next version
+
+
+We end up with a new object tree that we can feed to the UI.
+  
+
+
+## Object VFS / data model
+
+Each object is immutable & cheaply clonable. Has a trait (`ModelObject`) to query children.
+Has a generic `update` method. 
+
+### Change listeners? Watchers?
+
+If a portion of the data model changes, other parts may want to update themselves in return (other than the UI).
+Watch a path in the object VFS for changes.
+
+Watchers own a clone of an object, and a path. On update, retrieve the object at the path, and compare it to the stored object. 
+If same, does nothing, otherwise updates itself.
+=> "change propagation"
+
+After change propagation is done, update UI.
+
+### Errors
+Change propagation may fail. If so, rollback (we stored a clone of the model before the change), and display error somehow. (add error to a data model)
+
+### Lazy loading
+Objects can be created lazily (deserialize on request from the DB). Might conflict with change listeners.
+
+## Operators (Ops)
+Implemented in rust. Interprets properties from the data model object. Called by the evaluator to get the value of a node.
+Operator instances are stored next to the objects. Could be inside, as an interior mutability cell.
+
