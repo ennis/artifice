@@ -5,8 +5,6 @@ members = [
     "artifice/macros", # macros
     "mlr",    # the mid-level renderer
     "mlr/macros",    # the mid-level renderer
-    "mlr-plugin",    # the mid-level renderer
-    "mlr-std",    # the mid-level renderer
     "graal",    # graphics resource abstraction layer
     "graal-bench",    # graphics resource abstraction layer - testbench
     #"graal-fx",    # graphics resource abstraction layer - effect files

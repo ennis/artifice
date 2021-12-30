@@ -19,14 +19,6 @@ pub struct Property {
 
 impl Property {
 
-    /// Creates a property from a JSON value.
-    pub fn from_json(value: json::Value) -> Result<Property, Error> {
-        let base = NamedObject::from_json(value);
-        todo!()
-
-        // problem:
-    }
-
     /// Name of the property
     pub fn name(&self) -> &Atom {
         &self.name

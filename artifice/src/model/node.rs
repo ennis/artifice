@@ -1,160 +1,67 @@
-use crate::{
-    model::{
-        atom::{make_unique_name, Atom},
-        property::Property,
-    },
-    widgets::tree::TreeNodeModel,
+use crate::model::{
+    atom::{make_unique_name, Atom},
+    property::Property,
+    NamedObject,
 };
-use druid::{Data, Lens};
-use serde_json::json;
+use imbl::HashMap;
+use kyute::Data;
 use std::sync::Arc;
-use thiserror::Error;
 
-
-#[derive(Debug,Error)]
-#[error("invalid JSON document structure")]
-pub struct InvalidDocumentStructure;
-
-pub type NodeList = rpds::Vector<Vec<Node>>;
-
-/// Nodes
-#[derive(Clone, Debug, Data)]
+/// Nodes.
+#[derive(Clone, Debug)]
 pub struct Node {
-    /// Base named object.
-    pub name: Atom,
-
-    /// Properties
-    pub properties: rpds::Vector<Property>,
-
-    /// Child nodes
-    pub children: NodeList,
+    pub base: NamedObject,
+    pub children: HashMap<Atom, Node>,
 }
 
 impl Node {
-    /// Creates a new node.
-    pub fn new() -> Node {
-        Node {
-            name: Default::default(),
-            properties: Default::default(),
-            children: Default::default(),
+    /*/// Writes this node into an open database.
+    pub fn write(&self, conn: &rusqlite::Connection) -> Result<()> {
+        // recursively write this node and children
+        self.base.write(conn)?;
+        for (_, n) in self.children.iter() {
+            n.write(conn);
         }
+        Ok(())
+    }*/
+
+    /// Finds a child node by name.
+    pub fn find_child(&self, name: &Atom) -> Option<&Node> {
+        self.children.get(name)
     }
 
-    /// Returns an iterator over the properties of this node.
-    pub fn properties(&self) -> impl Iterator<Item = &Property> {
-        self.properties.iter()
+    /// Finds a child node by name and returns a mutable reference to it.
+    pub fn find_child_mut(&mut self, name: &Atom) -> Option<&mut Node> {
+        self.children.get_mut(name)
     }
 
-    /// Creates a new child node
-    pub fn add_child(&mut self, name: Atom) {
-        let unique_name = make_unique_name(name, self.children.iter().map(|p| &p.name));
-        Arc::make_mut(&mut self.children).push(Node {
-            name: Atom::from(unique_name),
-            properties: Arc::new(vec![]),
-            children: Arc::new(vec![]),
-        })
+    /// Adds a child node. Used internally by `Document`.
+    pub(crate) fn add_child(&mut self, node: Node) {
+        self.children.insert_mut(node.base.path.name(), node);
     }
 
-    /// Serializes the node to a JSON value.
-    pub fn to_json(&self) -> serde_json::Value {
-        let mut children_json = Vec::new();
-
-        for node in self.children.iter() {
-            children_json.push(node.to_json());
-        }
-
-        json!({
-            "name": &self.name,
-            //"properties": &node.properties,
-            "children": children_json,
-        })
-    }
-
-    /// Creates a node by deserializing a JSON value.
-    pub fn from_json(json: &serde_json::Value) -> anyhow::Result<Node> {
-        let json_obj = json.as_object().ok_or(InvalidDocumentStructure)?;
-        let name = json_obj
-            .get("name")
-            .ok_or(InvalidDocumentStructure)?
-            .as_str()
-            .ok_or(InvalidDocumentStructure)?;
-        let children_json = json_obj
-            .get("children")
-            .ok_or(InvalidDocumentStructure)?
-            .as_array()
-            .ok_or(InvalidDocumentStructure)?;
-        let mut children = Vec::new();
-        for child in children_json.iter() {
-            children.push(Node::from_json(child)?);
-        }
-
-        Ok(Node {
-            name: Atom::from(name),
-            properties: Arc::new(vec![]),
-            children: Arc::new(children),
-        })
-    }
-
-    /// Adds a property to this node
-    pub fn add_property(&mut self, name: Atom, ty: Atom) -> Atom {
-        let unique_name = make_unique_name(name, self.properties.iter().map(|p| &p.name));
-
-        Arc::make_mut(&mut self.properties).push(Property {
-            name: unique_name.clone(),
-            ty,
-            value: Default::default(),
-        });
-
-        unique_name
-    }
-
-    /// Returns whether this node has a property with the given name.
-    pub fn has_property(&self, name: &Atom) -> bool {
-        self.properties
-            .iter()
-            .position(|p| &p.name == name)
-            .is_some()
-    }
-
-    /// Gets the property with the given name.
-    pub fn property(&self, name: &Atom) -> Option<&Property> {
-        self.properties.iter().find(|p| &p.name == name)
-    }
-
+    /// Recursively dumps the structure of this node and its children to the standard output.
     pub fn dump(&self, indent: usize) {
-        println!("{:indent$}name: {}", "", self.name, indent = indent);
+        let name = self.base.path.name();
+
+        println!(
+            "{:indent$}{}",
+            "",
+            if name.is_empty() { "<root>" } else { &name },
+            indent = indent
+        );
 
         {
             let indent = indent + 2;
-            for p in self.properties.iter() {
-                p.dump(indent);
+            for n in self.children.values() {
+                n.dump(indent);
             }
         }
     }
 }
 
-impl Default for Node {
-    fn default() -> Self {
-        Node::new()
-    }
-}
-
-impl TreeNodeModel for Node {
-    fn child_count(&self) -> usize {
-        self.children.len()
-    }
-
-    fn with_child<V, F: FnOnce(&Self) -> V>(&self, index: usize, f: F) -> V {
-        f(&self.children[index])
-    }
-
-    fn with_child_mut<V, F: FnOnce(&mut Self) -> V>(&mut self, index: usize, f: F) -> V {
-        let mut child = self.children[index].clone();
-        let result = f(&mut child);
-        // update
-        if !child.same(&self.children[index]) {
-            Arc::make_mut(&mut self.children)[index] = child.clone();
-        }
-        result
+impl Data for Node {
+    fn same(&self, other: &Self) -> bool {
+        self.base.same(&other.base) && self.children.ptr_eq(&other.children)
     }
 }

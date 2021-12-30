@@ -205,3 +205,101 @@ Objects can be created lazily (deserialize on request from the DB). Might confli
 Implemented in rust. Interprets properties from the data model object. Called by the evaluator to get the value of a node.
 Operator instances are stored next to the objects. Could be inside, as an interior mutability cell.
 
+
+
+# Document mutations
+
+Fact: document mutations cannot be local (restricted to the item and subtree) in general, because of share groups.
+A mutation can affect any part of the document. 
+
+## Option A: perform DB transaction inline
+
+```rust
+fn widget(node: &Node) {
+	
+	children_widget(node);
+	let button = Button::new("Add child");
+	
+	if button.clicked() {
+		// add a child node
+		//let document = node.document();
+		// acquire the exclusive document lock 
+		// won't work because node.document() lifetime won't be extended
+		let mut document_db = node.document().lock_db();
+		// with this lock, we have exclusive access to the DB
+		let mut edit = document_db.begin_edit();
+		
+		// alternative: lambda, but that's annoying
+		
+		
+		// `begin_edit` creates an internal clone of the document to hold the modifications.
+		edit.create_node()
+		// OR: `node.add_child(edit, ...)`
+		// will modify the node already, but not update the 
+		
+		// OR: node.begin_edit(): begin an edit rooted at this node
+		// saves the current state of the node, and performs modifications on the subtree
+		// edit.finish(): propagates changes via share groups, performs validation, and then commits to the DB, updates
+		// the current document state.
+		// Problem: in the current call stack, the widgets will see the document as it was before propagation, which might 
+		// not be consistent.
+		// => widgets see the document in an inconsistent state
+		// => widgets shouldn't see the document in an inconsistent state
+		
+		// => create edit on document
+		// modify doc through the edit
+		// finish edit
+		
+	}
+	
+}
+```
+
+
+## Option B: commands
+
+Send a command up the widget tree, top-level handler handles the command and modifies the document.
+
+```rust
+fn widget(node: &Node) -> Widget {
+	
+	children_widget(node);
+	let button = Button::new("Add child");
+	
+	if button.clicked() {
+		// add a child node
+		// what does 'sending a command' means in kyute? not much
+		
+	}
+	
+}
+```
+
+
+
+
+## Option C: pass down a mut ref to the database
+
+
+```rust
+// specify `uncached` for arguments that shouldn't be taken into account for caching (mutations?)
+#[composable]
+fn widget(#[uncached] document: &mut DocumentDb, node: &Node) -> Widget {
+	
+	children_widget(node);
+	let button = Button::new("Add child");
+	
+	if button.clicked() {
+		// add a child node
+		
+		let edit = document.begin_edit();
+		// do stuff
+		edit.finish();
+		
+	}
+	
+}
+```
+
+
+Try option C.

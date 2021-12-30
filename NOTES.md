@@ -2334,3 +2334,97 @@ fn main() {
 
 mlr::Context owns the Context
 mlr::Frame owns Frame, which borrows from Context, and thus borrows from mlr::Context
+
+
+## Context-passing without TLS:
+```rust
+#![feature(fn_traits)]
+#![feature(unboxed_closures)]
+
+pub struct Cx {
+}
+
+trait CxFnOnce<'a, Args> {
+    type Output;
+    fn cx_call_once(self, cx: &'a mut Cx, args: Args) -> Self::Output;
+}
+
+trait CxFnMut<'a, Args>: CxFnOnce<'a, Args> {
+    fn cx_call_mut(&mut self, cx: &'a mut Cx, args: Args) -> Self::Output;
+}
+
+trait CxFn<'a, Args>: CxFnMut<'a, Args> {
+    fn cx_call(&self, cx: &'a mut Cx, args: Args) -> Self::Output;
+}
+
+
+impl<'a, F, Args> CxFnOnce<'a, Args> for F where F: FnOnce<Args> {
+    type Output = F::Output;
+    fn cx_call_once(self, cx: &'a mut Cx, args: Args) -> Self::Output {
+        self.call_once(args)
+    }
+}
+
+
+fn test() {
+}
+
+/*fn cx_test(node: &Node) -> Node {
+    
+}*/
+
+struct Node;
+
+struct cx_test;
+impl<'cx, 'a> CxFnOnce<'cx, (&'a Node,)> for cx_test {
+    type Output = Node;
+    fn cx_call_once(self, cx: &mut Cx, args: (&'a Node,)) -> Self::Output {
+        let (node,) = args; 
+        // function body
+        Node
+    } 
+}
+
+struct CxFnWrapper<F>(F);
+
+impl<'cx, F, A0> CxFnOnce<'cx, (A0,)> for CxFnWrapper<F> where F: FnOnce<(&'cx mut Cx, A0)> {
+    type Output = <F as FnOnce<(&'cx mut Cx, A0)>>::Output;
+    fn cx_call_once(self, cx: &'cx mut Cx, args: (A0,)) -> Self::Output {
+        let (a0,) = args; 
+        self.0.call_once((cx, a0))
+    } 
+}
+
+struct GraphicsView;
+
+impl GraphicsView {
+    pub const new: CxFnWrapper<fn (&mut Cx, i32) -> GraphicsView> = CxFnWrapper(GraphicsView::__new);
+    
+    pub fn __new(cx: &mut Cx, whatever: i32) -> GraphicsView {
+        GraphicsView
+    } 
+}
+
+/*impl GraphicsView {
+    #[composable]
+    pub fn new() -> GraphicsView {
+        
+    }
+}*/
+
+
+
+fn main() {
+
+    let mut cx = Cx{};
+    test.cx_call_once(&mut cx, ());
+    //cx_test.cx_call_once(&mut cx, (&Node,));
+    
+    <_>::cx_call_once(cx_test, &mut cx, (&Node,));
+    <_>::cx_call_once(GraphicsView::new, &mut cx, (42,));
+    
+}
+```
+
+Proc-macro rewrites all calls to `<_>::cx_call_once`.
+Problem with methods: we lose autoref.
