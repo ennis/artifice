@@ -2,6 +2,7 @@ use std::ops::Deref;
 use string_cache::DefaultAtom;
 use std::fmt;
 use lazy_static::lazy_static;
+use kyute::Data;
 
 /// Atom (interned string used for names)
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Default, serde::Serialize)]
@@ -14,7 +15,7 @@ impl Deref for Atom {
     }
 }
 
-impl druid::Data for Atom {
+impl Data for Atom {
     fn same(&self, other: &Self) -> bool {
         &self.0 == &other.0
     }
@@ -37,17 +38,18 @@ impl fmt::Display for Atom {
 
 /// Helper function to adjust a name so that it doesn't clash with existing names.
 pub fn make_unique_name<'a>(
-    base_name: Atom,
-    existing: impl Iterator<Item = &'a Atom> + Clone,
+    base_name: impl Into<Atom>,
+    existing: impl Iterator<Item = Atom> + Clone,
 ) -> Atom {
     let mut counter = 0;
+    let base_name = base_name.into();
     let mut disambiguated_name = base_name.clone();
 
     'check: loop {
         let existing = existing.clone();
         // check for property with the same name
         for name in existing {
-            if name == &disambiguated_name {
+            if name == disambiguated_name {
                 disambiguated_name = Atom::from(format!("{}_{}", base_name, counter));
                 counter += 1;
                 // restart check

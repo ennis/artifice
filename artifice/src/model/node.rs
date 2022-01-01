@@ -25,6 +25,28 @@ impl Node {
         Ok(())
     }*/
 
+    /// Generates a unique child name from the specified stem.
+    pub fn make_unique_child_name(&self, stem: impl Into<Atom>) -> Atom {
+        let mut counter = 0;
+        let stem = stem.into();
+        let mut unique_name = stem.clone();
+
+        'check: loop {
+            // check for property with the same name
+            for node in self.children.values() {
+                if node.base.path.name() == unique_name {
+                    unique_name = Atom::from(format!("{}_{}", stem, counter));
+                    counter += 1;
+                    // restart check
+                    continue 'check;
+                }
+            }
+            break;
+        }
+
+        unique_name
+    }
+
     /// Finds a child node by name.
     pub fn find_child(&self, name: &Atom) -> Option<&Node> {
         self.children.get(name)
@@ -37,7 +59,7 @@ impl Node {
 
     /// Adds a child node. Used internally by `Document`.
     pub(crate) fn add_child(&mut self, node: Node) {
-        self.children.insert_mut(node.base.path.name(), node);
+        self.children.insert(node.base.path.name(), node);
     }
 
     /// Recursively dumps the structure of this node and its children to the standard output.

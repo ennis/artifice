@@ -2427,4 +2427,16 @@ fn main() {
 ```
 
 Proc-macro rewrites all calls to `<_>::cx_call_once`.
-Problem with methods: we lose autoref.
+Problem with methods: we lose autoref. Not a big issue, we don't support methods right now anyway.
+
+Upsides:
+- cannot accidentally forget the `composable` attribute
+- no need for TLS
+- plays well with the borrow checker
+
+Downsides:
+- rewriting all function calls might be costly in terms of compilation time
+- a bit of a hack
+- (deal-breaker) what about function calls inside macros?
+  - `let widget = dbg!(widget())`
+  - no "eager expansion" currently, so this is basically a deal-breaker

@@ -17,5 +17,8 @@ members = [
 ]
 exclude = ["ext/winit"]
 
+[profile.dev]
+incremental = false
+
 [profile.release]
 debug = true

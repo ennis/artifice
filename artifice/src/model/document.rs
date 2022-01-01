@@ -1,8 +1,7 @@
-use crate::model::{
-    network::Network, node::Node, path::ModelPath, share_group::ShareGroup, NamedObject,
-};
+use crate::model::{node::Node, path::ModelPath, share_group::ShareGroup, NamedObject};
 use anyhow::Result;
 use imbl::Vector;
+use kyute::Data;
 use parking_lot::{Mutex, MutexGuard};
 use rusqlite::{params, types::ValueRef, Connection};
 use std::sync::{Arc, Weak};
@@ -41,16 +40,8 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
     Ok(())
 }
 
-/// Wrapper over the SQLite connection to a document.
-#[derive(Debug)]
-struct Document {
-    connection: Connection,
-    revision: usize,
-    model: DocumentModel,
-}
-
 /// Root object of documents.
-#[derive(Clone, Data)]
+#[derive(Clone, Debug)]
 pub struct DocumentModel {
     /// Document revision index
     pub revision: usize,
@@ -60,12 +51,52 @@ pub struct DocumentModel {
     pub share_groups: Vector<ShareGroup>,
 }
 
+// TODO data impls for imbl
+impl Data for DocumentModel {
+    fn same(&self, other: &Self) -> bool {
+        self.revision.same(&other.revision)
+            && self.root.same(&other.root)
+            && self.share_groups.ptr_eq(&other.share_groups)
+    }
+}
+
+impl DocumentModel {
+    /// Finds the node with the given path.
+    pub fn find_node(&self, path: &ModelPath) -> Option<&Node> {
+        match path.split_last() {
+            None => Some(&self.root),
+            Some((prefix, last)) => {
+                let parent = self.find_node(&prefix)?;
+                parent.find_child(&last)
+            }
+        }
+    }
+
+    /// Finds the node with the given path and returns a mutable reference to it.
+    pub fn find_node_mut(&mut self, path: &ModelPath) -> Option<&mut Node> {
+        match path.split_last() {
+            None => Some(&mut self.root),
+            Some((prefix, last)) => {
+                let parent = self.find_node_mut(&prefix)?;
+                parent.find_child_mut(&last)
+            }
+        }
+    }
+}
+
+/// Wrapper over the SQLite connection to a document.
+#[derive(Debug)]
+pub struct Document {
+    connection: Connection,
+    revision: usize,
+    model: DocumentModel,
+}
+
 pub struct Edit<'a> {
     transaction: rusqlite::Transaction<'a>,
 }
 
 impl Document {
-
     /// Opens a document from a sqlite database connection.
     pub fn open(connection: Connection) -> Result<Document> {
         // check for correct application ID
@@ -78,24 +109,24 @@ impl Document {
         }
 
         // create initial document object
-        let mut model = Arc::new(DocumentModel {
+        let mut model = DocumentModel {
             revision: 0,
             root: Node {
                 base: NamedObject {
-                    document: Default::default(),
                     id: 0,
                     path: ModelPath::root(),
                 },
                 children: Default::default(),
             },
             share_groups: Default::default(),
-        });
+        };
 
         // load nodes, ordering is important for later, when building the tree
         let mut nodes = Vec::new();
 
         {
-            let mut stmt = connection.prepare("SELECT rowid, path FROM named_objects ORDER BY path")?;
+            let mut stmt =
+                connection.prepare("SELECT rowid, path FROM named_objects ORDER BY path")?;
             let mut node_rows = stmt.query([])?;
 
             while let Some(row) = node_rows.next()? {
@@ -111,11 +142,7 @@ impl Document {
                 nodes.push((
                     path.to_string(),
                     Node {
-                        base: NamedObject {
-                            document: Arc::downgrade(&model),
-                            id,
-                            path,
-                        },
+                        base: NamedObject { id, path },
                         children: Default::default(),
                     },
                 ));
@@ -129,79 +156,64 @@ impl Document {
             if n.base.path.is_root() {
                 model.root = n.clone();
             } else {
-                let mut parent = document
-                    .find_node_mut(&n.base.path.parent().unwrap())
-                    .unwrap();
+                let mut parent = model.find_node_mut(&n.base.path.parent().unwrap()).unwrap();
                 parent.add_child(n.clone());
             }
         }
 
-        Ok(document)
+        Ok(Document {
+            connection,
+            revision: 0,
+            model,
+        })
     }
 
-    /*pub fn write(&self, conn: &rusqlite::Connection) -> Result<()> {
-        // recursively write nodes
-        self.root.write(conn)?;
-        Ok(())
-    }*/
-
-    pub fn find_node(&self, path: &ModelPath) -> Option<&Node> {
-        match path.split_last() {
-            None => Some(&self.model.root),
-            Some((prefix, last)) => {
-                let parent = self.find_node(&prefix)?;
-                parent.find_child(&last)
-            }
-        }
+    /// Returns the document revision number.
+    pub fn revision(&self) -> usize {
+        self.revision
     }
 
-    pub fn find_node_mut(&mut self, path: &ModelPath) -> Option<&mut Node> {
-        match path.split_last() {
-            None => Some(&mut self.model.root),
-            Some((prefix, last)) => {
-                let parent = self.find_node_mut(&prefix)?;
-                parent.find_child_mut(&last)
-            }
-        }
+    /// Returns the document model root.
+    pub fn model(&self) -> &DocumentModel {
+        &self.model
     }
 
-    /*fn insert_node(&mut self, node: Node) {
-        // to reconstruct: sort nodes by path, lexicographically?
-        let mut parent = self
-            .find_node_mut(&node.base.path.parent().unwrap())
-            .unwrap();
-    }*/
-
-    ///
-    pub fn create_node(&mut self, conn: &rusqlite::Connection, path: ModelPath) -> Result<Node> {
+    /// Creates a new node.
+    pub fn create_node(&mut self, path: ModelPath) -> Result<Node> {
+        // Can't create with root path.
         assert!(!path.is_root());
 
-        // TODO check that parent exists before inserting in the DB
+        // check that parent exists before inserting in the DB
+        let parent = self
+            .model
+            .find_node_mut(&path.parent().unwrap())
+            .expect("parent node not found");
 
-        // insert the node in the DB first, this will take care of ensuring that the path is unique
+        // insert the node in the DB, this will take care of ensuring that the path is unique
         let path_str = path.to_string();
         let name = path.name().to_string();
-
-        conn.execute(
+        self.connection.execute(
             "INSERT INTO named_objects (name, path, parent) VALUES (?1,?2,null)",
             params![name, path_str],
         )?;
 
-        let id = conn.last_insert_rowid();
+        // get id
+        let id = self.connection.last_insert_rowid();
 
-        let parent = self
-            .find_node_mut(&path.parent().unwrap())
-            .expect("parent node not found");
-        let n = Node {
+        // increase revision
+        self.revision += 1;
+
+        // add the node object in the document model
+        let node = Node {
             base: NamedObject { id, path },
             children: Default::default(),
         };
-        parent.add_child(n.clone());
-        Ok(n)
+        parent.add_child(node.clone());
+        Ok(node)
     }
 
     pub fn dump(&self) {
         println!("Document");
-        self.model.dump(0);
+        self.model.root.dump(0);
     }
 }

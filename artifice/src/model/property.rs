@@ -1,8 +1,9 @@
+use crate::{
+    json,
+    model::{atom::Atom, NamedObject, Value},
+};
 use anyhow::Error;
-use crate::model::atom::Atom;
 use kyute::Data;
-use crate::json;
-use crate::model::{NamedObject, Value};
 
 /// Node property. Has a type and a current value.
 #[derive(Clone, Debug, Data)]
@@ -18,10 +19,9 @@ pub struct Property {
 }
 
 impl Property {
-
     /// Name of the property
-    pub fn name(&self) -> &Atom {
-        &self.name
+    pub fn name(&self) -> Atom {
+        self.base.name()
     }
 
     /// Type ID of the property

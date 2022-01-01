@@ -1,8 +1,9 @@
 use crate::model::atom::Atom;
 use std::{collections::HashMap, sync::Arc};
+use kyute::Data;
 
-pub type Map = HashMap<Atom, Value>;
-pub type Array = Vec<Value>;
+pub type Map = imbl::HashMap<Atom, Value>;
+pub type Array = imbl::Vector<Value>;
 
 #[derive(Clone, Data, Debug)]
 pub enum Value {

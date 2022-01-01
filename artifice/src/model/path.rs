@@ -1,8 +1,10 @@
-use crate::{atom::Atom, model::atom::Atom};
+use crate::model::Atom;
 use dashmap::DashMap;
 use kyute::Data;
 use lazy_static::lazy_static;
 use std::{
+    fmt,
+    fmt::Formatter,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -51,7 +53,6 @@ lazy_static! {
     static ref PATH_NODE_TABLE: DashMap<PathKey, Arc<PathNode>> = DashMap::new();
 }
 
-
 //--------------------------------------------------------------------------------------------------
 
 /// Paths of the form:
@@ -60,9 +61,15 @@ lazy_static! {
 ///
 /// - `/network/node/param`: absolute path
 ///
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ModelPath {
     node: Arc<PathNode>,
+}
+
+impl fmt::Debug for ModelPath {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ModelPath(`{}`)", self.to_string())
+    }
 }
 
 impl From<Arc<PathNode>> for ModelPath {
