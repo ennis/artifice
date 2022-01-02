@@ -1,8 +1,10 @@
 use artifice::view;
-use kyute::{application, shell::platform::Platform};
+use kyute::application;
+use kyute::shell::application::Application;
 
 fn main() {
-    let _platform = Platform::new();
+    let _app = Application::new();
+
     tracing_subscriber::fmt()
         .compact()
         .with_target(false)
@@ -12,5 +14,6 @@ fn main() {
         .init();
 
     application::run(view::application_root);
-    Platform::shutdown();
+
+    Application::shutdown();
 }
