@@ -212,6 +212,28 @@ impl Document {
         Ok(node)
     }
 
+    /// Deletes the specified node.
+    pub fn delete_node(&mut self, node: &Node) -> Result<()> {
+        // Can't delete root node.
+        assert!(
+            !node.base.path.is_root(),
+            "attempted to delete the root node"
+        );
+
+        //let path_str = node.base.path.to_string();
+        let id = node.base.id;
+        self.connection
+            .execute("DELETE FROM named_objects WHERE rowid=?1", params![id])?;
+        self.revision += 1;
+        let mut parent = self
+            .model
+            .find_node_mut(&node.base.path.parent().unwrap())
+            .expect("could not find parent node");
+        parent.children.remove(&node.base.name());
+        Ok(())
+    }
+
+    /// Dumps the document to the standard output.
     pub fn dump(&self) {
         println!("Document");
         self.model.root.dump(0);

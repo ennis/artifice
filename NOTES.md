@@ -2440,3 +2440,12 @@ Downsides:
 - (deal-breaker) what about function calls inside macros?
   - `let widget = dbg!(widget())`
   - no "eager expansion" currently, so this is basically a deal-breaker
+
+# Debugging kyute
+
+There should be a way to "tag" cache entries to see which part of the source code they map to.
+E.g. is it a memoization entry? is it a state slot? where was it emitted in the call tree?
+
+# TODOs for kyute
+- not sure that the `debug_name` parameters are useful (can just click on the file link to see the relevant lines in context)
+- 
