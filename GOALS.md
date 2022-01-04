@@ -303,3 +303,4 @@ fn widget(#[uncached] document: &mut DocumentDb, node: &Node) -> Widget {
 
 
 Try option C.
+

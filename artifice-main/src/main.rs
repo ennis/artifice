@@ -15,5 +15,5 @@ fn main() {
 
     application::run(view::application_root);
 
-    Application::shutdown();
+        Application::shutdown();
 }

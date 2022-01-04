@@ -2,7 +2,7 @@ use crate::model::{Document, ModelPath, Node};
 use kyute::{
     composable,
     shell::winit::window::WindowBuilder,
-    widget::{Axis, Button, Flex, Text},
+    widget::{Action, Axis, Button, Flex, Menu, MenuItem, Text},
     Cache, Key, WidgetPod, Window,
 };
 use rusqlite::Connection;
@@ -43,6 +43,7 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
 
         // "Add Node" button
         let add_node_button = Button::new("Add Node".to_string());
+
         if add_node_button.clicked() {
             eprintln!("add node clicked");
             let name = document_model.root.make_unique_child_name("node");
@@ -59,13 +60,72 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
     Flex::new(Axis::Vertical, flex_items)
 }
 
+/// Main menu bar.
+#[composable]
+pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
+    let file_new = Action::new();
+    let file_open = Action::new();
+    let file_save = Action::new();
+    let file_save_as = Action::new();
+    let file_quit = Action::new();
+
+    let edit_undo = Action::new();
+    let edit_redo = Action::new();
+
+    if file_new.triggered() {
+        todo!()
+    }
+    if file_open.triggered() {
+        todo!()
+    }
+    if file_save.triggered() {
+        todo!()
+    }
+    if file_save_as.triggered() {
+        todo!()
+    }
+    if file_quit.triggered() {
+        todo!()
+    }
+
+    if edit_undo.triggered() {
+        todo!()
+    }
+    if edit_redo.triggered() {
+        todo!()
+    }
+
+    let mut file_menu = Menu::new(vec![
+        MenuItem::new("New", file_new),
+        MenuItem::new("Open...", file_open),
+        MenuItem::new("Save", file_save),
+        MenuItem::new("Save as...", file_save_as),
+        MenuItem::separator(),
+        MenuItem::new("Quit", file_quit),
+    ]);
+    let mut edit_menu = Menu::new(vec![
+        MenuItem::new("Undo", edit_undo),
+        MenuItem::new("Redo", edit_redo),
+    ]);
+    let menu_bar = Menu::new(vec![
+        MenuItem::submenu("File", file_menu),
+        MenuItem::submenu("Edit", edit_menu),
+    ]);
+
+    menu_bar
+}
+
 /// Native window displaying a document.
 #[composable]
 pub fn document_window(#[uncached] document: &mut Document) -> WidgetPod {
+    //
+    let menu_bar = main_menu_bar(document);
+
     // TODO document title
     Window::new(
         WindowBuilder::new().with_title("Document"),
         document_window_contents(document),
+        Some(menu_bar),
     )
 }
 
@@ -76,7 +136,6 @@ fn try_open_document() -> anyhow::Result<Document> {
 /// Application root.
 #[composable(uncached)]
 pub fn application_root() -> WidgetPod {
-
     let (document, key) = Cache::take_state::<Option<Document>>();
     let mut document = document.unwrap_or_default();
 
@@ -105,6 +164,7 @@ pub fn application_root() -> WidgetPod {
         Window::new(
             WindowBuilder::new().with_title("No document"),
             window_contents,
+            None,
         )
     };
 

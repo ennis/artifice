@@ -2449,3 +2449,21 @@ E.g. is it a memoization entry? is it a state slot? where was it emitted in the 
 # TODOs for kyute
 - not sure that the `debug_name` parameters are useful (can just click on the file link to see the relevant lines in context)
 - 
+
+# Closures for event handling
+
+Currently, events are handled during recomposition (events invalidate state entries that cause recomp).
+Can produce a lot of recomps.
+E.g. with buttons, if we add `hovered`, `clicked`, `pressed`, `released`, we will trigger a recomp on every
+Could also imagine a `Canvas` widget for which we have access to the current mouse position: in this case, it will recomp on **every** mouse move,
+even if the user doesn't use the state.
+
+Instead, could use closures:
+- closures that change state during event delivery 
+   - state must be wrapped in Arc<RefCell>, but that's probably already the case.
+   - issue: clone-capture in closures is super annoying, will need a macro, and lose autocompletion in the process 
+- then, recomposes because the state has changed
+- less recompositions, no need for `#[uncached]`
+
+Could be considered, but not an implementation priority. The current workflow works, even if it's a bit weird and/or inefficient (lots of recomps).
+
