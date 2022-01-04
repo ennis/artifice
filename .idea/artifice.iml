@@ -72,9 +72,13 @@
       <sourceFolder url="file://$MODULE_DIR$/mlr/macros/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/mlr/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/mlr/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/winit/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/winit/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ext/winit/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/mlr/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/ext/piet/target" />
+      <excludeFolder url="file://$MODULE_DIR$/ext/winit/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
