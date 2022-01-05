@@ -2467,3 +2467,7 @@ Instead, could use closures:
 
 Could be considered, but not an implementation priority. The current workflow works, even if it's a bit weird and/or inefficient (lots of recomps).
 
+# TODO Menus
+- ensure ID counter not overflowing 16-bit
+- strong type for command ID
+- enabled/disabled items

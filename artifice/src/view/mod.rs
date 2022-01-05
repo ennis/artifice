@@ -2,7 +2,7 @@ use crate::model::{Document, ModelPath, Node};
 use kyute::{
     composable,
     shell::winit::window::WindowBuilder,
-    widget::{Action, Axis, Button, Flex, Menu, MenuItem, Text},
+    widget::{Action, Axis, Button, Flex, Menu, MenuItem, Shortcut, Text},
     Cache, Key, WidgetPod, Window,
 };
 use rusqlite::Connection;
@@ -63,36 +63,57 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
 /// Main menu bar.
 #[composable]
 pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
-    let file_new = Action::new();
-    let file_open = Action::new();
-    let file_save = Action::new();
-    let file_save_as = Action::new();
-    let file_quit = Action::new();
+    let file_new = Action::with_shortcut(Shortcut::new(
+        kyute::event::Modifiers::CONTROL,
+        kyute::event::Key::Character("N".to_string()),
+    ));
+    let file_open = Action::with_shortcut(Shortcut::new(
+        kyute::event::Modifiers::CONTROL,
+        kyute::event::Key::Character("O".to_string()),
+    ));
+    let file_save = Action::with_shortcut(Shortcut::new(
+        kyute::event::Modifiers::CONTROL,
+        kyute::event::Key::Character("S".to_string()),
+    ));
+    let file_save_as = Action::with_shortcut(Shortcut::new(
+        kyute::event::Modifiers::CONTROL | kyute::event::Modifiers::SHIFT,
+        kyute::event::Key::Character("S".to_string()),
+    ));
+    let file_quit = Action::with_shortcut(Shortcut::new(
+        kyute::event::Modifiers::ALT,
+        kyute::event::Key::F4,
+    ));
 
-    let edit_undo = Action::new();
-    let edit_redo = Action::new();
+    let edit_undo = Action::with_shortcut(Shortcut::new(
+        kyute::event::Modifiers::CONTROL,
+        kyute::event::Key::Character("Z".to_string()),
+    ));
+    let edit_redo = Action::with_shortcut(Shortcut::new(
+        kyute::event::Modifiers::CONTROL,
+        kyute::event::Key::Character("Y".to_string()),
+    ));
 
     if file_new.triggered() {
-        todo!()
+        tracing::warn!("File>New unimplemented");
     }
     if file_open.triggered() {
-        todo!()
+        tracing::warn!("File>Open unimplemented");
     }
     if file_save.triggered() {
-        todo!()
+        tracing::warn!("File>Save unimplemented");
     }
     if file_save_as.triggered() {
-        todo!()
+        tracing::warn!("File>Save As unimplemented");
     }
     if file_quit.triggered() {
-        todo!()
+        tracing::warn!("File>Quit unimplemented");
     }
 
     if edit_undo.triggered() {
-        todo!()
+        tracing::warn!("Edit>Undo unimplemented");
     }
     if edit_redo.triggered() {
-        todo!()
+        tracing::warn!("Edit>Redo unimplemented");
     }
 
     let mut file_menu = Menu::new(vec![

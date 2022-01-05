@@ -1,6 +1,5 @@
 use artifice::view;
-use kyute::application;
-use kyute::shell::application::Application;
+use kyute::{application, shell::application::Application};
 
 fn main() {
     let _app = Application::new();
@@ -15,5 +14,5 @@ fn main() {
 
     application::run(view::application_root);
 
-        Application::shutdown();
+    Application::shutdown();
 }
