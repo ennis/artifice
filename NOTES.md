@@ -2471,3 +2471,56 @@ Could be considered, but not an implementation priority. The current workflow wo
 - ensure ID counter not overflowing 16-bit
 - strong type for command ID
 - enabled/disabled items
+
+# GUI styling language
+- high-level description of what to draw in some abstract "region" of the canvas
+  - region = rect, mostly
+  - but also variables indicating the position of key elements (e.g. the knob of a slider)
+- sizing & layout information
+  - given the size of the contents, what will be the size of the widget
+
+Basically CSS but with the ability to render 
+
+e.g., a button:
+```
+// selector: shape + paint
+
+
+{
+    background: linear-gradient(90deg, rgba(...) 10%, rgba(...) 20%)
+}
+
+hover { }
+[hover && !hot] linear-gradient(90deg, rgba(...) 10%, rgba(...) 20%)
+
+
+[hot] border 1dp {
+    url(
+}
+
+hover: border 1dp {
+    linear gradient (...)
+}
+```
+
+In code: a high-level, descriptive/declarative drawing interface.
+
+Base shape + modifiers
+
+# Call-site memoization should only store the arguments that are not statically known
+
+Consider this call: 
+```rust
+#[composable]
+fn test() {
+    TextEdit::new(/*text*/ text, /*font family*/ "consolas", /*font size*/ 14.0)
+}
+```
+
+We don't need to store and compare the font family and size at this callsite because they never change.
+We know that, but how can we determine that in code?
+-> probably impossible without a compiler plugin
+
+// -> jetpack compose does this, presumably with compiler magic
+// -> issue: how do we know which parameters are statically known at the call site?
+//   -> we don't even have access to the call site in the macro

@@ -2,7 +2,7 @@ use crate::model::{Document, ModelPath, Node};
 use kyute::{
     composable,
     shell::winit::window::WindowBuilder,
-    widget::{Action, Axis, Button, Flex, Menu, MenuItem, Shortcut, Text},
+    widget::{Action, Axis, Baseline, Button, Flex, Menu, MenuItem, Shortcut, Slider, Text},
     Cache, Key, WidgetPod, Window,
 };
 use rusqlite::Connection;
@@ -16,11 +16,40 @@ pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> WidgetPod 
         eprintln!("delete node clicked {:?}", node.base.path);
         document.delete_node(node);
     }
+
+
+    //let name_edit = TextEdit::new(node.base.path.name().to_string());
+
+    // problem: TextEdit is recreated every time a character is entered.
+    // What we want:
+    // - TextEdit::new() creates the text edit
+    // - internally, text edit updates its internal document (selection, cursor movement).
+    // - when enter is pressed, or focus is lost, invalidate the `EditingFinished` flag.
+    //
+    // Problem: we may also want to update:
+    // - when the text changes.
+    // - when the current selection changes.
+    // - when the current cursor position changes.
+
+    /*if name_edit.editing_finished() {
+        eprintln!("editing finished");
+    }
+
+    if name_edit.text_changed() {
+        let new_name = name_edit.text();
+
+        //document.rename_node(node, new_name);
+    }*/
+
+
     Flex::new(
         Axis::Horizontal,
         vec![
-            Text::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
-            delete_button,
+            Baseline::new(
+                20.0,
+                Text::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
+            ),
+            Baseline::new(20.0, delete_button),
         ],
     )
 }
@@ -53,6 +82,9 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
         let mut flex_items = Vec::new();
         flex_items.extend(node_views);
         flex_items.push(add_node_button);
+        let slider = Slider::new(0.0, 10.0, 0.0);
+        eprintln!("slider value = {}", slider.current_value());
+        flex_items.push(slider);
         flex_items
     };
 
@@ -63,6 +95,8 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
 /// Main menu bar.
 #[composable]
 pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
+    // TODO macro to make shortcuts less verbose
+    // `kyute::shortcut!(Ctrl+S)`
     let file_new = Action::with_shortcut(Shortcut::new(
         kyute::event::Modifiers::CONTROL,
         kyute::event::Key::Character("N".to_string()),
@@ -190,6 +224,7 @@ pub fn application_root() -> WidgetPod {
     };
 
     if invalidate {
+        eprintln!("invalidating document");
         Cache::replace_state(key, document);
     } else {
         Cache::replace_state_without_invalidation(key, document);
