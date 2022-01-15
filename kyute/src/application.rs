@@ -3,7 +3,9 @@
 //! Provides the `run_application` function that opens the main window and translates the incoming
 //! events from winit into the events expected by kyute.
 use crate::{
-    cache::Key, core2::WidgetId, theme, Cache, Environment, Event, InternalEvent, WidgetPod,
+    cache::{Cache, Key},
+    core2::WidgetId,
+    theme, Environment, Event, InternalEvent, WidgetPod,
 };
 use kyute_shell::{
     winit,
@@ -17,6 +19,7 @@ use std::{
     mem,
 };
 use tracing::warn;
+use crate::cache::UiCtx;
 
 /// Global application context. Contains stuff passed to all widget contexts (Event,Layout,Paint...)
 pub struct AppCtx {
@@ -97,7 +100,7 @@ fn eval_root_widget(
     app_ctx: &mut AppCtx,
     event_loop: &EventLoopWindowTarget<()>,
     root_env: &Environment,
-    f: fn() -> WidgetPod,
+    f: fn(UiCtx) -> WidgetPod,
 ) -> WidgetPod {
     let root_widget: WidgetPod = app_ctx.cache.run(f);
     // ensures that all widgets have received the `Initialize` event.
@@ -105,7 +108,7 @@ fn eval_root_widget(
     root_widget
 }
 
-pub fn run(ui: fn() -> WidgetPod) {
+pub fn run(ui: fn(UiCtx) -> WidgetPod) {
     let mut event_loop = EventLoop::new();
     let mut app_ctx = AppCtx::new();
     let root_env = theme::get_default_application_style();

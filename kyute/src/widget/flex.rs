@@ -4,6 +4,7 @@ use crate::{
     theme, BoxConstraints, Environment, Event, EventCtx, Measurements, Offset, Rect, Size, Widget,
     WidgetPod,
 };
+use crate::cache::UiCtx;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Axis {
@@ -66,8 +67,8 @@ pub struct Flex {
 
 impl Flex {
     #[composable(uncached)]
-    pub fn new(axis: Axis, items: Vec<WidgetPod>) -> WidgetPod<Flex> {
-        WidgetPod::new(Flex { axis, items })
+    pub fn new(cx: UiCtx, axis: Axis, items: Vec<WidgetPod>) -> WidgetPod<Flex> {
+        WidgetPod::new(cx, Flex { axis, items })
     }
 }
 

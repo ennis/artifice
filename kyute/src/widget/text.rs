@@ -6,6 +6,7 @@ use crate::{
 use kyute_shell::{drawing::ToSkia, skia as sk};
 use std::cell::RefCell;
 use kyute_shell::drawing::FromSkia;
+use crate::cache::UiCtx;
 
 #[derive(Clone)]
 pub struct Text {
@@ -15,8 +16,8 @@ pub struct Text {
 
 impl Text {
     #[composable]
-    pub fn new(text: String) -> WidgetPod<Text> {
-        WidgetPod::new(Text {
+    pub fn new(cx: UiCtx, text: String) -> WidgetPod<Text> {
+        WidgetPod::new(cx, Text {
             text,
             text_blob: RefCell::new(None),
         })

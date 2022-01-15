@@ -1,7 +1,8 @@
 use crate::{
     application::AppCtx,
     bloom::Bloom,
-    cache::{Cache, Key},
+    cache,
+    cache::{Cache, Key, UiCtx},
     call_key::CallId,
     event::{InputState, PointerEvent, PointerEventKind},
     region::Region,
@@ -13,7 +14,14 @@ use kyute_shell::{
     graal::{ash::vk, BufferId, ImageId},
     winit::{event_loop::EventLoopWindowTarget, window::WindowId},
 };
-use std::{cell::Cell, fmt, hash::Hash, marker::Unsize, ops::{CoerceUnsized, Deref}, sync::{Arc, Weak}};
+use std::{
+    cell::Cell,
+    fmt,
+    hash::Hash,
+    marker::Unsize,
+    ops::{CoerceUnsized, Deref},
+    sync::{Arc, Weak},
+};
 use tracing::{trace, warn};
 
 /// Context passed to widgets during the layout pass.
@@ -31,6 +39,7 @@ impl LayoutCtx {
 
 // TODO make things private
 pub struct PaintCtx<'a> {
+    pub(crate) app_ctx: &'a mut AppCtx,
     pub canvas: &'a mut kyute_shell::skia::Canvas,
     pub id: WidgetId,
     pub window_bounds: Rect,
@@ -59,6 +68,10 @@ impl<'a> PaintCtx<'a> {
     ///
     pub fn is_hovering(&self) -> bool {
         self.hover
+    }
+
+    pub fn get_state<T: Clone + 'static>(&mut self, key: Key<T>) -> T {
+        self.app_ctx.cache.get_state(key)
     }
 
     /*/// Returns the size of the node.
@@ -185,7 +198,11 @@ impl<'a> EventCtx<'a> {
     }
 
     pub fn set_state<T: 'static>(&mut self, key: Key<T>, value: T) {
-        self.app_ctx.cache.set_state(key, value).unwrap()
+        self.app_ctx.cache.set_state(key, value)
+    }
+
+    pub fn get_state<T: Clone + 'static>(&mut self, key: Key<T>) -> T {
+        self.app_ctx.cache.get_state(key)
     }
 
     pub fn register_window(&mut self, window_id: WindowId) {
@@ -562,6 +579,7 @@ impl<T: Widget + ?Sized> WidgetPodInner<T> {
 
         {
             let mut child_ctx = PaintCtx {
+                app_ctx: ctx.app_ctx,
                 canvas: ctx.canvas,
                 window_bounds,
                 focus: ctx.focus,
@@ -613,7 +631,7 @@ impl<T: Widget + ?Sized> WidgetPodInner<T> {
             }
             Event::Internal(InternalEvent::RouteEvent {
                 target,
-                ref mut event
+                ref mut event,
             }) => {
                 if target == self.state.id {
                     self.event(parent_ctx, event, env);
@@ -689,7 +707,9 @@ impl<T: Widget + ?Sized> WidgetPodInner<T> {
                 // this would make the code cleaner, at the cost of two traversals instead of one.
 
                 // pass hit test if we have pointer capture
-                if !bounds.contains(pointer_event.window_position) && parent_ctx.focus_state.pointer_grab != Some(self.state.id) {
+                if !bounds.contains(pointer_event.window_position)
+                    && parent_ctx.focus_state.pointer_grab != Some(self.state.id)
+                {
                     // pointer hit-test fail; if we were hovering the widget, send pointerout
                     if self.state.pointer_over.get() {
                         self.state.pointer_over.set(false);
@@ -751,12 +771,12 @@ impl fmt::Debug for WidgetPod {
 impl<T: Widget + 'static> WidgetPod<T> {
     /// Creates a new `WidgetPod` wrapping the specified widget.
     #[composable(uncached)]
-    pub fn new(widget: T) -> WidgetPod<T> {
-        let id = WidgetId::from_call_id(Cache::current_call_id());
+    pub fn new(cx: UiCtx, widget: T) -> WidgetPod<T> {
+        let id = WidgetId::from_call_id(cache::current_call_id(cx));
 
         // HACK: returns false on first call, true on following calls, so we can use that
         // to determine whether the widget has been initialized.
-        let initialized = !Cache::changed(()); // false on first call, true on following calls
+        let initialized = !cache::changed(cx, ()); // false on first call, true on following calls
 
         tracing::trace!(
             "WidgetPod::new[{}-{:?}]: initialized={}",

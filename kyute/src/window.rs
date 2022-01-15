@@ -1,15 +1,4 @@
-use crate::{
-    align_boxes, composable,
-    core2::{FocusState, GpuResourceReferences, WindowInfo},
-    event::{InputState, KeyboardEvent, PointerButton, PointerEvent, PointerEventKind},
-    graal,
-    graal::{vk::Handle, MemoryLocation},
-    region::Region,
-    theme,
-    widget::{Action, Menu},
-    Alignment, BoxConstraints, Cache, Data, Environment, Event, EventCtx, InternalEvent, LayoutCtx,
-    Measurements, PaintCtx, Point, Rect, Size, Widget, WidgetId, WidgetPod,
-};
+use crate::{align_boxes, composable, core2::{FocusState, GpuResourceReferences, WindowInfo}, event::{InputState, KeyboardEvent, PointerButton, PointerEvent, PointerEventKind}, graal, graal::{vk::Handle, MemoryLocation}, region::Region, theme, widget::{Action, Menu}, Alignment, BoxConstraints, Cache, Data, Environment, Event, EventCtx, InternalEvent, LayoutCtx, Measurements, PaintCtx, Point, Rect, Size, Widget, WidgetId, WidgetPod, cache};
 use keyboard_types::KeyState;
 use kyute::GpuFrameCtx;
 use kyute_shell::{
@@ -22,6 +11,7 @@ use kyute_shell::{
 };
 use std::{cell::RefCell, collections::HashMap, env, mem, sync::Arc, time::Instant};
 use tracing::trace;
+use crate::cache::UiCtx;
 
 fn key_code_from_winit(
     input: &winit::event::KeyboardInput,
@@ -378,7 +368,7 @@ impl WindowState {
                 tracing::trace!("received WM_COMMAND {}", id);
                 // find matching action and trigger it
                 if let Some(action) = self.menu_actions.get(&(*id as u32)) {
-                    parent_ctx.set_state(action.triggered.1, true);
+                    parent_ctx.set_state(action.triggered_key, true);
                 }
                 None
             }
@@ -633,13 +623,14 @@ impl Window {
     /// TODO: explain subtleties
     #[composable(uncached)]
     pub fn new(
+        cx: UiCtx,
         window_builder: WindowBuilder,
         contents: WidgetPod,
         menu: Option<Menu>,
     ) -> WidgetPod<Window> {
         // create the initial window state
         // we don't want to recreate it every time, so it only depends on the call ID.
-        let window_state = Cache::memoize((), move || {
+        let window_state = cache::memoize(cx, (), move |_cx| {
             Arc::new(RefCell::new(WindowState {
                 window: None,
                 window_builder: Some(window_builder),
@@ -665,7 +656,7 @@ impl Window {
         }
         // TODO update title, size, position, etc.
 
-        WidgetPod::new(Window {
+        WidgetPod::new(cx, Window {
             window_state,
             contents,
         })
@@ -839,6 +830,7 @@ impl Window {
                     invalid.add_rect(window_bounds);
 
                     let mut paint_ctx = PaintCtx {
+                        app_ctx: parent_ctx.app_ctx,
                         canvas,
                         id,
                         window_bounds,

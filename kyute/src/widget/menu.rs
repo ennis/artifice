@@ -1,5 +1,6 @@
-use crate::{composable, util::Counter, Cache, Data, Key};
+use crate::{composable, util::Counter, Cache, Data, Key, cache};
 use std::{collections::HashMap, convert::TryInto};
+use crate::cache::UiCtx;
 
 /// Keyboard shortcut.
 // This is a newtype so that we can impl Data on it.
@@ -36,7 +37,9 @@ pub struct Action {
     pub(crate) shortcut: Option<Shortcut>,
     // ignore "triggered" which is transient state
     #[data(ignore)]
-    pub(crate) triggered: (bool, Key<bool>),
+    pub(crate) triggered: bool,
+    #[data(ignore)]
+    pub(crate) triggered_key: Key<bool>,
 }
 
 // FIXME: WM_COMMAND menu ids are 16-bit, so we can exhaust IDs quickly if we keep creating new actions
@@ -46,34 +49,36 @@ impl Action {
     /// Creates a new action.
     // FIXME does this need to be cached? it's cheap to create
     #[composable]
-    pub fn new() -> Action {
-        Self::new_inner(None)
+    pub fn new(cx: UiCtx) -> Action {
+        Self::new_inner(cx,None)
     }
 
     /// Creates a new action with the specified keyboard shortcut.
     // TODO remove, replace with a function that mutates an existing action: `Action::new().shortcut(...)`
     #[composable]
-    pub fn with_shortcut(shortcut: Shortcut) -> Action {
-        Self::new_inner(Some(shortcut))
+    pub fn with_shortcut(cx: UiCtx, shortcut: Shortcut) -> Action {
+        Self::new_inner(cx, Some(shortcut))
     }
 
     #[composable(uncached)]
-    fn new_inner(shortcut: Option<Shortcut>) -> Action {
-        let id: u32 = Cache::memoize((), || ACTION_ID_COUNTER.next().try_into().unwrap());
-        let triggered = Cache::state(|| false);
-        if triggered.0 {
-            Cache::replace_state(triggered.1, false);
+    fn new_inner(cx: UiCtx, shortcut: Option<Shortcut>) -> Action {
+        let id: u32 = cache::memoize(cx, (), |_cx| ACTION_ID_COUNTER.next().try_into().unwrap());
+        let triggered_key = cache::state(cx, || false);
+        let triggered = triggered_key.get(cx);
+        if triggered {
+            triggered_key.set(cx, false)
         }
         Action {
             id,
             triggered,
+            triggered_key,
             shortcut,
         }
     }
 
     /// Returns whether the action was triggered.
     pub fn triggered(&self) -> bool {
-        self.triggered.0
+        self.triggered
     }
 }
 
@@ -124,7 +129,7 @@ fn compare_menu_items(a: &Vec<MenuItem>, b: &Vec<MenuItem>) -> bool {
 
 impl Menu {
     #[composable(uncached)]
-    pub fn new(items: Vec<MenuItem>) -> Menu {
+    pub fn new(_cx: UiCtx, items: Vec<MenuItem>) -> Menu {
         Menu { items }
     }
 

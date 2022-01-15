@@ -1,11 +1,13 @@
 //! Sliders provide a way to make a value vary linearly between two bounds by dragging a knob along
 //! a line.
 use crate::{
+    cache,
+    cache::UiCtx,
     composable,
     core2::{Widget, WindowPaintCtx},
     event::{Event, PointerEventKind},
     styling::PaintCtxExt,
-    theme, BoxConstraints, Cache, Environment, EventCtx, GpuFrameCtx, Key, LayoutCtx, Measurements,
+    theme, BoxConstraints, Environment, EventCtx, GpuFrameCtx, Key, LayoutCtx, Measurements,
     PaintCtx, Point, Rect, SideOffsets, Size, WidgetPod,
 };
 use kyute_shell::drawing::Path;
@@ -75,8 +77,7 @@ impl Default for SliderTrack {
 
 pub struct Slider {
     track: Cell<SliderTrack>,
-    value: f64,
-    value_key: Key<f64>,
+    value_key: cache::Key<f64>,
     min: f64,
     max: f64,
 }
@@ -91,26 +92,31 @@ impl Slider {
     /// * `max` - upper bound of the slider range
     /// * `initial` - initial value of the slider.
     #[composable]
-    pub fn new(min: f64, max: f64, initial_value: f64) -> WidgetPod<Slider> {
+    pub fn new(cx: UiCtx, min: f64, max: f64, initial_value: f64) -> WidgetPod<Slider> {
         let initial_value = initial_value.clamp(min, max);
-        let (value, value_key) = Cache::state(|| initial_value);
-        WidgetPod::new(Slider {
-            // endpoints calculated during layout
-            track: Default::default(),
-            value,
-            value_key,
-            min,
-            max,
-        })
+        let value_key = cache::state(cx, || initial_value);
+        WidgetPod::new(
+            cx,
+            Slider {
+                // endpoints calculated during layout
+                track: Default::default(),
+                value_key,
+                min,
+                max,
+            },
+        )
     }
     /// Returns the current value, normalized between 0 and 1.
-    fn value_norm(&self) -> f64 {
-        (self.value - self.min) / (self.max - self.min)
+    // FIXME: we want to call this method in two different context:
+    // - as part of the recomp, so we need a UiCtx
+    // - during event propagation (so outside of recomp), we need a mut ref to the cache.
+    fn value_norm(&self, value: f64) -> f64 {
+        (value - self.min) / (self.max - self.min)
     }
 
     /// Returns the current value of the slider.
-    pub fn current_value(&self) -> f64 {
-        self.value
+    pub fn current_value(&self, cx: UiCtx) -> f64 {
+        self.value_key.get(cx)
     }
 }
 
@@ -127,7 +133,8 @@ impl Widget for Slider {
                 }
                 PointerEventKind::PointerDown => {
                     let new_value = self
-                        .track.get()
+                        .track
+                        .get()
                         .value_from_position(p.position, self.min, self.max);
                     ctx.set_state(self.value_key, new_value);
                     ctx.capture_pointer();
@@ -137,7 +144,8 @@ impl Widget for Slider {
                 PointerEventKind::PointerMove => {
                     if ctx.is_capturing_pointer() {
                         let new_value = self
-                            .track.get()
+                            .track
+                            .get()
                             .value_from_position(p.position, self.min, self.max);
                         ctx.set_state(self.value_key, new_value);
                         ctx.request_redraw();
@@ -192,6 +200,8 @@ impl Widget for Slider {
     fn paint(&self, ctx: &mut PaintCtx, bounds: Rect, env: &Environment) {
         use crate::styling::*;
 
+        let value_norm = self.value_norm(ctx.get_state(self.value_key));
+
         let background_gradient = linear_gradient()
             .angle(90.0.degrees())
             .stop(theme::BUTTON_BACKGROUND_BOTTOM_COLOR, 0.0)
@@ -212,7 +222,7 @@ impl Widget for Slider {
             Size::new(track_x_end - track_x_start, track_h),
         );
 
-        let kpos = self.track.get().knob_position(self.value_norm());
+        let kpos = self.track.get().knob_position(value_norm);
         let kx = kpos.x.round() + 0.5;
 
         let knob_bounds = Rect::new(
@@ -237,14 +247,14 @@ impl Widget for Slider {
                         )
                         .opacity(1.0),
                 ),
-            env
+            env,
         );
 
         ctx.draw_styled_box(
             knob_bounds,
             path(Path::from_str("M 0.5 0.5 L 10.5 0.5 L 10.5 5.5 L 5.5 10.5 L 0.5 5.5 Z").unwrap())
                 .with(fill(background_gradient.clone())),
-            env
+            env,
         );
     }
 }

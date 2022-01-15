@@ -1,6 +1,7 @@
 //! Baseline alignment.
 use kyute::{Widget, WidgetPod, composable};
 use crate::{BoxConstraints, Environment, Event, EventCtx, GpuFrameCtx, LayoutCtx, Measurements, Offset, PaintCtx, Rect};
+use crate::cache::UiCtx;
 use crate::core2::WindowPaintCtx;
 
 /// A widget that aligns its child according to a fixed baseline.
@@ -11,8 +12,8 @@ pub struct Baseline {
 
 impl Baseline {
     #[composable]
-    pub fn new(baseline: f64, inner: WidgetPod) -> WidgetPod<Baseline> {
-        WidgetPod::new(Baseline { inner, baseline })
+    pub fn new(cx: UiCtx, baseline: f64, inner: WidgetPod) -> WidgetPod<Baseline> {
+        WidgetPod::new(cx, Baseline { inner, baseline })
     }
 }
 

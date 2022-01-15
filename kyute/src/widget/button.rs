@@ -1,12 +1,14 @@
-use tracing::trace;
 use crate::{
-    align_boxes, composable,
+    align_boxes, cache,
+    cache::UiCtx,
+    composable,
     core2::{EventCtx, LayoutCtx, PaintCtx},
     event::PointerEventKind,
     widget::Text,
-    Alignment, BoxConstraints, Cache, Environment, Event, Key, Measurements, Rect,
-    SideOffsets, Size, Widget, WidgetPod,
+    Alignment, BoxConstraints, Cache, Environment, Event, Key, Measurements, Rect, SideOffsets,
+    Size, Widget, WidgetPod,
 };
+use tracing::trace;
 
 #[derive(Clone)]
 pub struct Button {
@@ -17,17 +19,26 @@ pub struct Button {
 impl Button {
     /// Creates a new button with the specified label.
     #[composable]
-    pub fn new(label: String) -> WidgetPod<Button> {
-        let (clicked, key) = Cache::state(|| false);
+    pub fn new(cx: UiCtx, label: String) -> WidgetPod<Button> {
+        let clicked_key = cache::state(cx, || false);
+        let clicked = clicked_key.get(cx);
         if clicked {
             // reset click
             // TODO some kind of autoreset flag in `cache`? or somewhere else?
-            Cache::replace_state(key, false);
+            clicked_key.set(cx, false);
         }
-        WidgetPod::new(Button {
-            label: Text::new(label),
-            clicked: (clicked, key),
-        })
+
+        // issue: this doesn't work because of multiple mutable borrows (it is sound in theory, but
+        // the compiler doesn't seem to be able to prove it)
+        // to work around: wrap cx in a refcell, but then it complicates the code in `cache`
+        // back to the same level as the TLS implementation.
+        WidgetPod::new(
+            cx,
+            Button {
+                label: Text::new(cx, label),
+                clicked: (clicked, clicked_key),
+            },
+        )
     }
 
     /// Returns whether this button has been clicked.
@@ -90,7 +101,6 @@ impl Widget for Button {
         // constrain size
         measurements.size = constraints.constrain(measurements.size);
 
-
         //trace!("button_measurements={:?}", measurements);
 
         // center the text inside the button
@@ -102,16 +112,14 @@ impl Widget for Button {
     }
 
     fn paint(&self, ctx: &mut PaintCtx, bounds: Rect, env: &Environment) {
-        use kyute::styling::*;
-        use kyute::theme::*;
+        use kyute::{styling::*, theme::*};
 
         //tracing::trace!(?bounds, "button paint");
 
-        let background_gradient =
-            linear_gradient()
-                .angle(90.0.degrees())
-                .stop(BUTTON_BACKGROUND_BOTTOM_COLOR, 0.0)
-                .stop(BUTTON_BACKGROUND_TOP_COLOR, 1.0);
+        let background_gradient = linear_gradient()
+            .angle(90.0.degrees())
+            .stop(BUTTON_BACKGROUND_BOTTOM_COLOR, 0.0)
+            .stop(BUTTON_BACKGROUND_TOP_COLOR, 1.0);
 
         ctx.draw_styled_box(
             bounds,
@@ -123,7 +131,8 @@ impl Widget for Button {
                             .angle(90.0.degrees())
                             .stop(BUTTON_BACKGROUND_BOTTOM_COLOR_HOVER, 0.0)
                             .stop(BUTTON_BACKGROUND_TOP_COLOR_HOVER, 1.0),
-                    ).enabled(ctx.hover)
+                    )
+                    .enabled(ctx.hover),
                 )
                 .with(
                     border(1.0)
@@ -158,7 +167,6 @@ impl Widget for Button {
         // Fix this somehow:
         // - Remove deref impl: no, affects the user-facing API
         // - rename the methods on WidgetPod (propagate_event, propagate_paint): easy to misuse
-
 
         self.label.paint(ctx, bounds, env);
     }
