@@ -1,8 +1,11 @@
 use crate::model::{Document, ModelPath, Node};
 use kyute::{
-    composable,
-    shell::winit::window::WindowBuilder,
-    widget::{Action, Axis, Baseline, Button, Flex, Menu, MenuItem, Shortcut, Slider, Text},
+    cache, composable,
+    shell::{drawing::Color, winit::window::WindowBuilder},
+    text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
+    widget::{
+        Action, Axis, Baseline, Button, Flex, Menu, MenuItem, Shortcut, Slider, Text, TextEdit,
+    },
     Cache, Key, WidgetPod, Window,
 };
 use rusqlite::Connection;
@@ -17,7 +20,6 @@ pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> WidgetPod 
         document.delete_node(node);
     }
 
-
     //let name_edit = TextEdit::new(node.base.path.name().to_string());
 
     // problem: TextEdit is recreated every time a character is entered.
@@ -31,6 +33,21 @@ pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> WidgetPod 
     // - when the current selection changes.
     // - when the current cursor position changes.
 
+    // format name
+    let path = node.base.path.to_string();
+    let last_sep = path.rfind('/').unwrap();
+    let path_text = FormattedText::from(path)
+        .with_attribute(
+            0..=last_sep,
+            Attribute::Color(Color::new(0.7, 0.7, 0.7, 1.0)),
+        )
+        .with_attribute(.., Attribute::FontSize(17.0))
+        .with_attribute(.., FontFamily::new("Cambria"))
+        .with_attribute(.., FontStyle::Italic);
+
+    // rename
+    let name_edit = TextEdit::new(path_text);
+
     /*if name_edit.editing_finished() {
         eprintln!("editing finished");
     }
@@ -41,7 +58,6 @@ pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> WidgetPod 
         //document.rename_node(node, new_name);
     }*/
 
-
     Flex::new(
         Axis::Horizontal,
         vec![
@@ -50,6 +66,7 @@ pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> WidgetPod 
                 Text::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
             ),
             Baseline::new(20.0, delete_button),
+            Baseline::new(20.0, name_edit),
         ],
     )
 }
@@ -65,7 +82,7 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
         // Root nodes
         let mut node_views: Vec<WidgetPod> = Vec::new();
         for (_name, node) in document_model.root.children.iter() {
-            Cache::scoped(node.base.id as usize, || {
+            cache::scoped(node.base.id as usize, || {
                 node_views.push(node_item(document, node))
             })
         }
@@ -174,6 +191,8 @@ pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
 #[composable]
 pub fn document_window(#[uncached] document: &mut Document) -> WidgetPod {
     //
+
+    eprintln!("document_window");
     let menu_bar = main_menu_bar(document);
 
     // TODO document title
@@ -191,8 +210,8 @@ fn try_open_document() -> anyhow::Result<Document> {
 /// Application root.
 #[composable(uncached)]
 pub fn application_root() -> WidgetPod {
-    let (document, key) = Cache::take_state::<Option<Document>>();
-    let mut document = document.unwrap_or_default();
+    let document_state = cache::state(|| -> Option<Document> { None });
+    let mut document = document_state.take();
 
     let mut invalidate = false;
     let old_revision: Option<usize> = document.as_ref().map(|doc| doc.revision());
@@ -225,9 +244,9 @@ pub fn application_root() -> WidgetPod {
 
     if invalidate {
         eprintln!("invalidating document");
-        Cache::replace_state(key, document);
+        document_state.set(document);
     } else {
-        Cache::replace_state_without_invalidation(key, document);
+        document_state.set_without_invalidation(document);
     }
 
     widget
