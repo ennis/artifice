@@ -100,7 +100,7 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
         flex_items.extend(node_views);
         flex_items.push(add_node_button);
         let slider = Slider::new(0.0, 10.0, 0.0);
-        eprintln!("slider value = {}", slider.current_value());
+        //eprintln!("slider value = {}", slider.current_value());
         flex_items.push(slider);
         flex_items
     };
