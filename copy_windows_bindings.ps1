@@ -1,1 +1,0 @@
-copy target/debug/build/kyute-shell-4fe0757f715738bb/out/windows.rs kyute-shell/src/bindings.rs
