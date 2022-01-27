@@ -1,6 +1,6 @@
 use crate::model::{
     atom::{make_unique_name, Atom},
-    property::Property,
+    attribute::Attribute,
     NamedObject,
 };
 use imbl::HashMap;
@@ -12,6 +12,7 @@ use std::sync::Arc;
 pub struct Node {
     pub base: NamedObject,
     pub children: HashMap<Atom, Node>,
+    //pub properties:
 }
 
 impl Node {

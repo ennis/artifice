@@ -4,16 +4,30 @@ use kyute::{
     shell::{drawing::Color, winit::window::WindowBuilder},
     text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
     widget::{
-        Action, Axis, Baseline, Button, Flex, Menu, MenuItem, Shortcut, Slider, Text, TextEdit,
+        Action, Axis, Baseline, Button, DropDown, Flex, Menu, MenuItem, Shortcut, Slider, Text,
+        TextEdit,
     },
-    Cache, Key, WidgetPod, Window,
+    Cache, Data, Key, WidgetPod, Window,
 };
 use rusqlite::Connection;
-use std::sync::Arc;
+use std::{fmt, fmt::Formatter, sync::Arc};
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Data)]
+enum DropDownTest {
+    First,
+    Second,
+    Third,
+}
+
+impl fmt::Display for DropDownTest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
 
 /// Node view.
 #[composable]
-pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> WidgetPod {
+pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> impl Widget {
     let delete_button = Button::new("Delete".to_string());
     if delete_button.clicked() {
         eprintln!("delete node clicked {:?}", node.base.path);
@@ -48,27 +62,28 @@ pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> WidgetPod 
     // rename
     let name_edit = TextEdit::new(path_text);
 
-    /*if name_edit.editing_finished() {
-        eprintln!("editing finished");
+    let dropdown = DropDown::new(
+        vec![
+            DropDownTest::First,
+            DropDownTest::Second,
+            DropDownTest::Third,
+        ],
+        0,
+    );
+
+    if let Some(item) = dropdown.new_selected_item() {
+        eprintln!("changed option: {:?}", item);
     }
 
-    if name_edit.text_changed() {
-        let new_name = name_edit.text();
-
-        //document.rename_node(node, new_name);
-    }*/
-
     Flex::new(
-        Axis::Horizontal,
-        vec![
+        Axis::Horizontal).append(
             Baseline::new(
                 20.0,
                 Text::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
-            ),
-            Baseline::new(20.0, delete_button),
-            Baseline::new(20.0, name_edit),
-        ],
-    )
+            ))
+        .append(Baseline::new(20.0, delete_button))
+        .append(Baseline::new(20.0, dropdown))
+        .append( Baseline::new(20.0, name_edit))
 }
 
 /// Root document view.

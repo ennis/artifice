@@ -2524,3 +2524,27 @@ We know that, but how can we determine that in code?
 // -> jetpack compose does this, presumably with compiler magic
 // -> issue: how do we know which parameters are statically known at the call site?
 //   -> we don't even have access to the call site in the macro
+
+# Different types of menus
+
+- native window menus
+- native context menus
+- custom context menus (popup windows)
+
+For native menus: create a menu object, each action is associated to an ID.
+
+# Attribute types and rust enums
+
+Common attribute types:
+- f64
+- vecN (with N=2..4)
+- string
+- f64 arrays
+- bool
+
+Would like to encode rust types in the DB.
+
+Attributes are stored as JSON in the DB. The JSON is then deserialized as a generic cloneable `Value` container. 
+Alternatively: don't deserialize the value?
+
+Then, individual "schema" types can initialize themselves from the `Value` (enums, etc.).

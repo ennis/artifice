@@ -2,7 +2,7 @@ use crate::model::{path::ModelPath, value::Value};
 use imbl::Vector;
 use kyute::Data;
 
-/// A group of properties sharing a common value.
+/// A group of attributes sharing a common value.
 #[derive(Clone, Debug)]
 pub struct ShareGroup {
     shares: Vector<ModelPath>,

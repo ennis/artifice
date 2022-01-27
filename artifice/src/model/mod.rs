@@ -15,7 +15,7 @@ pub mod atom;
 mod document;
 pub mod node;
 mod path;
-pub mod property;
+pub mod attribute;
 mod share_group;
 mod value;
 

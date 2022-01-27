@@ -7,7 +7,7 @@ use kyute::Data;
 
 /// Node property. Has a type and a current value.
 #[derive(Clone, Debug, Data)]
-pub struct Property {
+pub struct Attribute {
     /// Base named object.
     pub base: NamedObject,
 
@@ -18,7 +18,7 @@ pub struct Property {
     pub value: Value,
 }
 
-impl Property {
+impl Attribute {
     /// Name of the property
     pub fn name(&self) -> Atom {
         self.base.name()
@@ -29,9 +29,19 @@ impl Property {
         &self.ty
     }
 
+    pub fn as_typed<T: Data>(&self) -> TypedAttribute<T> {
+
+    }
+
     /*pub fn dump(&self, indent: usize) {
         println!("{:indent$}name  : {}", "", self.name, indent = indent);
         println!("{:indent$}type  : {}", "", self.ty, indent = indent);
         println!("{:indent$}value : {:?}", "", self.value, indent = indent);
     }*/
+}
+
+#[derive(Clone,Debug,Data)]
+pub struct TypedAttribute<T> {
+    pub attribute: Attribute,
+    pub value: T,
 }

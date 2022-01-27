@@ -12,6 +12,7 @@ const ARTIFICE_APPLICATION_ID: i32 = 0x41525446;
 fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
     // named_objects: {obj_id} -> name, parent_obj_id      (name, parent must be unique)
     // share_groups: {share_id, obj_id}
+    // attributes: {obj_id} -> value
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS named_objects \
@@ -27,6 +28,14 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
                             (share_id     INTEGER,\
                              obj_id       INTEGER,\
                              PRIMARY KEY (share_id, obj_id))",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS attributes \
+                                    (obj_id INTEGER REFERENCES named_objects(id) ON DELETE CASCADE, \
+                                     type   TEXT NOT NULL, \
+                                     value)",
         [],
     )?;
 
@@ -211,6 +220,8 @@ impl Document {
         parent.add_child(node.clone());
         Ok(node)
     }
+
+    //pub fn create_attribute(&mut self, path: ModelPath, )
 
     /// Deletes the specified node.
     pub fn delete_node(&mut self, node: &Node) -> Result<()> {
