@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use kyute::Data;
 
 /// Atom (interned string used for names)
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, serde::Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub struct Atom(DefaultAtom);
 
 impl Deref for Atom {

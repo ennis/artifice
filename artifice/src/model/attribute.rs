@@ -29,9 +29,9 @@ impl Attribute {
         &self.ty
     }
 
-    pub fn as_typed<T: Data>(&self) -> TypedAttribute<T> {
+    /*pub fn as_typed<T: Data>(&self) -> TypedAttribute<T> {
 
-    }
+    }*/
 
     /*pub fn dump(&self, indent: usize) {
         println!("{:indent$}name  : {}", "", self.name, indent = indent);

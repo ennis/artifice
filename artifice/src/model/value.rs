@@ -1,4 +1,4 @@
-use crate::model::{atom::Atom, Value::Array};
+use crate::model::atom::Atom;
 use kyute::Data;
 use serde::{
     de::{EnumAccess, Error, MapAccess, SeqAccess, Unexpected},
@@ -154,7 +154,7 @@ impl serde::Serialize for Value {
 
 struct ValueVisitor;
 
-impl<'de> serde::de::Visitor for ValueVisitor {
+impl<'de> serde::de::Visitor<'de> for ValueVisitor {
     type Value = Value;
 
     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {

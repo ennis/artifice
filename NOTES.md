@@ -2548,3 +2548,6 @@ Attributes are stored as JSON in the DB. The JSON is then deserialized as a gene
 Alternatively: don't deserialize the value?
 
 Then, individual "schema" types can initialize themselves from the `Value` (enums, etc.).
+
+
+# Kyute: debug overlay
