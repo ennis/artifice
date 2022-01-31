@@ -2551,3 +2551,14 @@ Then, individual "schema" types can initialize themselves from the `Value` (enum
 
 
 # Kyute: debug overlay
+
+
+# Kyute: grid layout
+Take inspiration from XAML.
+Splitters?
+
+# Remove proc-macro memoized composables:
+
+Concretely: and make `#[composable(uncached)]` the default and don't do proc-macro memoization.
+Rationale: cached composables are not used often, and they have strict parameter requirements.
+Replace with explicit calls to cache::memoize()
