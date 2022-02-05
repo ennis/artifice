@@ -335,7 +335,6 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         quote! {}
     };
 
-
     /* quote! {
         // upload inline uniforms
         #[repr(C)]
@@ -391,7 +390,6 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
 
     // --- primary uniform upload block
     let primary_uniform_upload_stmts = if !primary_uniform_fields.is_empty() {
-
         // --- Primary uniform struct ---
         let primary_uniforms_struct = match fields {
             Fields::Named(named) => {
@@ -412,7 +410,9 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
                     struct PrimaryUniforms < #(#primary_uniform_type_params,)* >(#(#fields_2)*)
                 }
             }
-            Fields::Unit => { quote!{} }
+            Fields::Unit => {
+                quote! {}
+            }
         };
 
         let primary_uniforms_field_init: Vec<_> = primary_uniform_fields
@@ -429,7 +429,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
             })
             .collect();
 
-        quote!{
+        quote! {
             // upload inline uniforms
             #primary_uniforms_struct
             // TODO we could allocate the struct directly in the upload buffer and fill it there
@@ -437,7 +437,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
             let (buffer, offset) = ctx.upload_slice(::std::slice::from_ref(&primary_uniforms), #CRATE::vk::BufferUsageFlags::UNIFORM_BUFFER);
         }
     } else {
-        quote!{}
+        quote! {}
     };
 
     let struct_name = &derive_input.ident;

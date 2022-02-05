@@ -1,8 +1,7 @@
-use std::ops::Deref;
-use string_cache::DefaultAtom;
-use std::fmt;
-use lazy_static::lazy_static;
 use kyute::Data;
+use lazy_static::lazy_static;
+use std::{fmt, ops::Deref};
+use string_cache::DefaultAtom;
 
 /// Atom (interned string used for names)
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Default, serde::Serialize, serde::Deserialize)]

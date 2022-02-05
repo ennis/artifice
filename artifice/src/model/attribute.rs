@@ -40,7 +40,7 @@ impl Attribute {
     }*/
 }
 
-#[derive(Clone,Debug,Data)]
+#[derive(Clone, Debug, Data)]
 pub struct TypedAttribute<T> {
     pub attribute: Attribute,
     pub value: T,

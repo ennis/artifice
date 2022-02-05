@@ -1,6 +1,5 @@
-use std::marker::PhantomData;
-use std::mem;
 use mlr::Arguments;
+use std::{marker::PhantomData, mem};
 
 /*#[derive(Copy, Clone, Debug)]
 #[derive(mlr::ShaderArguments)]
@@ -15,8 +14,9 @@ struct PerObjectData {
 #[repr(C)]
 #[derive(mlr::StructLayout)]
 struct MaterialArguments<'a> {
-    u_color: [f32;4],
-    #[argument(binding=1)] t_color: mlr::SampledImage2D<'a>,
+    u_color: [f32; 4],
+    #[argument(binding = 1)]
+    t_color: mlr::SampledImage2D<'a>,
 }
 
 #[repr(C)]

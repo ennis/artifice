@@ -1,9 +1,9 @@
 //! Application data model
 use crate::json;
 use anyhow::Context;
+use imbl::Vector;
 use kyute::Data;
 use lazy_static::lazy_static;
-use imbl::Vector;
 use std::{
     collections::HashMap,
     fs::File,
@@ -12,10 +12,10 @@ use std::{
 };
 
 pub mod atom;
+pub mod attribute;
 mod document;
 pub mod node;
 mod path;
-pub mod attribute;
 mod share_group;
 mod value;
 

@@ -1,14 +1,8 @@
 use crate::model::{Document, ModelPath, Node};
-use kyute::{
-    cache, composable,
-    shell::{drawing::Color, winit::window::WindowBuilder},
-    text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
-    widget::{
-        Action, Axis, Baseline, Button, DropDown, Flex, Menu, MenuItem, Shortcut, Slider, Text,
-        TextEdit,
-    },
-    Cache, Data, Key, Widget, WidgetPod, Window,
-};
+use kyute::{cache, composable, shell::{drawing::Color, winit::window::WindowBuilder}, text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle}, widget::{
+    Action, Orientation, Baseline, Button, DropDown, Flex, Menu, MenuItem, Shortcut, Slider, Text,
+    TextEdit,
+}, Cache, Data, Key, Widget, WidgetPod, Window, State};
 use rusqlite::Connection;
 use std::{fmt, fmt::Formatter, sync::Arc};
 
@@ -58,11 +52,11 @@ pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> impl Widge
         0,
     );
 
-    if let Some(item) = dropdown.new_selected_item() {
+    if let Some(item) = dropdown.selected_item_changed() {
         tracing::info!("changed option: {:?}", item);
     }
 
-    Flex::new(Axis::Horizontal)
+    Flex::horizontal()
         .with(Baseline::new(
             30.0,
             Text::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
@@ -79,13 +73,13 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
 
     let document_model = document.model().clone();
 
-    let mut flex = Flex::new(Axis::Vertical);
+    let mut flex = Flex::vertical();
 
     // Root nodes
 
     for (_name, node) in document_model.root.children.iter() {
         cache::scoped(node.base.id as usize, || {
-            flex.append(node_item(document, node));
+            flex.push(node_item(document, node));
         })
     }
 
@@ -98,46 +92,24 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
         document.create_node(ModelPath::root().join(name));
     }
 
-    flex.append(add_node_button);
-    let slider = Slider::new(0.0, 10.0, 0.0);
-    flex.append(slider);
+    flex.push(add_node_button);
+    let slider_value = State::new(|| 0.0);
+    let slider = Slider::new(0.0, 10.0, slider_value.get());
+    slider_value.update(slider.value_changed());
+    flex.push(slider);
     WidgetPod::new(flex)
 }
 
 /// Main menu bar.
 #[composable]
 pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
-    // TODO macro to make shortcuts less verbose
-    // `kyute::shortcut!(Ctrl+S)`
-    let file_new = Action::with_shortcut(Shortcut::new(
-        kyute::event::Modifiers::CONTROL,
-        kyute::event::Key::Character("N".to_string()),
-    ));
-    let file_open = Action::with_shortcut(Shortcut::new(
-        kyute::event::Modifiers::CONTROL,
-        kyute::event::Key::Character("O".to_string()),
-    ));
-    let file_save = Action::with_shortcut(Shortcut::new(
-        kyute::event::Modifiers::CONTROL,
-        kyute::event::Key::Character("S".to_string()),
-    ));
-    let file_save_as = Action::with_shortcut(Shortcut::new(
-        kyute::event::Modifiers::CONTROL | kyute::event::Modifiers::SHIFT,
-        kyute::event::Key::Character("S".to_string()),
-    ));
-    let file_quit = Action::with_shortcut(Shortcut::new(
-        kyute::event::Modifiers::ALT,
-        kyute::event::Key::F4,
-    ));
-
-    let edit_undo = Action::with_shortcut(Shortcut::new(
-        kyute::event::Modifiers::CONTROL,
-        kyute::event::Key::Character("Z".to_string()),
-    ));
-    let edit_redo = Action::with_shortcut(Shortcut::new(
-        kyute::event::Modifiers::CONTROL,
-        kyute::event::Key::Character("Y".to_string()),
-    ));
+    let file_new = Action::with_shortcut(Shortcut::from_str("Ctrl+N"));
+    let file_open = Action::with_shortcut(Shortcut::from_str("Ctrl+O"));
+    let file_save = Action::with_shortcut(Shortcut::from_str("Ctrl+S"));
+    let file_save_as = Action::with_shortcut(Shortcut::from_str("Ctrl+Shift+S"));
+    let file_quit = Action::with_shortcut(Shortcut::from_str("Alt+F4"));
+    let edit_undo = Action::with_shortcut(Shortcut::from_str("Ctrl+Z"));
+    let edit_redo = Action::with_shortcut(Shortcut::from_str("Ctrl+Y"));
 
     if file_new.triggered() {
         tracing::warn!("File>New unimplemented");
@@ -222,7 +194,7 @@ pub fn application_root() -> WidgetPod {
             Ok(new_document) => {
                 document = Some(new_document);
                 invalidate = true;
-                WidgetPod::new(Flex::new(Axis::Vertical))
+                WidgetPod::new(Flex::vertical())
             }
             Err(e) => {
                 // error message

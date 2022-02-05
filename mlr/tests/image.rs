@@ -1,10 +1,15 @@
 use crate::vk::ClearColorValue;
-use graal::{ImageResourceCreateInfo, vk};
+use graal::{
+    descriptor::{AttachmentLoadOp, AttachmentStoreOp, ColorAttachment, CombinedImageSampler2D},
+    vk, ImageResourceCreateInfo,
+};
 use inline_spirv::{include_spirv, inline_spirv};
 use lazy_static::lazy_static;
-use graal::descriptor::{AttachmentLoadOp, AttachmentStoreOp, ColorAttachment};
-use mlr::{image::ImageAny, SampledImage2D, shader::ArgumentBlock, shader::ShaderModule};
-use graal::descriptor::CombinedImageSampler2D;
+use mlr::{
+    image::ImageAny,
+    shader::{ArgumentBlock, ShaderModule},
+    SampledImage2D,
+};
 
 lazy_static! {
     static ref BACKGROUND_VERTEX_SHADER_MODULE: Shader = Shader::from_spirv_static(include_spirv!(
@@ -43,7 +48,6 @@ fn test_image() {
         );
 
         frame.submit_pass("draw_to_image", |pass| {
-
             let color_attachment = ColorAttachment::new(pass, &image);
 
             move |ctx| {
@@ -78,10 +82,11 @@ fn test_scene() {
     #[repr(C)]
     struct MaterialArguments {
         u_color: Vec4,
-        #[argument(binding=1)] t_color: SampledImage,
-        #[argument(binding=2)] t_specular: SampledImage,
+        #[argument(binding = 1)]
+        t_color: SampledImage,
+        #[argument(binding = 2)]
+        t_specular: SampledImage,
     }
-
 
     ctx.submit_pass(|pass| {
         // this is annoying, because we have to duplicate every access
@@ -92,15 +97,17 @@ fn test_scene() {
                 u_view_matrix: (),
                 u_proj_matrix: (),
                 u_view_proj_matrix: (),
-                u_inverse_proj_matrix: ()
+                u_inverse_proj_matrix: (),
             });
 
             for batch in material_batches.iter() {
-                let material_args = ArgumentBlock::new(ctx,
+                let material_args = ArgumentBlock::new(
+                    ctx,
                     MaterialArguments {
                         u_color: (),
-                        t_color: TextureDescriptor::new(&batch.texture, Sampler::linear())
-                    });
+                        t_color: TextureDescriptor::new(&batch.texture, Sampler::linear()),
+                    },
+                );
 
                 for mesh in batch.objects.iter() {
                     // issue: validation that batch.texture is in the correct state here.

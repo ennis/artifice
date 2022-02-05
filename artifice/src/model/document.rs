@@ -15,6 +15,7 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
     // attributes: {obj_id} -> value
 
     conn.execute(
+        // language=SQLITE-SQL
         "CREATE TABLE IF NOT EXISTS named_objects \
              (id      INTEGER PRIMARY KEY, \
               name    TEXT NOT NULL, \
@@ -24,6 +25,7 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
     )?;
 
     conn.execute(
+        // language=SQLITE-SQL
         "CREATE TABLE IF NOT EXISTS share_groups \
                             (share_id     INTEGER,\
                              obj_id       INTEGER,\
@@ -32,6 +34,7 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
     )?;
 
     conn.execute(
+        // language=SQLITE-SQL
         "CREATE TABLE IF NOT EXISTS attributes \
                                     (obj_id INTEGER REFERENCES named_objects(id) ON DELETE CASCADE, \
                                      type   TEXT NOT NULL, \
@@ -41,6 +44,7 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
 
     // insert root node
     conn.execute(
+        // language=SQLITE-SQL
         "INSERT OR IGNORE INTO named_objects (name, path, parent) VALUES ('','',null)",
         [],
     );

@@ -1,11 +1,10 @@
 use crate::{
-    struct_layout::{ensure_repr_c_derive_input, generate_repr_c_struct_layout},
+    struct_layout::{ensure_repr_c_derive_input, generate_repr_c_struct_layout, has_repr_c_attr},
     CRATE,
 };
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{__private::str, spanned::Spanned};
-use crate::struct_layout::has_repr_c_attr;
 
 /*pub fn generate_structured_buffer_data(
     derive_input: &syn::DeriveInput,
@@ -89,7 +88,8 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         syn::Error::new(
             derive_input.span(),
             format!("`VertexData` can only be derived on `repr(C)` structs"),
-        ).into_compile_error()
+        )
+        .into_compile_error()
     } else {
         quote! {}
     };
