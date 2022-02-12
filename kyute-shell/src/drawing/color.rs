@@ -3,6 +3,7 @@ use std::{error::Error, fmt, marker::PhantomData};
 
 /// Color spec.
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Color(palette::Srgba);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -28,10 +29,14 @@ const fn nibble_from_ascii(b: u8) -> Result<u8, ColorParseError> {
 
 const fn byte_from_ascii(b0: u8, b1: u8) -> Result<u8, ColorParseError> {
     match (nibble_from_ascii(b0), nibble_from_ascii(b1)) {
-        (Ok(a), Ok(b)) => {
-            Ok((a << 4) + b)
-        },
+        (Ok(a), Ok(b)) => Ok((a << 4) + b),
         _ => Err(ColorParseError),
+    }
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Color::new(0.0, 0.0, 0.0, 0.0)
     }
 }
 
@@ -59,6 +64,15 @@ impl Color {
         )
     }
 
+    pub const fn to_rgba_u8(&self) -> (u8, u8, u8, u8) {
+        (
+            (self.0.color.red * 255.0) as u8,
+            (self.0.color.green * 255.0) as u8,
+            (self.0.color.blue * 255.0) as u8,
+            (self.0.alpha * 255.0) as u8,
+        )
+    }
+
     /// TODO documentation
     pub const fn from_rgba_u8(red: u8, green: u8, blue: u8, alpha: u8) -> Color {
         Color::new(
@@ -69,10 +83,29 @@ impl Color {
         )
     }
 
+    pub fn to_hex(&self) -> String {
+        match self.to_rgba_u8() {
+            (r, g, b, 255) => {
+                format!("#{:02x}{:02x}{:02x}", r, g, b)
+            }
+            (r, g, b, a) => {
+                format!("#{:02x}{:02x}{:02x}{:02x}", r, g, b, a)
+            }
+        }
+    }
+
     /// Creates a new color from an hex code.
-    ///
-    /// Panics if invalid.
     pub const fn from_hex(hex: &str) -> Color {
+        match Self::try_from_hex(hex) {
+            Ok(color) => color,
+            Err(e) => {
+                panic!("invalid hex color")
+            }
+        }
+    }
+
+    /// Creates a new color from an hex code.
+    pub const fn try_from_hex(hex: &str) -> Result<Color, ColorParseError> {
         match hex.as_bytes() {
             // #RRGGBB, RRGGBB
             &[b'#', r0, r1, g0, g1, b0, b1] | &[r0, r1, g0, g1, b0, b1] => {
@@ -81,8 +114,8 @@ impl Color {
                     byte_from_ascii(g0, g1),
                     byte_from_ascii(b0, b1),
                 ) {
-                    (Ok(r), Ok(g), Ok(b)) => Color::from_rgb_u8(r, g, b),
-                    _ => panic!("invalid hex color"),
+                    (Ok(r), Ok(g), Ok(b)) => Ok(Color::from_rgb_u8(r, g, b)),
+                    _ => Err(ColorParseError),
                 }
             }
             // #RRGGBBAA, RRGGBBAA
@@ -93,8 +126,8 @@ impl Color {
                     byte_from_ascii(b0, b1),
                     byte_from_ascii(a0, a1),
                 ) {
-                    (Ok(r), Ok(g), Ok(b), Ok(a)) => Color::from_rgba_u8(r, g, b, a),
-                    _ => panic!("invalid hex color"),
+                    (Ok(r), Ok(g), Ok(b), Ok(a)) => Ok(Color::from_rgba_u8(r, g, b, a)),
+                    _ => Err(ColorParseError),
                 }
             }
             // #RGB, RGB
@@ -104,8 +137,8 @@ impl Color {
                     nibble_from_ascii(g),
                     nibble_from_ascii(b),
                 ) {
-                    (Ok(r), Ok(g), Ok(b)) => Color::from_rgb_u8(r, g, b),
-                    _ => panic!("invalid hex color"),
+                    (Ok(r), Ok(g), Ok(b)) => Ok(Color::from_rgb_u8(r, g, b)),
+                    _ => Err(ColorParseError),
                 }
             }
             // #RGBA, RGBA
@@ -116,11 +149,11 @@ impl Color {
                     nibble_from_ascii(b),
                     nibble_from_ascii(a),
                 ) {
-                    (Ok(r), Ok(g), Ok(b), Ok(a)) => Color::from_rgba_u8(r, g, b, a),
-                    _ => panic!("invalid hex color"),
+                    (Ok(r), Ok(g), Ok(b), Ok(a)) => Ok(Color::from_rgba_u8(r, g, b, a)),
+                    _ => Err(ColorParseError),
                 }
             }
-            _ => panic!("invalid hex color"),
+            _ => Err(ColorParseError),
         }
     }
 }

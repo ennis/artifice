@@ -75,6 +75,11 @@
       <sourceFolder url="file://$MODULE_DIR$/ext/winit/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/ext/winit/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/ext/winit/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/kyute-shell/macros/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kyute-style/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kyute-style/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kyute-style-editor/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/kyute-style/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/mlr/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/ext/piet/target" />

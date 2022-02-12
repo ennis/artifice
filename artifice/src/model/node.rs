@@ -1,8 +1,4 @@
-use crate::model::{
-    atom::{make_unique_name, Atom},
-    attribute::Attribute,
-    NamedObject,
-};
+use crate::model::{atom::Atom, attribute::Attribute, NamedObject};
 use imbl::HashMap;
 use kyute::Data;
 use std::sync::Arc;

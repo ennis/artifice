@@ -1,8 +1,14 @@
 use crate::model::{Document, ModelPath, Node};
-use kyute::{cache, composable, shell::{drawing::Color, winit::window::WindowBuilder}, text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle}, widget::{
-    Action, Orientation, Baseline, Button, DropDown, Flex, Menu, MenuItem, Shortcut, Slider, Text,
-    TextEdit,
-}, Cache, Data, Key, Widget, WidgetPod, Window, State};
+use kyute::{
+    cache, composable,
+    shell::{drawing::Color, winit::window::WindowBuilder},
+    text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
+    widget::{
+        Action, Baseline, Button, DropDown, Flex, Menu, MenuItem, Orientation, Shortcut, Slider,
+        Text, TextEdit,
+    },
+    Cache, Data, Key, State, Widget, WidgetPod, Window,
+};
 use rusqlite::Connection;
 use std::{fmt, fmt::Formatter, sync::Arc};
 

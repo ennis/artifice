@@ -2562,3 +2562,76 @@ Splitters?
 Concretely: and make `#[composable(uncached)]` the default and don't do proc-macro memoization.
 Rationale: cached composables are not used often, and they have strict parameter requirements.
 Replace with explicit calls to cache::memoize()
+
+
+# Kyute: image/asset loading
+- Access assets (images) in widgets.
+- Don't reload the same image twice.
+- Need to be able to reference an asset that is loaded only once.
+- Bundle resources with crates
+- crates provide type-safe resource identifiers (asset ids)
+  - AssetId: a string that uniquely identifies a resource, an URI
+    - bundled resources: `bundle:<crate-name>:<module-path>:<resource-file-name>` e.g. `bundle:common_widgets.resources.icons.open`
+       - only a key, the path has no mapping to something on the filesystem
+    - filesystem resources: a filesystem path (canonicalized)
+    - inline data, via the `data:` scheme
+
+```rust
+// resources.rs
+
+#[kyute::resource_directory(path="../")]
+mod img;
+// img::PREV: AssetKey<Image>
+// img::NEXT: AssetKey<Image>
+// img::SAVE: AssetKey<Image>
+
+#[kyute::resource("data/truc.png")]
+pub const PREV_ICON: AssetKey<Image> = AssetKey::new("data/truc.png");
+```
+
+
+Problem with macros:
+- what about change detection? cannot do that when adding new files to the resource directory.
+=> use a build script
+
+Where to put the macro?
+- kyute_shell and reexport?
+  - problem with re-exporting: let's say that a crate uses the macro via a reexport in `kyute`: 
+    we cannot reliably reference `kyute-shell` in body of proc macro, because `kyute_shell` may not be visible in the crate.
+  
+- separate crate?
+- kyute?
+
+Entry point: a global static `AssetLoader`?
+- just use `kyute_shell::Application`
+
+Caching of resources:
+- first, check the cache using the URI in the asset ID to see if the resource is already loaded.
+  - if so, return it (a clone)
+- otherwise:
+  - we need to "resolve" the URI to a stream of data (either a `Box<io::Read>`, or if requested, a `&[u8]`).
+    - custom resolvers plugged in to the AssetLoader
+    - the `Asset` calls the resolver itself
+  - asynchronous asset loader?
+
+- Extend `Environment`
+  - custom "asset resolver" that provides a stream from which the resource can be loaded
+  - `Environment::load<T>(key: AssetKey<T>) -> T where T: Asset`
+    - if already loaded, returns a copy
+    - AssetKey: typed key (const) that identifies an asset
+
+Caching the result? 
+Can't use the only the positional cache, since resources shouldn't be dependent on the tree position.
+(That's what jetpack compose desktop is doing, so it reloads the resource on every different tree position, so that's pretty much useless)
+
+
+# Remove `ctx.set_state?`
+Instead, detect whether we're in a cached eval context and do the correct thing.
+Issue: need to keep an `Arc<Cache>`, makes the keys bigger and non-Copy
+
+# Themes
+- color variables
+- sizes
+- border styles
+- background styles (images)
+- widget style classes (button, etc.) that reference 

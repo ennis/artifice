@@ -1,5 +1,4 @@
 use kyute::Data;
-use lazy_static::lazy_static;
 use std::{fmt, ops::Deref};
 use string_cache::DefaultAtom;
 
