@@ -4,8 +4,8 @@ use kyute::{
     shell::{drawing::Color, winit::window::WindowBuilder},
     text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
     widget::{
-        Action, Baseline, Button, DropDown, Flex, Menu, MenuItem, Orientation, Shortcut, Slider,
-        Text, TextEdit,
+        Action, Baseline, Button, DropDown, Flex, Grid, GridLength, Label, Menu, MenuItem,
+        Orientation, Shortcut, Slider, TextEdit,
     },
     Cache, Data, Key, State, Widget, WidgetPod, Window,
 };
@@ -26,8 +26,8 @@ impl fmt::Display for DropDownTest {
 }
 
 /// Node view.
-#[composable]
-pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> impl Widget + Clone {
+#[composable(uncached)]
+pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     let delete_button = Button::new("Delete".to_string());
     if delete_button.clicked() {
         tracing::info!("delete node clicked {:?}", node.base.path);
@@ -62,14 +62,18 @@ pub fn node_item(#[uncached] document: &mut Document, node: &Node) -> impl Widge
         tracing::info!("changed option: {:?}", item);
     }
 
-    Flex::horizontal()
-        .with(Baseline::new(
-            30.0,
-            Text::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
-        ))
-        .with(Baseline::new(30.0, delete_button))
-        .with(Baseline::new(30.0, dropdown))
-        .with(Baseline::new(30.0, name_edit))
+    let row = grid.row_count();
+    grid.add(
+        row,
+        0,
+        Baseline::new(
+            22.0,
+            Label::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
+        ),
+    );
+    grid.add(row, 1, Baseline::new(22.0, delete_button));
+    grid.add(row, 2, Baseline::new(22.0, dropdown));
+    grid.add(row, 3, Baseline::new(22.0, name_edit));
 }
 
 /// Root document view.
@@ -79,31 +83,36 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
 
     let document_model = document.model().clone();
 
-    let mut flex = Flex::vertical();
+    let mut grid = Grid::with_columns([
+        GridLength::Fixed(100.0),
+        GridLength::Fixed(60.0),
+        GridLength::Fixed(60.0),
+        GridLength::Flex(1.0),
+    ]);
 
     // Root nodes
-
     for (_name, node) in document_model.root.children.iter() {
         cache::scoped(node.base.id as usize, || {
-            flex.push(node_item(document, node));
+            node_item(document, &mut grid, node);
         })
     }
 
     // "Add Node" button
     let add_node_button = Button::new("Add Node".to_string());
-
     if add_node_button.clicked() {
         tracing::info!("add node clicked");
         let name = document_model.root.make_unique_child_name("node");
         document.create_node(ModelPath::root().join(name));
     }
+    grid.add_row(add_node_button);
 
-    flex.push(add_node_button);
+    // Slider test
     let slider_value = State::new(|| 0.0);
     let slider = Slider::new(0.0, 10.0, slider_value.get());
     slider_value.update(slider.value_changed());
-    flex.push(slider);
-    WidgetPod::new(flex)
+    grid.add_row(slider);
+
+    WidgetPod::new(grid)
 }
 
 /// Main menu bar.
@@ -204,7 +213,7 @@ pub fn application_root() -> WidgetPod {
             }
             Err(e) => {
                 // error message
-                WidgetPod::new(Text::new(format!("Could not open file: {}", e)))
+                WidgetPod::new(Label::new(format!("Could not open file: {}", e)))
             }
         };
 
