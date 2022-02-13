@@ -15,6 +15,8 @@ fn main() {
     let mut env = Environment::new();
     theme::setup_default_style(&mut env);
     env.set(SHOW_DEBUG_OVERLAY, true);
+    env.set(kyute::widget::grid::SHOW_GRID_LAYOUT_LINES, true);
+
     application::run(view::application_root, env);
     Application::shutdown();
 }

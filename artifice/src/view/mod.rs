@@ -2,10 +2,12 @@ use crate::model::{Document, ModelPath, Node};
 use kyute::{
     cache, composable,
     shell::{drawing::Color, winit::window::WindowBuilder},
+    style::BoxStyle,
     text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
+    theme,
     widget::{
-        Action, Baseline, Button, DropDown, Flex, Grid, GridLength, Label, Menu, MenuItem,
-        Orientation, Shortcut, Slider, TextEdit,
+        Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Label, Menu,
+        MenuItem, Orientation, Shortcut, Slider, TextEdit,
     },
     Cache, Data, Key, State, Widget, WidgetPod, Window,
 };
@@ -112,7 +114,9 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
     slider_value.update(slider.value_changed());
     grid.add_row(slider);
 
-    WidgetPod::new(grid)
+    let container = Container::new(grid)
+        .box_style(BoxStyle::new().fill(theme::keys::UNDER_PAGE_BACKGROUND_COLOR));
+    WidgetPod::new(container)
 }
 
 /// Main menu bar.
