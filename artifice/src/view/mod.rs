@@ -80,7 +80,7 @@ pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
 
 /// Root document view.
 #[composable]
-pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPod {
+pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Widget + Clone {
     tracing::trace!("document_window_contents");
 
     let document_model = document.model().clone();
@@ -116,7 +116,8 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> WidgetPo
 
     let container = Container::new(grid)
         .box_style(BoxStyle::new().fill(theme::keys::UNDER_PAGE_BACKGROUND_COLOR));
-    WidgetPod::new(container)
+
+    Arc::new(container)
 }
 
 /// Main menu bar.
@@ -175,18 +176,17 @@ pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
 
 /// Native window displaying a document.
 #[composable]
-pub fn document_window(#[uncached] document: &mut Document) -> WidgetPod {
+pub fn document_window(#[uncached] document: &mut Document) -> Window {
     //
-
     tracing::trace!("document_window");
     let menu_bar = main_menu_bar(document);
 
     // TODO document title
-    WidgetPod::new(Window::new(
+    Window::new(
         WindowBuilder::new().with_title("Document"),
         document_window_contents(document),
         Some(menu_bar),
-    ))
+    )
 }
 
 fn try_open_document() -> anyhow::Result<Document> {
@@ -195,29 +195,46 @@ fn try_open_document() -> anyhow::Result<Document> {
 
 /// Application root.
 #[composable(uncached)]
-pub fn application_root() -> WidgetPod {
+pub fn application_root() -> Arc<WidgetPod> {
     let document_state = cache::state(|| -> Option<Document> { None });
     let mut document = document_state.take();
 
     let mut invalidate = false;
     let old_revision: Option<usize> = document.as_ref().map(|doc| doc.revision());
 
-    let widget = if let Some(ref mut document) = document {
-        let widget = document_window(document);
+    // BIG ISSUE:
+    // the windows that we return in the branches of the conditional are not
+    // wrapped in **separate WidgetPods**, so they will be assigned the **same ID**
+    // This is a problem because WidgetPod "remembers" if it sent the `Initialize`
+    // message to the widget, but we pass two different inner widgets on different calls!
+    //
+    // Possible solution:
+    // 1. Widget constructors return WidgetPod<T> (it properly derefmuts to T, now)
+    //      however, causes problems with inline setters
+    // 2. Find another mechanism for initialization
+    //      handle routeinitialize?
+    //      always send initialize, let the widget store the flag
+    //
+    // Underlying issue: it feels very wrong that the "identity" of a widget is not derived from the callsite of `Button::new`,
+    // but rather at the callsite at which the widget is wrapped in WidgetPod.
+    //
+
+    let window = if let Some(ref mut document) = document {
+        let window = WidgetPod::new(document_window(document));
         invalidate = Some(document.revision()) != old_revision;
-        widget
+        window
     } else {
         // create document
         // TODO open file dialog
-        let window_contents: WidgetPod = match try_open_document() {
+        let window_contents: Arc<dyn Widget> = match try_open_document() {
             Ok(new_document) => {
                 document = Some(new_document);
                 invalidate = true;
-                WidgetPod::new(Flex::vertical())
+                Arc::new(Flex::vertical())
             }
             Err(e) => {
                 // error message
-                WidgetPod::new(Label::new(format!("Could not open file: {}", e)))
+                Arc::new(Label::new(format!("Could not open file: {}", e)))
             }
         };
 
@@ -235,5 +252,6 @@ pub fn application_root() -> WidgetPod {
         document_state.set_without_invalidation(document);
     }
 
-    widget
+
+    Arc::new(window)
 }
