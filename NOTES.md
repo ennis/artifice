@@ -2636,5 +2636,27 @@ Issue: need to keep an `Arc<Cache>`, makes the keys bigger and non-Copy
 - background styles (images)
 - widget style classes (button, etc.) that reference 
 
-# Asset ID reform
-Right now it's `&'static str`, what if I want a dynamic path?
+# A question of nomenclature: renaming "cache"
+
+Cache, Composition, Composer, CompositionContext, Runtime, Environment, Key?
+Decide on the terms we want to use. 
+Maybe not reuse composition because the framework is a bit different from jetpack compose.
+moxie uses `Runtime` for the cache in which functions are run, but it's a bit vague.
+`Cache` is interesting, but is imprecise because there are mutable _state entries_ within the cache. It is also responsible
+for other things not directly related to caching, such as propagating an `Environment`. Also there are many kinds of caches in an application.
+
+-> Let's go with cache.
+
+Q: What do we call a function that is supposed to run within that cache?
+A: Nothing. it's a "function that can access the cache". For the proc-macro that wraps the calls in `cache::scoped`:
+    - `component`?
+    - `composable`?
+
+# Asset loader: singleton?
+Problem: if it's not a singleton then it has to be passed around during recomp.
+Right now it's in `shell::Application` but it seems that `Application` is not sync, so it's difficult to use in other threads.
+
+Asset resolver is a singleton. 
+
+I feel like passing the Environment during recomp would solve many issues. But having it passed around explicitly is super annoying.
+Also, `Environment` was at first designed to be overriden during widget layout and paint, not recomp.

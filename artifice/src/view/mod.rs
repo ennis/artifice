@@ -6,8 +6,8 @@ use kyute::{
     text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
     theme,
     widget::{
-        Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Label, Menu,
-        MenuItem, Orientation, Shortcut, Slider, TextEdit,
+        Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu,
+        MenuItem, Null, Orientation, Shortcut, Slider, TextEdit,
     },
     Cache, Data, Key, State, Widget, WidgetPod, Window,
 };
@@ -35,10 +35,7 @@ pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     if delete_button.clicked() {
         tracing::info!("delete node clicked {:?}", node.base.path);
         document.delete_node(node);
-
     }
-
-
 
     /*let result = cache::enqueue(async move || {
         wait(300.ms()).await;
@@ -92,6 +89,7 @@ pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     }
 
     let row = grid.row_count();
+
     grid.add(
         row,
         0,
@@ -122,7 +120,7 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
     // Root nodes
     for (_name, node) in document_model.root.children.iter() {
         cache::scoped(node.base.id as usize, || {
-            node_item(document, &mut grid, node);
+            #[compose] node_item(document, &mut grid, node);
         })
     }
 
@@ -284,7 +282,6 @@ pub fn application_root() -> Arc<WidgetPod> {
     } else {
         document_state.set_without_invalidation(document);
     }
-
 
     Arc::new(window)
 }
