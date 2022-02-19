@@ -17,7 +17,7 @@ mod padding;
 mod slider;
 mod text;
 mod textedit;
-mod titled_pane;
+//mod titled_pane;
 
 pub use align::Align;
 pub use baseline::Baseline;
@@ -36,7 +36,7 @@ pub use null::Null;
 pub use padding::Padding;
 pub use slider::Slider;
 pub use textedit::TextEdit;
-pub use titled_pane::TitledPane;
+//pub use titled_pane::TitledPane;
 
 use crate::{
     BoxConstraints, Environment, Event, EventCtx, LayoutCtx, Measurements, PaintCtx, Rect, Widget,

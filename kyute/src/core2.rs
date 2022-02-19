@@ -1,5 +1,5 @@
 use crate::{
-    application::AppCtx,
+    application::{AppCtx, ExtEvent},
     bloom::Bloom,
     cache,
     cache::Key,
@@ -11,7 +11,7 @@ use crate::{
     Offset, Point, Rect, Size,
 };
 use approx::relative_eq;
-use kyute_macros::composable;
+use kyute_macros::{composable, composition_context};
 use kyute_shell::{
     graal,
     graal::{ash::vk, BufferId, ImageId},
@@ -25,7 +25,6 @@ use std::{
     sync::Arc,
 };
 use tracing::{trace, warn};
-use crate::application::ExtEvent;
 
 pub const SHOW_DEBUG_OVERLAY: EnvKey<bool> = EnvKey::new("kyute.show_debug_overlay");
 
@@ -148,11 +147,11 @@ pub struct FocusState {
     }
 }*/
 
-#[derive(Copy,Clone,Debug,Eq,PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum HitTestResult {
     Failed,
     Passed,
-    Skipped
+    Skipped,
 }
 
 fn hit_test_helper(
@@ -161,7 +160,6 @@ fn hit_test_helper(
     id: WidgetId,
     pointer_grab: Option<WidgetId>,
 ) -> HitTestResult {
-
     if pointer_event.kind == PointerEventKind::PointerOut {
         // pointer out events are exempt from hit-test: if the pointer leaves
         // the parent widget, we also want the child elements to know that
@@ -471,42 +469,35 @@ impl<T: Widget + ?Sized> Widget for Arc<T> {
 /// Extension methods on widgets.
 pub trait WidgetExt: Widget + Sized + 'static {
     /// Wraps the widget in a `ConstrainedBox` that constrains the width of the widget.
-    #[composable(uncached)]
     fn constrain_width(self, width: impl RangeBounds<f64>) -> ConstrainedBox<Self> {
         ConstrainedBox::new(BoxConstraints::new(width, ..), self)
     }
 
     /// Wraps the widget in a `ConstrainedBox` that constrains the height of the widget.
-    #[composable(uncached)]
     fn constrain_height(self, height: impl RangeBounds<f64>) -> ConstrainedBox<Self> {
         ConstrainedBox::new(BoxConstraints::new(.., height), self)
     }
 
     /// Wraps the widget in a `ConstrainedBox` that constrains the width of the widget.
-    #[composable(uncached)]
     fn fix_width(self, width: f64) -> ConstrainedBox<Self> {
         ConstrainedBox::new(BoxConstraints::new(width..width, ..), self)
     }
 
     /// Wraps the widget in a `ConstrainedBox` that constrains the height of the widget.
-    #[composable(uncached)]
     fn fix_height(self, height: f64) -> ConstrainedBox<Self> {
         ConstrainedBox::new(BoxConstraints::new(.., height..height), self)
     }
     /// Wraps the widget in a `ConstrainedBox` that constrains the size of the widget.
-    #[composable(uncached)]
     fn fix_size(self, size: Size) -> ConstrainedBox<Self> {
         ConstrainedBox::new(BoxConstraints::tight(size), self)
     }
 
     /// Centers the widget in the available space.
-    #[composable(uncached)]
     fn centered(self) -> Align<Self> {
         Align::new(Alignment::CENTER, self)
     }
 
     /// Aligns the widget in the available space.
-    #[composable(uncached)]
     fn aligned(self, alignment: Alignment) -> Align<Self> {
         Align::new(alignment, self)
     }
@@ -898,37 +889,48 @@ impl<T: Widget + ?Sized> WidgetPod<T> {
             return;
         };
 
-        event.with_local_coordinates(self.state.offset.get(), |event| {
-            match event {
-                Event::Pointer(p) => {
-                    match hit_test_helper(p, measurements.bounds, self.state.id, parent_ctx.focus_state.pointer_grab) {
-                        HitTestResult::Passed => {
-                            if !self.state.pointer_over.get() {
-                                self.state.pointer_over.set(true);
-                                self.do_event(parent_ctx, &mut Event::Pointer(PointerEvent {
+        event.with_local_coordinates(self.state.offset.get(), |event| match event {
+            Event::Pointer(p) => {
+                match hit_test_helper(
+                    p,
+                    measurements.bounds,
+                    self.state.id,
+                    parent_ctx.focus_state.pointer_grab,
+                ) {
+                    HitTestResult::Passed => {
+                        if !self.state.pointer_over.get() {
+                            self.state.pointer_over.set(true);
+                            self.do_event(
+                                parent_ctx,
+                                &mut Event::Pointer(PointerEvent {
                                     kind: PointerEventKind::PointerOver,
                                     ..*p
-                                }), env);
-                            }
-                            self.do_event(parent_ctx, event, env);
+                                }),
+                                env,
+                            );
                         }
-                        HitTestResult::Failed => {
-                            if self.state.pointer_over.get() {
-                                self.state.pointer_over.set(false);
-                                self.do_event(parent_ctx, &mut Event::Pointer(PointerEvent {
+                        self.do_event(parent_ctx, event, env);
+                    }
+                    HitTestResult::Failed => {
+                        if self.state.pointer_over.get() {
+                            self.state.pointer_over.set(false);
+                            self.do_event(
+                                parent_ctx,
+                                &mut Event::Pointer(PointerEvent {
                                     kind: PointerEventKind::PointerOut,
                                     ..*p
-                                }), env);
-                            }
-                        }
-                        HitTestResult::Skipped => {
-                            self.do_event(parent_ctx, event, env);
+                                }),
+                                env,
+                            );
                         }
                     }
+                    HitTestResult::Skipped => {
+                        self.do_event(parent_ctx, event, env);
+                    }
                 }
-                _ => {
-                    self.do_event(parent_ctx, event, env);
-                }
+            }
+            _ => {
+                self.do_event(parent_ctx, event, env);
             }
         });
     }
@@ -951,13 +953,13 @@ impl fmt::Debug for WidgetPod {
 
 impl<T: Widget + 'static> WidgetPod<T> {
     /// Creates a new `WidgetPod` wrapping the specified widget.
-    #[composable(uncached)]
+    #[composable]
     pub fn new(widget: T) -> WidgetPod<T> {
-        let id = WidgetId::from_call_id(cache::current_call_id());
+        let id = WidgetId::from_call_id(#[compose] cache::current_call_id());
         // HACK: returns false on first call, true on following calls, so we can use that
         // to determine whether the widget has been initialized.
-        let initialized = !cache::changed(());
-        let created = cache::revision();
+        let initialized = ! (#[compose] cache::changed(()));
+        let created = #[compose] cache::revision();
 
         WidgetPod {
             state: WidgetPodState {

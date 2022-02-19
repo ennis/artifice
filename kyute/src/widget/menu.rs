@@ -56,6 +56,7 @@ impl Action {
     // FIXME does this need to be cached? it's cheap to create
     #[composable]
     pub fn new() -> Action {
+        #[compose]
         Self::new_inner(None)
     }
 
@@ -63,21 +64,26 @@ impl Action {
     // TODO remove, replace with a function that mutates an existing action: `Action::new().shortcut(...)`
     #[composable]
     pub fn with_shortcut(shortcut: Shortcut) -> Action {
+        #[compose]
         Self::new_inner(Some(shortcut))
     }
 
-    #[composable(uncached)]
+    #[composable]
     fn new_inner(shortcut: Option<Shortcut>) -> Action {
-        let id: u32 = cache::once(|| ACTION_ID_COUNTER.next().try_into().unwrap());
+        let id: u32 =
+            #[compose] cache::once(|| ACTION_ID_COUNTER.next().try_into().unwrap());
         Action {
             id,
-            triggered: Signal::new(),
+            triggered:
+            #[compose] Signal::new(),
             shortcut,
         }
     }
 
     /// Returns whether the action was triggered.
+    #[composable]
     pub fn triggered(&self) -> bool {
+        #[compose]
         self.triggered.signalled()
     }
 }

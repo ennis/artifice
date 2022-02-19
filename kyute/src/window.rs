@@ -656,11 +656,12 @@ impl Window {
     /// Creates a new window.
     ///
     /// TODO: explain subtleties
-    #[composable(uncached)]
+    #[composable]
     pub fn new(window_builder: WindowBuilder, contents: impl Widget + 'static, menu: Option<Menu>) -> Window {
         // create the initial window state
         // we don't want to recreate it every time, so it only depends on the call ID.
-        let window_state = cache::once(move || {
+        let window_state =
+            #[compose] cache::once(move || {
             Arc::new(RefCell::new(WindowState {
                 window: None,
                 window_builder: Some(window_builder),
@@ -688,7 +689,8 @@ impl Window {
 
         Window {
             window_state,
-            contents: Arc::new(WidgetPod::new(contents)),
+            contents: Arc::new(
+                #[compose] WidgetPod::new(contents)),
         }
     }
 

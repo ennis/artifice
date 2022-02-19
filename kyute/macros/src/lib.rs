@@ -17,11 +17,12 @@
 #![feature(proc_macro_diagnostic)]
 extern crate proc_macro;
 use proc_macro2::Span;
-use quote::{ToTokens, TokenStreamExt};
+use quote::{quote, ToTokens, TokenStreamExt};
 
 mod composable;
 mod data;
 
+use crate::composable::generate_composable_context;
 use composable::generate_composable;
 use data::derive_data_impl;
 //use resource::generate_resource_directory;
@@ -43,6 +44,21 @@ pub fn composable(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     generate_composable(attr, item)
+}
+
+//--------------------------------------------------------------------------------------------------
+#[proc_macro_attribute]
+pub fn composable_context(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    generate_composable_context(attr, item)
+}
+
+//--------------------------------------------------------------------------------------------------
+#[proc_macro]
+pub fn composition_context(_item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    quote! { __cx }.into()
 }
 
 // Originally part of druid.

@@ -1,6 +1,8 @@
 use crate::{cache, composable, EventCtx, Key};
-use std::cell::{Cell, RefCell};
-use std::future::Future;
+use std::{
+    cell::{Cell, RefCell},
+    future::Future,
+};
 
 /// FIXME: verify that the automatic clone impl doesn't have sketchy implications w.r.t. cache invalidation
 #[derive(Clone, Debug)]
@@ -13,7 +15,8 @@ pub struct Signal<T> {
 impl<T: Clone + 'static> Signal<T> {
     #[composable]
     pub fn new() -> Signal<T> {
-        let key = cache::state(|| None);
+        let key = #[compose]
+        cache::state(|| None);
         Signal {
             fetched: Cell::new(false),
             value: RefCell::new(None),
@@ -21,10 +24,14 @@ impl<T: Clone + 'static> Signal<T> {
         }
     }
 
+    #[composable]
     fn fetch_value(&self) {
-        if !self.fetched.get() {
-            let value = self.key.get();
+        if !self.fetched.get()
+        {
+            let value = #[compose]
+            self.key.get();
             if value.is_some() {
+                #[compose]
                 self.key.set(None);
             }
             self.value.replace(value);
@@ -41,12 +48,15 @@ impl<T: Clone + 'static> Signal<T> {
         ctx.set_state(self.key, Some(value));
     }
 
+    #[composable]
     pub fn signalled(&self) -> bool {
-        self.fetch_value();
+        #[compose] self.fetch_value();
         self.value.borrow().is_some()
     }
 
+    #[composable]
     pub fn value(&self) -> Option<T> {
+        #[compose]
         self.fetch_value();
         self.value.borrow().clone()
     }
@@ -57,23 +67,30 @@ pub struct State<T> {
 }
 
 impl<T: Clone + 'static> State<T> {
-    #[composable(uncached)]
+    #[composable]
     pub fn new(init: impl FnOnce() -> T) -> State<T> {
-        let key = cache::state(init);
+        let key = #[compose]
+        cache::state(init);
         State { key }
     }
 
+    #[composable]
     pub fn get(&self) -> T {
+        #[compose]
         self.key.get()
     }
 
+    #[composable]
     pub fn update(&self, value: Option<T>) {
         if let Some(value) = value {
+            #[compose]
             self.key.set(value)
         }
     }
 
+    #[composable]
     pub fn set(&self, value: T) {
+        #[compose]
         self.key.set(value)
     }
 }

@@ -27,12 +27,12 @@ impl Button {
     #[composable]
     pub fn new(label: String) -> Button {
         Button {
-            inner: Container::new(Label::new(label))
+            inner: Container::new(#[compose] Label::new(label))
                 .min_height(theme::BUTTON_HEIGHT)
                 .content_padding(SideOffsets::new_all_same(5.0))
                 .baseline(theme::BUTTON_LABEL_BASELINE)
                 .box_style(theme::BUTTON),
-            clicked: Signal::new(),
+            clicked: #[compose] Signal::new(),
         }
     }
 
@@ -59,7 +59,9 @@ impl Button {
     }
 
     /// Returns whether this button has been clicked.
+    #[composable]
     pub fn clicked(&self) -> bool {
+        #[compose]
         self.clicked.signalled()
     }
 }

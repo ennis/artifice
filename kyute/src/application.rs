@@ -16,6 +16,7 @@ use std::{
     sync::Arc,
 };
 use tracing::warn;
+use crate::cache::CompositionContext;
 
 //#[derive(Debug)]
 pub enum ExtEvent {
@@ -98,7 +99,7 @@ fn eval_root_widget(
     app_ctx: &mut AppCtx,
     event_loop: &EventLoopWindowTarget<ExtEvent>,
     root_env: &Environment,
-    f: fn() -> Arc<WidgetPod>,
+    f: fn(&mut CompositionContext) -> Arc<WidgetPod>,
 ) -> Arc<WidgetPod> {
     let root_widget = app_ctx.cache.run(app_ctx.event_loop_proxy.clone(), root_env, f);
     // ensures that all widgets have received the `Initialize` event.
@@ -106,7 +107,7 @@ fn eval_root_widget(
     root_widget
 }
 
-pub fn run(ui: fn() -> Arc<WidgetPod>, env: Environment) {
+pub fn run(ui: fn(&mut CompositionContext) -> Arc<WidgetPod>, env: Environment) {
     let event_loop = EventLoop::<ExtEvent>::with_user_event();
     let mut app_ctx = AppCtx::new(event_loop.create_proxy());
 

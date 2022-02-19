@@ -65,15 +65,15 @@ impl Flex {
         Flex::new(Orientation::Vertical)
     }
 
-    #[composable(uncached)]
+    #[composable]
     pub fn with(mut self, widget: impl Widget + 'static) -> Self {
-        self.push(widget);
+        #[compose] self.push(widget);
         self
     }
 
-    #[composable(uncached)]
+    #[composable]
     pub fn push(&mut self, widget: impl Widget + 'static) {
-        self.items.push(Arc::new(WidgetPod::new(widget)));
+        self.items.push(Arc::new(#[compose] WidgetPod::new(widget)));
     }
 }
 

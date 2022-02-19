@@ -25,9 +25,9 @@ pub struct DropDown<T: Data + Display> {
 
 impl<T: Data + Display> DropDown<T> {
     /// Creates a new drop down with the specified choices.
-    #[composable(uncached)]
+    #[composable]
     pub fn new(choices: Vec<T>, selected_index: usize) -> DropDown<T> {
-        let inner = Container::new(Label::new(format!("{}", choices[selected_index])))
+        let inner = Container::new(#[compose] Label::new(format!("{}", choices[selected_index])))
             .min_height(theme::BUTTON_HEIGHT)
             .baseline(theme::BUTTON_LABEL_BASELINE)
             .content_padding(SideOffsets::new_all_same(5.0))
@@ -46,14 +46,14 @@ impl<T: Data + Display> DropDown<T> {
             choices: choices_with_ids,
             selected_index,
             inner,
-            selected_item_changed: Signal::new(),
+            selected_item_changed: #[compose] Signal::new(),
         }
     }
 
     /// Returns whether TODO.
     #[composable(uncached)]
     pub fn selected_item_changed(&self) -> Option<T> {
-        self.selected_item_changed.value().map(|x| x.1)
+        (#[compose] self.selected_item_changed.value()).map(|x| x.1)
     }
 
     fn create_context_menu(&self) -> kyute_shell::Menu {

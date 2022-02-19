@@ -1,5 +1,7 @@
-use crate::{cache, data::Data, style::Length, Color, SideOffsets};
-
+use crate::{
+    cache, cache::CompositionContext, composable_context, data::Data, style::Length, Color,
+    SideOffsets,
+};
 use std::{
     any::Any,
     collections::HashMap,
@@ -7,6 +9,7 @@ use std::{
     marker::PhantomData,
     sync::Arc,
 };
+use kyute_macros::composition_context;
 
 /// A type that identifies a named value in an [`Environment`], of a particular type `T`.
 #[derive(Debug, Eq, PartialEq)]
@@ -43,8 +46,10 @@ impl<T> EnvKey<T> {
 
 impl<T: EnvValue> EnvKey<T> {
     /// Returns the value of the environment variable in the current env.
+    #[composable_context]
     pub fn get(self) -> Option<T> {
-        cache::environment().get(self)
+        let cx: &mut CompositionContext = composition_context!();
+        cx.environment().get(self)
     }
 }
 

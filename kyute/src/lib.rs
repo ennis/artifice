@@ -18,9 +18,10 @@ mod util;
 //mod window;
 pub mod region;
 #[macro_use]
+pub mod cache;
+#[macro_use]
 mod env;
 pub mod application;
-pub mod cache;
 pub mod call_key;
 mod core2;
 mod state;
@@ -31,7 +32,7 @@ pub mod widget;
 mod window;
 //mod style;
 
-pub use cache::{Cache, Key, state, once, run_async, memoize, with_environment, environment, changed};
+pub use cache::{Cache, Key};
 pub use core2::{
     EventCtx, GpuFrameCtx, LayoutCtx, PaintCtx, Widget, WidgetExt, WidgetId, WidgetPod,
     SHOW_DEBUG_OVERLAY,
@@ -39,7 +40,7 @@ pub use core2::{
 pub use data::Data;
 pub use env::{EnvKey, EnvValue, Environment};
 pub use event::{Event, InternalEvent};
-pub use kyute_macros::{composable, Data};
+pub use kyute_macros::{composable, composable_context, composition_context, Data};
 pub use layout::{align_boxes, Alignment, BoxConstraints, Measurements};
 pub use state::{Signal, State};
 pub use widget::Orientation;

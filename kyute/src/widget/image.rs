@@ -34,41 +34,42 @@ impl Image<Null> {
     }
 }
 
+#[composable]
 fn watch_file_changes(uri: &str) -> bool {
     let uri = uri.to_owned();
-    let changed = cache::state(|| false);
-    let event_loop_proxy = cache::event_loop_proxy();
+    let changed = #[compose] cache::state(|| false);
+    let event_loop_proxy = #[compose] cache::event_loop_proxy();
 
-    tokio::task::spawn(async move {
+    /*tokio::task::spawn(async move {
         loop {
             let application = Application::instance();
             application.asset_loader().watch_changes(&uri).await;
             event_loop_proxy.send_event(ExtEvent::Recompose { cache_fn: Box::new(|cache| cache.set_state(changed, true)) });
         }
-    });
+    });*/
 
-    changed.update(false)
+    #[compose] changed.update(false)
 }
 
 impl<Placeholder: Widget> Image<Placeholder> {
     /// Creates an image widget that loads the image at the specified URI asynchronously,
     /// and displays the image once it is loaded.
-    #[composable(uncached)]
+    #[composable]
     pub fn from_uri_async(uri: &str, placeholder: Placeholder) -> Image<Placeholder> {
         let application = Application::instance();
         let image_future = application
             .asset_loader()
             .load_async::<kyute_shell::drawing::Image>(uri);
 
-        let reload = watch_file_changes(uri);
+        //let reload = watch_file_changes(uri);
 
-        let image = cache::run_async(
+        let image = #[compose] cache::run_async(
             async move {
                 let image_result = image_future.await;
                 trace!("Image::from_uri_async {:?}", image_result);
                 image_result.ok()
             },
-            reload,
+            false,
         );
 
         match image {
