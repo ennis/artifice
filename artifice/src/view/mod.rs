@@ -31,10 +31,37 @@ impl fmt::Display for DropDownTest {
 #[composable(uncached)]
 pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     let delete_button = Button::new("Delete".to_string());
+
     if delete_button.clicked() {
         tracing::info!("delete node clicked {:?}", node.base.path);
         document.delete_node(node);
+
     }
+
+
+
+    /*let result = cache::enqueue(async move || {
+        wait(300.ms()).await;
+        // do stuff
+        wait(300.ms()).await;
+    });
+
+    if asset_changed(asset_id) {
+        // reload asset?
+    }
+
+    if let Some(result) = result {
+        // future (or stream) finished (or produced something)
+    }*/
+
+    // animations:
+    // will recomp at some fixed intervals for 300ms, producing a different value every time
+    // (pray that we don't allocate too much)
+    //let y_pos = animate(delete_button.clicked(), 300.ms(), 0.0, 100.0, Easing::InOut);
+
+    // state machines:
+    // e.g.
+    // click -> state1, click again -> state2
 
     // format name
     let path = node.base.path.to_string();
@@ -217,7 +244,13 @@ pub fn application_root() -> Arc<WidgetPod> {
     //
     // Underlying issue: it feels very wrong that the "identity" of a widget is not derived from the callsite of `Button::new`,
     // but rather at the callsite at which the widget is wrapped in WidgetPod.
+    // Problem: wrapping the thing in WidgetPod early makes for inconvenient APIs.
+    // Take the problem in reverse? i.e. store the widgetID inside the widget?
     //
+    // Options:
+    // - always return WidgetPods in widget constructors: prevents fluent "builder-like" APIs; also, sometimes we don't care to assign an ID to a widget.
+    // - let the user handle this: when a widget needs an identity, don't forget to wrap it in widgetpod
+    //      - but do note that the identity is derived from the call site
 
     let window = if let Some(ref mut document) = document {
         let window = WidgetPod::new(document_window(document));

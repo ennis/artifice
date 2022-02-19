@@ -2635,3 +2635,6 @@ Issue: need to keep an `Arc<Cache>`, makes the keys bigger and non-Copy
 - border styles
 - background styles (images)
 - widget style classes (button, etc.) that reference 
+
+# Asset ID reform
+Right now it's `&'static str`, what if I want a dynamic path?
