@@ -94,7 +94,7 @@ fn rewrite_signature(sig: &mut Signature) {
     };
     sig.inputs.insert(
         pos,
-        parse_quote! {__cx: &mut ::#CRATE::cache::CompositionContext},
+        parse_quote! {__cx: &::#CRATE::cache::CompositionContext},
     );
 }
 
@@ -141,7 +141,7 @@ pub fn generate_composable(
         quote! {
             #[track_caller]
             #(#attrs)* #vis #sig {
-                __cx.scoped(0, move |__cx| {
+                __cx.scoped(::std::panic::Location::caller(), 0, move |__cx| {
                     #block
                 })
             }
@@ -178,7 +178,7 @@ pub fn generate_composable(
             quote! {
                 #[track_caller]
                 #(#attrs)* #vis #sig {
-                    __cx.memoize((#(#args,)*), move |__cx| {
+                    __cx.memoize(::std::panic::Location::caller(), (#(#args,)*), move |__cx| {
                         #block
                     })
                 }

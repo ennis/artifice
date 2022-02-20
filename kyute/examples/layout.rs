@@ -1,14 +1,24 @@
-use kyute::{application, composable, shell::application::Application, style::{ThemeData, UnitExt}, theme, widget::{Button, ConstrainedBox, Container, Flex, Grid, GridLength, Image, Label, Null}, Alignment, BoxConstraints, Color, EnvKey, Environment, Orientation, Size, Widget, WidgetPod, Window, WidgetExt};
+use kyute::{
+    application, composable,
+    shell::application::Application,
+    style::{ThemeData, UnitExt},
+    theme,
+    widget::{Button, ConstrainedBox, Container, Flex, Grid, GridLength, Image, Label, Null},
+    Alignment, BoxConstraints, Color, EnvKey, Environment, Orientation, Size, Widget, WidgetExt,
+    WidgetPod, Window,
+};
 use kyute_shell::{winit::window::WindowBuilder, AssetId};
 use std::sync::Arc;
 
-#[composable(uncached)]
+#[composable]
 fn fixed_size_widget(w: f64, h: f64, name: &str) -> impl Widget {
     // TODO "debug widget" that draws a background pattern, with a border
-    Label::new(name.to_string()).fix_size(Size::new(w, h))
+    (#[compose]
+    Label::new(name.to_string()))
+    .fix_size(Size::new(w, h))
 }
 
-#[composable(uncached)]
+#[composable]
 fn grid_layout_example() -> impl Widget + Clone {
     let mut grid = Grid::with_rows_columns(
         [GridLength::Fixed(100.0), GridLength::Flex(1.0)],
@@ -19,36 +29,81 @@ fn grid_layout_example() -> impl Widget + Clone {
         ],
     );
 
-    grid.add(0, 0, fixed_size_widget(50.0, 50.0, "(0,0)"));
-    grid.add(0, 1, fixed_size_widget(50.0, 50.0, "(0,1)"));
+    #[compose]
+    grid.add(
+        0,
+        0,
+        #[compose]
+        fixed_size_widget(50.0, 50.0, "(0,0)"),
+    );
+
+    #[compose]
+    grid.add(
+        0,
+        1,
+        #[compose]
+        fixed_size_widget(50.0, 50.0, "(0,1)"),
+    );
     //grid.add(0, 2, fixed_size_widget(50.0, 50.0, "(0,2)"));
+
+    #[compose]
     grid.add(
         0,
         2,
+        #[compose]
         Image::from_uri_async("data/haniyasushin_keiki.jpg", Null),
     );
-    grid.add(1, 0, fixed_size_widget(50.0, 50.0, "(1,0)"));
-    grid.add(1, 1..=2, fixed_size_widget(150.0, 50.0, "(1,1)").centered());
+
+    #[compose]
+    grid.add(
+        1,
+        0,
+        #[compose]
+        fixed_size_widget(50.0, 50.0, "(1,0)"),
+    );
+
+    #[compose]
+    grid.add(
+        1,
+        1..=2,
+        (#[compose]
+        fixed_size_widget(150.0, 50.0, "(1,1)"))
+        .centered(),
+    );
+
     grid
 }
 
-#[composable(uncached)]
+#[composable]
 fn align_in_constrained_box() -> impl Widget + Clone {
     use kyute::style::*;
 
     let mut grid = Grid::column(GridLength::Auto);
+
+    #[compose]
     grid.add_row(
-        Label::new("ConstrainedBox".into())
-            .aligned(Alignment::CENTER_RIGHT)
-            .height_factor(1.0)
-            .fix_width(300.0),
+        (#[compose]
+        Label::new("ConstrainedBox".into()))
+        .aligned(Alignment::CENTER_RIGHT)
+        .height_factor(1.0)
+        .fix_width(300.0),
     );
-    grid.add_row(grid_layout_example());
+
+    #[compose]
     grid.add_row(
-        Container::new(Label::new("Container".into()))
-            //.aligned(Alignment::CENTER_RIGHT)
-            .fixed_width(500.dip())
-            .box_style(BoxStyle::new().fill(Color::from_hex("#b9edc788"))),
+        #[compose]
+        grid_layout_example(),
+    );
+
+    #[compose]
+    grid.add_row(
+        Container::new(
+            #[compose]
+            Label::new("Container".into()),
+        )
+        //.aligned(Alignment::CENTER_RIGHT)
+        .fixed_width(500.dip())
+        .box_style(BoxStyle::new().fill(Color::from_hex("#b9edc788"))),
     );
 
     grid
@@ -56,11 +111,21 @@ fn align_in_constrained_box() -> impl Widget + Clone {
 
 #[composable]
 fn ui_root() -> Arc<WidgetPod> {
-    Arc::new(WidgetPod::new(Window::new(
-        WindowBuilder::new().with_title("Layouts"),
-        Flex::vertical().with(align_in_constrained_box()),
-        None,
-    )))
+    Arc::new(
+        #[compose]
+        WidgetPod::new(
+            #[compose]
+            Window::new(
+                WindowBuilder::new().with_title("Layouts"),
+                #[compose]
+                Flex::vertical().with(
+                    #[compose]
+                    align_in_constrained_box(),
+                ),
+                None,
+            ),
+        ),
+    )
 }
 
 fn main() {

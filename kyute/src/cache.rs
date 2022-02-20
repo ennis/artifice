@@ -93,7 +93,7 @@ impl<T: Data + 'static> Key<T> {
     /// Returns the value of the cache entry and replaces it by the default value.
     #[composable_context]
     pub fn update(&self, new_value: T) -> T {
-        let cx = composition_context!();
+        let mut cx = __cx.0.borrow_mut();
         let prev_value = cx.cache_writer.replace_value(*self, new_value.clone());
         if !prev_value.same(&new_value) {
             cx.cache_writer.invalidate_dependents(*self);
@@ -115,7 +115,7 @@ impl<T: 'static> Key<T> {
     /// Always invalidates.
     #[composable_context]
     pub fn replace(&self, new_value: T) -> T {
-        let cx = composition_context!();
+        let mut cx = __cx.0.borrow_mut();
         let prev_value = cx.cache_writer.replace_value(*self, new_value);
         cx.cache_writer.invalidate_dependents(*self);
         prev_value
@@ -125,7 +125,7 @@ impl<T: 'static> Key<T> {
     pub fn set(&self, new_value: T) {
         // TODO idea: log the call sites that invalidated the cache, for debugging
         // e.g. `state entry @ (call site) invalidated because of (state entries), because of manual invalidation @ (call site) OR invalidated externally`
-        let cx = composition_context!();
+        let mut cx = __cx.0.borrow_mut();
         cx.cache_writer.set_value(*self, new_value);
         cx.cache_writer.invalidate_dependents(*self);
     }
@@ -134,7 +134,7 @@ impl<T: 'static> Key<T> {
     pub fn set_without_invalidation(&self, new_value: T) {
         // TODO idea: log the call sites that invalidated the cache, for debugging
         // e.g. `state entry @ (call site) invalidated because of (state entries), because of manual invalidation @ (call site) OR invalidated externally`
-        let cx = composition_context!();
+        let mut cx = __cx.0.borrow_mut();
         cx.cache_writer.set_value(*self, new_value);
     }
 }
@@ -142,7 +142,7 @@ impl<T: 'static> Key<T> {
 impl<T: Clone + 'static> Key<T> {
     #[composable_context]
     pub fn get(&self) -> T {
-        let cx = composition_context!();
+        let mut cx = __cx.0.borrow_mut();
         cx.cache_writer.get_value(*self)
     }
 }
@@ -151,7 +151,7 @@ impl<T: Default + 'static> Key<T> {
     /// Returns the value of the cache entry and replaces it by the default value.
     #[composable_context]
     pub fn take(&self) -> T {
-        self.replace(composition_context!(), T::default())
+        self.replace(__cx, T::default())
     }
 }
 
@@ -592,7 +592,7 @@ impl Cache {
         &mut self,
         event_loop_proxy: EventLoopProxy<ExtEvent>,
         env: &Environment,
-        function: impl Fn(&mut CompositionContext) -> T,
+        function: impl Fn(&CompositionContext) -> T,
     ) -> T {
         // Temporarily move the cache out of self and into the CompositionContext, and move it back to self once we've finished
         // TODO This is a remnant of the previous TLS-based context, and could be replaced with a borrow.
@@ -604,15 +604,17 @@ impl Cache {
 
         // initialize the composition context (which contains the cache table writer and the call key stack that maintains
         // unique IDs for each cached function call).
-        let mut cx = CompositionContext {
+        let cx = CompositionContext(RefCell::new(CompositionContextInner {
             event_loop_proxy,
             id_stack: CallIdStack::new(),
             cache_writer: writer,
             env: env.clone(),
-        };
+        }));
 
         // run the function
-        let result = function(&mut cx);
+        let result = function(&cx);
+
+        let cx = cx.0.into_inner();
 
         // check that calls to CallKeyStack::enter and exit are balanced
         assert!(cx.id_stack.is_empty(), "unbalanced CallKeyStack");
@@ -632,192 +634,137 @@ impl Cache {
 //--------------------------------------------------------------------------------------------------
 
 /// Context passed to composable functions when evaluating them.
-pub struct CompositionContext {
+pub struct CompositionContextInner {
     event_loop_proxy: EventLoopProxy<ExtEvent>,
     id_stack: CallIdStack,
     cache_writer: CacheWriter,
     env: Environment,
 }
 
+pub struct CompositionContext(RefCell<CompositionContextInner>);
+
 impl CompositionContext {
-    /// Enters a composition scope.
-    #[track_caller]
-    pub fn scoped<R>(&mut self, index: usize, f: impl FnOnce(&mut CompositionContext) -> R) -> R {
-        let location = Location::caller();
-        self.id_stack.enter(location, index);
-        let r = f(self);
-        self.id_stack.exit();
-        r
+    fn current_call_id(&self) -> CallId {
+        self.0.borrow().id_stack.current()
     }
 
-    /// Returns the current call identifier.
-    pub fn current_call_id(&mut self) -> CallId {
-        self.id_stack.current()
+    fn revision(&self) -> usize {
+        self.0.borrow().cache_writer.cache.revision
     }
 
-    /// Returns the current revision.
-    pub fn revision(&mut self) -> usize {
-        self.cache_writer.cache.revision
+    fn enter(&self, location: &'static Location<'static>, index: usize) {
+        self.0.borrow_mut().id_stack.enter(location, index);
     }
 
-    /// Returns the environment.
-    pub fn environment(&self) -> Environment {
-        self.env.clone()
+    fn exit(&self) {
+        self.0.borrow_mut().id_stack.exit();
     }
 
-    #[track_caller]
-    pub fn with_environment<R>(
-        &mut self,
-        env: Environment,
-        f: impl FnOnce(&mut CompositionContext) -> R,
+    #[doc(hidden)]
+    pub fn scoped<R>(
+        &self,
+        location: &'static Location<'static>,
+        index: usize,
+        f: impl FnOnce(&Self) -> R,
     ) -> R {
-        let merged = self.env.merged(env);
-        let saved = mem::replace(&mut self.env, merged);
-        let r = self.scoped(0, f);
-        self.env = saved;
+        self.enter(location, index);
+        let r = f(self);
+        self.exit();
         r
     }
 
-    #[track_caller]
-    pub fn changed<T: Data>(&mut self, value: T) -> bool {
-        let location = Location::caller();
-        self.id_stack.enter(location, 0);
-        let key = self.id_stack.current();
-        let node = self.id_stack.current_call_node();
-        let changed = self.cache_writer.compare_and_update_value(key, value, node);
-        self.id_stack.exit();
+    fn environment(&self) -> Environment {
+        self.0.borrow().env.clone()
+    }
+
+    fn set_environment(&self, env: Environment) {
+        self.0.borrow_mut().env = env;
+    }
+
+    fn changed<T: Data>(&self, location: &'static Location<'static>, value: T) -> bool {
+        let mut cx = self.0.borrow_mut();
+        cx.id_stack.enter(location, 0);
+        let key = cx.id_stack.current();
+        let node = cx.id_stack.current_call_node();
+        let changed = cx.cache_writer.compare_and_update_value(key, value, node);
+        cx.id_stack.exit();
         changed
     }
 
-    #[track_caller]
-    fn state_inner<T: 'static, Init: FnOnce() -> T>(
-        &mut self,
+    fn state<T: 'static, Init: FnOnce() -> T>(
+        &self,
+        location: &'static Location<'static>,
         init: Init,
     ) -> CacheEntryInsertResult<T> {
-        let location = Location::caller();
-        self.id_stack.enter(location, 0);
-        let call_id = self.id_stack.current();
-        let node = self.id_stack.current_call_node();
-        let r = self.cache_writer.get_or_insert_entry(call_id, node, init);
-        self.id_stack.exit();
+        let mut cx = self.0.borrow_mut();
+        cx.id_stack.enter(location, 0);
+        let call_id = cx.id_stack.current();
+        let node = cx.id_stack.current_call_node();
+        let r = cx.cache_writer.get_or_insert_entry(call_id, node, init);
+        cx.id_stack.exit();
         r
     }
 
-    /// TODO document
-    #[track_caller]
-    pub fn state<T: 'static>(&mut self, init: impl FnOnce() -> T) -> Key<T> {
-        self.state_inner(init).key
-    }
-
-    /// TODO document
-    #[track_caller]
-    pub fn run_async<T, Fut>(&mut self, future: Fut, restart: bool) -> Poll<T>
-    where
-        T: Clone + Send + 'static,
-        Fut: Future<Output = T> + Send + 'static,
-    {
-        struct AsyncTaskEntry {
-            handle: tokio::task::JoinHandle<()>,
-            revision: usize,
-        }
-
-        let CacheEntryInsertResult {
-            key: task_key,
-            inserted,
-            ..
-        } = self.state_inner::<Option<AsyncTaskEntry>, _>(|| None);
-
-        // if we requested a restart, abort the current running task
-        let mut task = task_key.take(self);
-
-        let revision = if let Some(ref mut task) = task {
-            if restart {
-                trace!("run_async: restarting task");
-                task.handle.abort();
-                task.revision += 1;
-                task.revision
-            } else {
-                task.revision
-            }
-        } else {
-            0
-        };
-
-        let CacheEntryInsertResult {
-            key: result_key,
-            inserted,
-            ..
-        } = self.scoped(revision, |cx| cx.state_inner(|| Poll::Pending));
-
-        if inserted || restart {
-            let el = self.event_loop_proxy.clone();
-
-            // spawn task that will set the value
-            let handle = tokio::spawn(async move {
-                let result = future.await;
-                // TODO I'd really like to just do `key.set(...)` regardless of whether we're in or out the cache,
-                // instead of having to do weird things like this
-                el.send_event(ExtEvent::Recompose {
-                    cache_fn: Box::new(move |cache| {
-                        cache.set_state(result_key, Poll::Ready(result));
-                    }),
-                });
-            });
-
-            task = Some(AsyncTaskEntry { handle, revision })
-        }
-
-        task_key.set(self, task);
-        result_key.get(self)
-    }
-
-    #[track_caller]
-    pub fn group<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+    fn group<R>(
+        &self,
+        location: &'static Location<'static>,
+        f: impl FnOnce(&CompositionContext) -> R,
+    ) -> R {
         let location = Location::caller();
-        self.id_stack.enter(location, 0);
-        self.cache_writer.start_group(self.id_stack.current());
+        {
+            let mut cx = self.0.borrow_mut();
+            cx.id_stack.enter(location, 0);
+            let id = cx.id_stack.current();
+            cx.cache_writer.start_group(id)
+        }
         let r = f(self);
-        self.cache_writer.end_group();
-        self.id_stack.exit();
+        {
+            let mut cx = self.0.borrow_mut();
+            cx.cache_writer.end_group();
+            cx.id_stack.exit();
+        }
         r
     }
 
-    pub fn skip_to_end_of_group(&mut self) {
-        self.cache_writer.skip_until_end_of_group();
-    }
-
-    pub fn event_loop_proxy(&self) -> EventLoopProxy<ExtEvent> {
-        self.event_loop_proxy.clone()
-    }
-
-    /// Memoizes the result of a function at this call site.
-    #[track_caller]
-    pub fn memoize<Args: Data, T: Clone + 'static>(
-        &mut self,
+    fn memoize<Args: Data, T: Clone + 'static>(
+        &self,
+        location: &'static Location<'static>,
         args: Args,
-        f: impl FnOnce(&mut Self) -> T,
+        f: impl FnOnce() -> T,
     ) -> T {
-        self.group(move |cx| {
-            let call_id = cx.id_stack.current();
-            let call_node = cx.id_stack.current_call_node();
-            let args_changed =
-                cx.cache_writer
-                    .compare_and_update_value(call_id, args, call_node.clone());
-            let CacheEntryInsertResult { key, dirty, .. } =
-                cx.cache_writer
-                    .get_or_insert_entry(call_id, call_node.clone(), || None);
-            /* if args_changed {
+        self.group(location, move |cx| {
+            let args_changed;
+            let dirty;
+            let key;
+
+            {
+                let mut cx = cx.0.borrow_mut();
+                let call_id = cx.id_stack.current();
+                let call_node = cx.id_stack.current_call_node();
+                args_changed =
+                    cx.cache_writer
+                        .compare_and_update_value(call_id, args, call_node.clone());
+                let insert_result =
+                    cx.cache_writer
+                        .get_or_insert_entry(call_id, call_node.clone(), || None);
+                key = insert_result.key;
+                dirty = insert_result.dirty;
+                /* if args_changed {
                 trace!("memoize: recomputing because arguments have changed {:#?}", call_node);
+                }
+                if dirty {
+                    trace!("memoize: recomputing because state entry is dirty {:#?}", call_node);
+                }*/
             }
-            if dirty {
-                trace!("memoize: recomputing because state entry is dirty {:#?}", call_node);
-            }*/
 
             if args_changed || dirty {
-                cx.cache_writer.start_state(key);
-                let result = f(cx);
-                cx.cache_writer.end_state();
-                cx.cache_writer.set_value(key, Some(result));
+                cx.0.borrow_mut().cache_writer.start_state(key);
+                let result = f();
+                {
+                    let mut cx = cx.0.borrow_mut();
+                    cx.cache_writer.end_state();
+                    cx.cache_writer.set_value(key, Some(result));
+                }
             } else {
                 cx.skip_to_end_of_group();
             }
@@ -828,57 +775,174 @@ impl CompositionContext {
         })
     }
 
-    /// Runs the function only once at the call site and caches the result (like memoize without parameters).
-    /// TODO better docs
-    #[track_caller]
-    pub fn once<T: Clone + 'static>(&mut self, f: impl FnOnce() -> T) -> T {
-        self.state(f).get(self)
+    fn skip_to_end_of_group(&self) {
+        self.0.borrow_mut().cache_writer.skip_until_end_of_group()
+    }
+
+    fn event_loop_proxy(&self) -> EventLoopProxy<ExtEvent> {
+        self.0.borrow().event_loop_proxy.clone()
     }
 }
 
-/// Dummy function to access the composition context in a #[composable]
+/// Returns the current call identifier.
 #[composable_context]
-pub fn context() -> &mut CompositionContext {
-    __cx
+pub fn current_call_id() -> CallId {
+    //let __cx : &CompositionContext = todo!();
+    __cx.current_call_id()
+}
+
+/// Returns the current revision.
+#[composable_context]
+pub fn revision() -> usize {
+    //let __cx : &CompositionContext = todo!();
+    __cx.revision()
+}
+
+/// Must be called inside `Cache::run`.
+#[composable_context]
+fn enter(index: usize) {
+    //let __cx : &CompositionContext = todo!();
+    let location = Location::caller();
+    __cx.enter(location, index);
+}
+
+/// Must be called inside `Cache::run`.
+#[composable_context]
+fn exit() {
+    //let __cx : &CompositionContext = todo!();
+    __cx.exit();
+}
+
+/// Enters a
+/// Must be called inside `Cache::run`.
+#[composable_context]
+pub fn scoped<R>(index: usize, f: impl FnOnce(&CompositionContext) -> R) -> R {
+    //let __cx : &CompositionContext = todo!();
+    let location = Location::caller();
+    __cx.scoped(location, index, f)
 }
 
 #[composable_context]
-pub fn current_call_id() -> CallId {
-    __cx.current_call_id()
+pub fn environment() -> Environment {
+    __cx.environment()
+}
+
+#[composable_context]
+pub fn with_environment<R>(env: Environment, f: impl FnOnce(&CompositionContext) -> R) -> R {
+    //let __cx : &CompositionContext = todo!();
+    let location = Location::caller();
+    let parent_env = __cx.environment();
+    let merged_env = parent_env.merged(env);
+    __cx.set_environment(merged_env);
+    let r = __cx.scoped(location, 0, f);
+    __cx.set_environment(parent_env);
+    r
 }
 
 #[composable_context]
 pub fn changed<T: Data>(value: T) -> bool {
-    __cx.changed(value)
+    //let __cx : &CompositionContext = todo!();
+    let location = Location::caller();
+    __cx.changed(location, value)
 }
 
-#[composable_context]
-pub fn revision() -> usize {
-    __cx.revision()
-}
-
+/// TODO document
 #[composable_context]
 pub fn state<T: 'static>(init: impl FnOnce() -> T) -> Key<T> {
-    __cx.state(init)
+    //let __cx : &CompositionContext = todo!();
+    let location = Location::caller();
+    __cx.state(location, init).key
 }
 
 #[composable_context]
-pub fn once<T: Clone + 'static>(f: impl FnOnce() -> T) -> T {
-    __cx.once(f)
+pub fn group<R>(f: impl FnOnce(&CompositionContext) -> R) -> R {
+    //let __cx : &CompositionContext = todo!();
+    let location = Location::caller();
+    __cx.group(location, f)
 }
 
+#[composable_context]
+pub fn skip_to_end_of_group() {
+    //let __cx : &CompositionContext = todo!();
+    __cx.skip_to_end_of_group();
+}
+
+#[composable_context]
+pub fn event_loop_proxy() -> EventLoopProxy<ExtEvent> {
+    //let __cx : &CompositionContext = todo!();
+    __cx.event_loop_proxy()
+}
+
+/// TODO document
 #[composable_context]
 pub fn run_async<T, Fut>(future: Fut, restart: bool) -> Poll<T>
 where
     T: Clone + Send + 'static,
     Fut: Future<Output = T> + Send + 'static,
 {
-    __cx.run_async(future, restart)
+    let location = Location::caller();
+
+    struct AsyncTaskEntry {
+        handle: tokio::task::JoinHandle<()>,
+        revision: usize,
+    }
+
+    let CacheEntryInsertResult {
+        key: task_key,
+        inserted,
+        ..
+    } = __cx.state::<Option<AsyncTaskEntry>, _>(location, || None);
+
+    // if we requested a restart, abort the current running task
+    let mut task = task_key.take(__cx);
+
+    let revision = if let Some(ref mut task) = task {
+        if restart {
+            trace!("run_async: restarting task");
+            task.handle.abort();
+            task.revision += 1;
+            task.revision
+        } else {
+            task.revision
+        }
+    } else {
+        0
+    };
+
+    let CacheEntryInsertResult {
+        key: result_key,
+        inserted,
+        ..
+    } = __cx.scoped(location, revision, |cx| cx.state(location, || Poll::Pending));
+
+    if inserted || restart {
+        let cx = __cx.0.borrow();
+        let el = cx.event_loop_proxy.clone();
+
+        // spawn task that will set the value
+        let handle = tokio::spawn(async move {
+            let result = future.await;
+            // TODO I'd really like to just do `key.set(...)` regardless of whether we're in or out the cache,
+            // instead of having to do weird things like this
+            el.send_event(ExtEvent::Recompose {
+                cache_fn: Box::new(move |cache| {
+                    cache.set_state(result_key, Poll::Ready(result));
+                }),
+            });
+        });
+
+        task = Some(AsyncTaskEntry { handle, revision })
+    }
+
+    task_key.set(__cx, task);
+    result_key.get(__cx)
 }
 
+/// Runs the function only once at the call site and caches the result (like memoize without parameters).
+/// TODO better docs
 #[composable_context]
-pub fn event_loop_proxy() -> EventLoopProxy<ExtEvent> {
-    __cx.event_loop_proxy()
+pub fn once<T: Clone + 'static>(f: impl FnOnce() -> T) -> T {
+    state(__cx, f).get(__cx)
 }
 
 #[cfg(test)]
