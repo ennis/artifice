@@ -2660,3 +2660,12 @@ Asset resolver is a singleton.
 
 I feel like passing the Environment during recomp would solve many issues. But having it passed around explicitly is super annoying.
 Also, `Environment` was at first designed to be overriden during widget layout and paint, not recomp.
+
+
+# Module organization
+- core2 -> core (private)
+- style -> kyute::drawing
+
+- kyute
+  - kyute::drawing: Drawing stuff. Lengths, paints, etc. Maybe move basic types into a `kyute-common` crate.
+  

@@ -28,7 +28,7 @@ impl fmt::Display for DropDownTest {
 }
 
 /// Node view.
-#[composable(uncached)]
+#[composable]
 pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     let delete_button = Button::new("Delete".to_string());
 
