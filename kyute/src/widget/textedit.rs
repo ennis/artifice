@@ -9,7 +9,7 @@ use crate::{
     text::FormattedText,
     theme,
     widget::{text::Text, Container},
-    BoxConstraints, Data, EventCtx, LayoutCtx, Measurements, Offset, PaintCtx, Point, Rect,
+    BoxConstraints, Cx, Data, EventCtx, LayoutCtx, Measurements, Offset, PaintCtx, Point, Rect,
     SideOffsets, Size, WidgetPod,
 };
 use keyboard_types::KeyState;
@@ -94,6 +94,7 @@ impl TextEdit {
     /// Creates a new `TextEdit` widget displaying the specified `FormattedText`.
     #[composable]
     pub fn with_selection(
+        cx: Cx,
         formatted_text: impl Into<FormattedText>,
         selection: Selection,
     ) -> TextEdit {
@@ -105,66 +106,46 @@ impl TextEdit {
             selection
         );
 
-        let inner = Container::new(
-            #[compose]
-            Text::new(formatted_text.clone()),
-        )
-        .box_style(theme::TEXT_EDIT)
-        .content_padding(SideOffsets::new_all_same(2.0));
+        let inner = Container::new(Text::new(cx, formatted_text.clone()))
+            .box_style(theme::TEXT_EDIT)
+            .content_padding(SideOffsets::new_all_same(2.0));
 
         TextEdit {
             formatted_text,
             selection,
             content_offset: Default::default(),
             content_size: Default::default(),
-            selection_changed: #[compose]
-            Signal::new(),
-            editing_finished: #[compose]
-            Signal::new(),
-            text_changed: #[compose]
-            Signal::new(),
-            inner: #[compose]
-            WidgetPod::new(inner),
+            selection_changed: Signal::new(cx),
+            editing_finished: Signal::new(cx),
+            text_changed: Signal::new(cx),
+            inner: WidgetPod::new(cx, inner),
         }
     }
 
     /// Use if you don't care about the selection.
     #[composable]
-    pub fn new(formatted_text: impl Into<FormattedText>) -> TextEdit {
-        let selection = #[compose]
-        State::new(|| Selection::empty(0));
-        let text_edit = #[compose]
-        Self::with_selection(
-            formatted_text,
-            #[compose]
-            selection.get(),
-        );
-        #[compose]
-        selection.update(
-            #[compose]
-            text_edit.selection_changed(),
-        );
+    pub fn new(cx: Cx, formatted_text: impl Into<FormattedText>) -> TextEdit {
+        let selection = State::new(cx, || Selection::empty(0));
+        let text_edit = Self::with_selection(cx, formatted_text, selection.get(cx));
+        selection.update(cx, text_edit.selection_changed(cx));
         text_edit
     }
 
     /// Returns whether TODO.
-    #[composable(uncached)]
-    pub fn editing_finished(&self) -> Option<FormattedText> {
-        #[compose]
-        self.editing_finished.value()
+    #[composable]
+    pub fn editing_finished(&self, cx: Cx) -> Option<FormattedText> {
+        self.editing_finished.value(cx)
     }
 
     /// Returns whether the text has changed.
-    #[composable(uncached)]
-    pub fn text_changed(&self) -> Option<FormattedText> {
-        #[compose]
-        self.text_changed.value()
+    #[composable]
+    pub fn text_changed(&self, cx: Cx) -> Option<FormattedText> {
+        self.text_changed.value(cx)
     }
 
-    #[composable(uncached)]
-    pub fn selection_changed(&self) -> Option<Selection> {
-        #[compose]
-        self.selection_changed.value()
+    #[composable]
+    pub fn selection_changed(&self, cx: Cx) -> Option<Selection> {
+        self.selection_changed.value(cx)
     }
 
     /// Moves the cursor forward or backward. Returns the new selection.

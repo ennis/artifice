@@ -1,4 +1,4 @@
-use crate::{cache, composable, EventCtx, Key};
+use crate::{cache, composable, Cx, EventCtx, Key};
 use std::{
     cell::{Cell, RefCell},
     future::Future,
@@ -14,9 +14,8 @@ pub struct Signal<T> {
 
 impl<T: Clone + 'static> Signal<T> {
     #[composable]
-    pub fn new() -> Signal<T> {
-        let key = #[compose]
-        cache::state(|| None);
+    pub fn new(cx: Cx) -> Signal<T> {
+        let key = cx.state(|| None);
         Signal {
             fetched: Cell::new(false),
             value: RefCell::new(None),
@@ -25,14 +24,11 @@ impl<T: Clone + 'static> Signal<T> {
     }
 
     #[composable]
-    fn fetch_value(&self) {
-        if !self.fetched.get()
-        {
-            let value = #[compose]
-            self.key.get();
+    fn fetch_value(&self, cx: Cx) {
+        if !self.fetched.get() {
+            let value = self.key.get(cx);
             if value.is_some() {
-                #[compose]
-                self.key.set(None);
+                self.key.set(cx, None);
             }
             self.value.replace(value);
             self.fetched.set(true);
@@ -49,15 +45,14 @@ impl<T: Clone + 'static> Signal<T> {
     }
 
     #[composable]
-    pub fn signalled(&self) -> bool {
-        #[compose] self.fetch_value();
+    pub fn signalled(&self, cx: Cx) -> bool {
+        self.fetch_value(cx);
         self.value.borrow().is_some()
     }
 
     #[composable]
-    pub fn value(&self) -> Option<T> {
-        #[compose]
-        self.fetch_value();
+    pub fn value(&self, cx: Cx) -> Option<T> {
+        self.fetch_value(cx);
         self.value.borrow().clone()
     }
 }
@@ -68,29 +63,25 @@ pub struct State<T> {
 
 impl<T: Clone + 'static> State<T> {
     #[composable]
-    pub fn new(init: impl FnOnce() -> T) -> State<T> {
-        let key = #[compose]
-        cache::state(init);
+    pub fn new(cx: Cx, init: impl FnOnce() -> T) -> State<T> {
+        let key = cx.state(init);
         State { key }
     }
 
     #[composable]
-    pub fn get(&self) -> T {
-        #[compose]
-        self.key.get()
+    pub fn get(&self, cx: Cx) -> T {
+        self.key.get(cx)
     }
 
     #[composable]
-    pub fn update(&self, value: Option<T>) {
+    pub fn update(&self, cx: Cx, value: Option<T>) {
         if let Some(value) = value {
-            #[compose]
-            self.key.set(value)
+            self.key.set(cx, value)
         }
     }
 
     #[composable]
-    pub fn set(&self, value: T) {
-        #[compose]
-        self.key.set(value)
+    pub fn set(&self, cx: Cx, value: T) {
+        self.key.set(cx, value)
     }
 }

@@ -9,8 +9,8 @@ pub struct Baseline<Inner> {
 }
 
 impl<Inner: Widget + 'static> Baseline<Inner> {
-    #[composable(uncached)]
-    pub fn new(baseline: f64, inner: Inner) -> Baseline<Inner> {
+    #[composable]
+    pub fn new(_cx: Cx, baseline: f64, inner: Inner) -> Baseline<Inner> {
         Baseline {
             inner: LayoutWrapper::new(inner),
             baseline,

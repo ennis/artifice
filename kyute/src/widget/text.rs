@@ -1,7 +1,7 @@
 use crate::{
     composable,
     text::{FormattedText, FormattedTextParagraph},
-    BoxConstraints, Environment, Event, EventCtx, LayoutCtx, Measurements, PaintCtx, Point,
+    BoxConstraints, Cx, Environment, Event, EventCtx, LayoutCtx, Measurements, PaintCtx, Point,
     Rect, Size, Widget,
 };
 use kyute_shell::drawing::ToSkia;
@@ -17,8 +17,8 @@ pub struct Text {
 
 impl Text {
     /// Creates a new text element.
-    #[composable(uncached)]
-    pub fn new(formatted_text: impl Into<FormattedText>) -> Text {
+    #[composable]
+    pub fn new(cx: Cx, formatted_text: impl Into<FormattedText>) -> Text {
         let formatted_text = formatted_text.into();
         Text {
             formatted_text,

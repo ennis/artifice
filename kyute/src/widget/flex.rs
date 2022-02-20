@@ -66,14 +66,14 @@ impl Flex {
     }
 
     #[composable]
-    pub fn with(mut self, widget: impl Widget + 'static) -> Self {
-        #[compose] self.push(widget);
+    pub fn with(mut self, cx: Cx, widget: impl Widget + 'static) -> Self {
+        self.push(cx, widget);
         self
     }
 
     #[composable]
-    pub fn push(&mut self, widget: impl Widget + 'static) {
-        self.items.push(Arc::new(#[compose] WidgetPod::new(widget)));
+    pub fn push(&mut self, cx: Cx, widget: impl Widget + 'static) {
+        self.items.push(Arc::new(WidgetPod::new(cx,widget)));
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{cache, composable, state::Signal, util::Counter, Data};
+use crate::{cache, composable, state::Signal, util::Counter, Data, Cx};
 use std::{collections::HashMap, convert::TryInto};
 
 /// Keyboard shortcut.
@@ -55,36 +55,32 @@ impl Action {
     /// Creates a new action.
     // FIXME does this need to be cached? it's cheap to create
     #[composable]
-    pub fn new() -> Action {
-        #[compose]
-        Self::new_inner(None)
+    pub fn new(cx: Cx) -> Action {
+        Self::new_inner(cx, None)
     }
 
     /// Creates a new action with the specified keyboard shortcut.
     // TODO remove, replace with a function that mutates an existing action: `Action::new().shortcut(...)`
     #[composable]
-    pub fn with_shortcut(shortcut: Shortcut) -> Action {
-        #[compose]
-        Self::new_inner(Some(shortcut))
+    pub fn with_shortcut(cx: Cx, shortcut: Shortcut) -> Action {
+        Self::new_inner(cx, Some(shortcut))
     }
 
     #[composable]
-    fn new_inner(shortcut: Option<Shortcut>) -> Action {
-        let id: u32 =
-            #[compose] cache::once(|| ACTION_ID_COUNTER.next().try_into().unwrap());
+    fn new_inner(cx: Cx, shortcut: Option<Shortcut>) -> Action {
+        let id: u32 = cx.once(|| ACTION_ID_COUNTER.next().try_into().unwrap());
         Action {
             id,
             triggered:
-            #[compose] Signal::new(),
+            Signal::new(cx),
             shortcut,
         }
     }
 
     /// Returns whether the action was triggered.
     #[composable]
-    pub fn triggered(&self) -> bool {
-        #[compose]
-        self.triggered.signalled()
+    pub fn triggered(&self, cx: Cx) -> bool {
+        self.triggered.signalled(cx)
     }
 }
 
@@ -134,8 +130,8 @@ fn compare_menu_items(a: &Vec<MenuItem>, b: &Vec<MenuItem>) -> bool {
 }
 
 impl Menu {
-    #[composable(uncached)]
-    pub fn new(items: Vec<MenuItem>) -> Menu {
+    #[composable]
+    pub fn new(_cx: Cx, items: Vec<MenuItem>) -> Menu {
         Menu { items }
     }
 

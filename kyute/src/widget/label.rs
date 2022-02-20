@@ -1,8 +1,5 @@
 //! Text elements
-use crate::{
-    composable, env::Environment, event::Event, style::ColorRef, theme, BoxConstraints, EventCtx,
-    LayoutCtx, Measurements, PaintCtx, Point, Rect, Widget,
-};
+use crate::{composable, env::Environment, event::Event, style::ColorRef, theme, BoxConstraints, EventCtx, LayoutCtx, Measurements, PaintCtx, Point, Rect, Widget, Cx};
 use kyute_shell::{drawing::FromSkia, skia as sk};
 use std::cell::RefCell;
 
@@ -23,7 +20,7 @@ pub struct Label {
 impl Label {
     /// Creates a new text label.
     #[composable]
-    pub fn new(text: String) -> Label {
+    pub fn new(cx: Cx, text: String) -> Label {
         Label {
             style: TextStyle {
                 // by default, use LABEL_COLOR as the text color

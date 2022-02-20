@@ -1,7 +1,4 @@
-use crate::{
-    cache, composable, cache::CompositionContext, composable_context, data::Data, style::Length, Color,
-    SideOffsets,
-};
+use crate::{cache, composable, cache::CompositionContext, composable_context, data::Data, style::Length, Color, SideOffsets, Cx};
 use std::{
     any::Any,
     collections::HashMap,
@@ -46,8 +43,8 @@ impl<T> EnvKey<T> {
 impl<T: EnvValue> EnvKey<T> {
     /// Returns the value of the environment variable in the current env.
     #[composable]
-    pub fn get(self) -> Option<T> {
-        (#[compose] cache::environment()).get(self)
+    pub fn get(self, cx: Cx) -> Option<T> {
+        cx.environment().get(self)
     }
 }
 

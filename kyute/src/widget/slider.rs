@@ -89,12 +89,12 @@ impl Slider {
     /// * `max` - upper bound of the slider range
     /// * `initial` - initial value of the slider.
     #[composable]
-    pub fn new(min: f64, max: f64, value: f64) -> Slider {
+    pub fn new(cx: Cx, min: f64, max: f64, value: f64) -> Slider {
         Slider {
             // endpoints calculated during layout
             track: Default::default(),
             value,
-            value_changed: #[compose] Signal::new(),
+            value_changed: Signal::new(cx),
             min,
             max,
         }
@@ -111,8 +111,8 @@ impl Slider {
     }
 
     #[composable]
-    pub fn value_changed(&self) -> Option<f64> {
-        #[compose] self.value_changed.value()
+    pub fn value_changed(&self, cx: Cx) -> Option<f64> {
+        self.value_changed.value(cx)
     }
 }
 

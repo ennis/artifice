@@ -130,10 +130,34 @@ pub fn generate_composable(
     let attrs = &fn_item.attrs;
 
     // --- rewrite function signature to add the cx parameter ---
-    rewrite_signature(&mut fn_item.sig);
+    //rewrite_signature(&mut fn_item.sig);
 
     // --- rewrite all #[compose] function calls in the body ---
-    ComposeRewriter.visit_block_mut(&mut fn_item.block);
+    //ComposeRewriter.visit_block_mut(&mut fn_item.block);
+
+    // get name of the context arg
+    let cx_arg = fn_item
+        .sig
+        .inputs
+        .iter()
+        .filter(|arg| matches!(arg, FnArg::Typed(_)))
+        .next();
+    let cx_pat = if let Some(cx_arg) = cx_arg {
+        match cx_arg {
+            FnArg::Receiver(_) => {
+                unreachable!()
+            }
+            FnArg::Typed(pat) => (*pat.pat).clone(),
+        }
+    } else {
+        Diagnostic::spanned(
+            fn_item.sig.span().unwrap(),
+            Level::Error,
+            "missing context argument on `composable` function",
+        )
+        .emit();
+        parse_quote!(())
+    };
 
     let altered_fn = if !attr_args.cached {
         let sig = &fn_item.sig;
@@ -141,7 +165,7 @@ pub fn generate_composable(
         quote! {
             #[track_caller]
             #(#attrs)* #vis #sig {
-                __cx.scoped(::std::panic::Location::caller(), 0, move |__cx| {
+                #cx_pat.scoped(0, move |__cx| {
                     #block
                 })
             }
@@ -178,7 +202,7 @@ pub fn generate_composable(
             quote! {
                 #[track_caller]
                 #(#attrs)* #vis #sig {
-                    __cx.memoize(::std::panic::Location::caller(), (#(#args,)*), move |__cx| {
+                    #cx_pat.memoize((#(#args,)*), move |__cx| {
                         #block
                     })
                 }

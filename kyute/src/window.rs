@@ -3,10 +3,10 @@ use crate::{
     core2::{FocusState, GpuResourceReferences},
     event::{InputState, KeyboardEvent, PointerButton, PointerEvent, PointerEventKind},
     graal,
-    graal::{SwapchainImage, vk::Handle, MemoryLocation},
+    graal::{vk::Handle, MemoryLocation, SwapchainImage},
     region::Region,
     widget::{Action, Menu},
-    Alignment, BoxConstraints, Data, Environment, Event, EventCtx, InternalEvent, LayoutCtx,
+    Alignment, BoxConstraints, Cx, Data, Environment, Event, EventCtx, InternalEvent, LayoutCtx,
     Measurements, PaintCtx, Point, Rect, Size, Widget, WidgetPod,
 };
 use keyboard_types::KeyState;
@@ -657,11 +657,15 @@ impl Window {
     ///
     /// TODO: explain subtleties
     #[composable]
-    pub fn new(window_builder: WindowBuilder, contents: impl Widget + 'static, menu: Option<Menu>) -> Window {
+    pub fn new(
+        cx: Cx,
+        window_builder: WindowBuilder,
+        contents: impl Widget + 'static,
+        menu: Option<Menu>,
+    ) -> Window {
         // create the initial window state
         // we don't want to recreate it every time, so it only depends on the call ID.
-        let window_state =
-            #[compose] cache::once(move || {
+        let window_state = cx.once(move || {
             Arc::new(RefCell::new(WindowState {
                 window: None,
                 window_builder: Some(window_builder),
@@ -689,8 +693,7 @@ impl Window {
 
         Window {
             window_state,
-            contents: Arc::new(
-                #[compose] WidgetPod::new(contents)),
+            contents: Arc::new(WidgetPod::new(cx, contents)),
         }
     }
 

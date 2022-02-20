@@ -215,17 +215,19 @@ impl Grid {
     #[composable]
     pub fn with(
         mut self,
+        cx: Cx,
         row_span: impl GridSpan,
         column_span: impl GridSpan,
         widget: impl Widget + 'static,
     ) -> Self {
-        #[compose] self.add(row_span, column_span, widget);
+        self.add(cx, row_span, column_span, widget);
         self
     }
 
-    #[composable(uncached)]
+    #[composable]
     pub fn add(
         &mut self,
+        cx: Cx,
         row_span: impl GridSpan,
         column_span: impl GridSpan,
         widget: impl Widget + 'static,
@@ -254,13 +256,13 @@ impl Grid {
         self.items.push(GridItem {
             row_range,
             column_range,
-            widget: Arc::new(#[compose] WidgetPod::new(widget)),
+            widget: Arc::new(WidgetPod::new(cx, widget)),
         });
     }
 
     #[composable]
-    pub fn add_row(&mut self, widget: impl Widget + 'static) {
-        #[compose] self.add(self.rows.len(), .., widget);
+    pub fn add_row(&mut self, cx: Cx, widget: impl Widget + 'static) {
+         self.add(cx, self.rows.len(), .., widget);
     }
 
     fn items_in_track(&self, axis: TrackAxis, index: usize) -> impl Iterator<Item = &GridItem> {

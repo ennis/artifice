@@ -25,14 +25,14 @@ pub struct Button {
 impl Button {
     /// Creates a new button with the specified label.
     #[composable]
-    pub fn new(label: String) -> Button {
+    pub fn new(cx: Cx, label: String) -> Button {
         Button {
-            inner: Container::new(#[compose] Label::new(label))
+            inner: Container::new(Label::new(cx, label))
                 .min_height(theme::BUTTON_HEIGHT)
                 .content_padding(SideOffsets::new_all_same(5.0))
                 .baseline(theme::BUTTON_LABEL_BASELINE)
                 .box_style(theme::BUTTON),
-            clicked: #[compose] Signal::new(),
+            clicked: Signal::new(cx),
         }
     }
 
@@ -60,9 +60,8 @@ impl Button {
 
     /// Returns whether this button has been clicked.
     #[composable]
-    pub fn clicked(&self) -> bool {
-        #[compose]
-        self.clicked.signalled()
+    pub fn clicked(&self, cx: Cx) -> bool {
+        self.clicked.signalled(cx)
     }
 }
 

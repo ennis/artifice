@@ -9,17 +9,17 @@ pub struct Clickable<Content> {
 
 impl<Content: Widget + 'static> Clickable<Content> {
     #[composable]
-    pub fn new(content: Content) -> Clickable<Content> {
+    pub fn new(cx: Cx, content: Content) -> Clickable<Content> {
         Clickable {
             content,
-            clicked: #[compose] Signal::new(),
+            clicked: Signal::new(cx),
         }
     }
 
     /// Returns whether this button has been clicked.
     #[composable]
-    pub fn clicked(&self) -> bool {
-        #[compose] self.clicked.signalled()
+    pub fn clicked(&self, cx: Cx) -> bool {
+        self.clicked.signalled(cx)
     }
 
     /// Returns a reference to the inner widget.

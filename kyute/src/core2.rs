@@ -1,15 +1,4 @@
-use crate::{
-    application::{AppCtx, ExtEvent},
-    bloom::Bloom,
-    cache,
-    cache::Key,
-    call_key::CallId,
-    event::{InputState, PointerEvent, PointerEventKind},
-    region::Region,
-    widget::{Align, ConstrainedBox},
-    Alignment, BoxConstraints, Data, EnvKey, Environment, Event, InternalEvent, Measurements,
-    Offset, Point, Rect, Size,
-};
+use crate::{application::{AppCtx, ExtEvent}, bloom::Bloom, cache, cache::Key, call_key::CallId, event::{InputState, PointerEvent, PointerEventKind}, region::Region, widget::{Align, ConstrainedBox}, Alignment, BoxConstraints, Data, EnvKey, Environment, Event, InternalEvent, Measurements, Offset, Point, Rect, Size, Cx};
 use approx::relative_eq;
 use kyute_macros::{composable, composition_context};
 use kyute_shell::{
@@ -954,12 +943,12 @@ impl fmt::Debug for WidgetPod {
 impl<T: Widget + 'static> WidgetPod<T> {
     /// Creates a new `WidgetPod` wrapping the specified widget.
     #[composable]
-    pub fn new(widget: T) -> WidgetPod<T> {
-        let id = WidgetId::from_call_id(#[compose] cache::current_call_id());
+    pub fn new(cx: Cx, widget: T) -> WidgetPod<T> {
+        let id = WidgetId::from_call_id(cx.current_call_id());
         // HACK: returns false on first call, true on following calls, so we can use that
         // to determine whether the widget has been initialized.
-        let initialized = ! (#[compose] cache::changed(()));
-        let created = #[compose] cache::revision();
+        let initialized = !cx.changed(());
+        let created = cx.revision();
 
         WidgetPod {
             state: WidgetPodState {

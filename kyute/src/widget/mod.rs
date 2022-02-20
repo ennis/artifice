@@ -111,6 +111,7 @@ impl<T: Controller> Widget for T {
 pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
+        Cx,
         composable, Orientation, BoxConstraints, Environment, Event, EventCtx, LayoutCtx, Measurements, Offset,
         PaintCtx, Point, Rect, Size, Widget, WidgetPod, Alignment
     };

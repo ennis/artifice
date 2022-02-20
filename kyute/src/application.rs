@@ -2,7 +2,7 @@
 //!
 //! Provides the `run_application` function that opens the main window and translates the incoming
 //! events from winit into the events expected by kyute.
-use crate::{core2::WidgetId, Cache, Environment, Event, InternalEvent, Widget, WidgetPod};
+use crate::{core2::WidgetId, Cache, Environment, Event, InternalEvent, Widget, WidgetPod, Cx};
 use kyute_shell::{
     winit,
     winit::{
@@ -99,7 +99,7 @@ fn eval_root_widget(
     app_ctx: &mut AppCtx,
     event_loop: &EventLoopWindowTarget<ExtEvent>,
     root_env: &Environment,
-    f: fn(&CompositionContext) -> Arc<WidgetPod>,
+    f: fn(Cx) -> Arc<WidgetPod>,
 ) -> Arc<WidgetPod> {
     let root_widget = app_ctx.cache.run(app_ctx.event_loop_proxy.clone(), root_env, f);
     // ensures that all widgets have received the `Initialize` event.
@@ -107,7 +107,7 @@ fn eval_root_widget(
     root_widget
 }
 
-pub fn run(ui: fn(&CompositionContext) -> Arc<WidgetPod>, env: Environment) {
+pub fn run(ui: fn(Cx) -> Arc<WidgetPod>, env: Environment) {
     let event_loop = EventLoop::<ExtEvent>::with_user_event();
     let mut app_ctx = AppCtx::new(event_loop.create_proxy());
 

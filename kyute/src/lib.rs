@@ -32,7 +32,7 @@ pub mod widget;
 mod window;
 //mod style;
 
-pub use cache::{Cache, Key};
+pub use cache::{Cache, Key, Cx};
 pub use core2::{
     EventCtx, GpuFrameCtx, LayoutCtx, PaintCtx, Widget, WidgetExt, WidgetId, WidgetPod,
     SHOW_DEBUG_OVERLAY,
