@@ -2662,10 +2662,29 @@ I feel like passing the Environment during recomp would solve many issues. But h
 Also, `Environment` was at first designed to be overriden during widget layout and paint, not recomp.
 
 
-# Module organization
+# Next steps
 - core2 -> core (private)
-- style -> kyute::drawing
+- (?) style -> kyute::drawing
+- (?) remove drawing wrappers from kyute-shell? not sure that they should be here, they are not really platform-dependent
+    - move everything to kyute::drawing (FromSkia/ToSkia traits)
+    - do we want to use the stuff in `kyute_shell::drawing` without kyute?
+    - we could do a split like QtGui/QtWidgets
+      - kyute-common  :  base types (Color, etc); not much dependencies
+      - kyute-shell   :  windowing, thin wrappers over platform-specific functionality, platform-specific resource access, exposes skia
+      - kyute-drawing :  drawing, text stuff, image cache; depends on kyute-common, skia-safe
+      - kyute         :  widgets, styles, asset loader, resolver, environment, composable
+    - problem: currently there's no real "kyute-drawing" API: you either draw styled boxes via `kyute::style` or directly use skia.
+      - skia is the drawing API
+- (?) AssetLoader in Application is meh
+    - same question: do we want to use AssetLoader without kyute?
+    - asset loading can be platform-specific 
+
+- Move file watching outside of kyute-shell
+   - absolute mess
+   - move to kyute::util or something
+- Move AssetLoader outside of Application singleton, into environment.
 
 - kyute
   - kyute::drawing: Drawing stuff. Lengths, paints, etc. Maybe move basic types into a `kyute-common` crate.
-  
+
+# Next s
