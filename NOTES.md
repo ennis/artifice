@@ -2679,12 +2679,11 @@ Also, `Environment` was at first designed to be overriden during widget layout a
     - same question: do we want to use AssetLoader without kyute?
     - asset loading can be platform-specific 
 
-- Move file watching outside of kyute-shell
-   - absolute mess
-   - move to kyute::util or something
-- Move AssetLoader outside of Application singleton, into environment.
+~~- Move file watching outside of kyute-shell~~
+   ~~- absolute mess~~
+   ~~- move to kyute::util or something~~
+~~- Move AssetLoader outside of Application singleton, into environment.~~
 
-- kyute
-  - kyute::drawing: Drawing stuff. Lengths, paints, etc. Maybe move basic types into a `kyute-common` crate.
+~~- kyute~~
+  ~~- kyute::drawing: Drawing stuff. Lengths, paints, etc. Maybe move basic types into a `kyute-common` crate.~~
 
-# Next s

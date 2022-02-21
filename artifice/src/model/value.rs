@@ -135,14 +135,14 @@ impl serde::Serialize for Value {
             Value::Map(ref map) => {
                 let mut ser_map = serializer.serialize_map(Some(map.len()))?;
                 for (k, v) in map.iter() {
-                    ser_map.serialize_entry(k, v);
+                    ser_map.serialize_entry(k, v)?;
                 }
                 ser_map.end()
             }
             Value::Array(ref array) => {
                 let mut ser_array = serializer.serialize_seq(Some(array.len()))?;
                 for item in array.iter() {
-                    ser_array.serialize_element(item);
+                    ser_array.serialize_element(item)?;
                 }
                 ser_array.end()
             }
@@ -158,10 +158,7 @@ impl<'de> serde::de::Visitor<'de> for ValueVisitor {
     type Value = Value;
 
     fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
-        write!(
-            formatter,
-            "any numeric type or string, bytes, map, array, none"
-        )
+        write!(formatter, "any numeric type or string, bytes, map, array, none")
     }
 
     fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>

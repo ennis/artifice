@@ -47,7 +47,7 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
         // language=SQLITE-SQL
         "INSERT OR IGNORE INTO named_objects (name, path, parent) VALUES ('','',null)",
         [],
-    );
+    )?;
 
     conn.pragma_update(None, "application_id", ARTIFICE_APPLICATION_ID)?;
     Ok(())
@@ -64,7 +64,6 @@ pub struct DocumentModel {
     pub share_groups: Vector<ShareGroup>,
 }
 
-// TODO data impls for imbl
 impl Data for DocumentModel {
     fn same(&self, other: &Self) -> bool {
         self.revision.same(&other.revision)
@@ -113,9 +112,7 @@ impl Document {
     /// Opens a document from a sqlite database connection.
     pub fn open(connection: Connection) -> Result<Document> {
         // check for correct application ID
-        if let Ok(ARTIFICE_APPLICATION_ID) =
-            connection.pragma_query_value(None, "application_id", |v| v.get(0))
-        {
+        if let Ok(ARTIFICE_APPLICATION_ID) = connection.pragma_query_value(None, "application_id", |v| v.get(0)) {
             // OK, app id matches, assume schema is in place
         } else {
             setup_schema(&connection)?;
@@ -138,8 +135,7 @@ impl Document {
         let mut nodes = Vec::new();
 
         {
-            let mut stmt =
-                connection.prepare("SELECT rowid, path FROM named_objects ORDER BY path")?;
+            let mut stmt = connection.prepare("SELECT rowid, path FROM named_objects ORDER BY path")?;
             let mut node_rows = stmt.query([])?;
 
             while let Some(row) = node_rows.next()? {
@@ -230,10 +226,7 @@ impl Document {
     /// Deletes the specified node.
     pub fn delete_node(&mut self, node: &Node) -> Result<()> {
         // Can't delete root node.
-        assert!(
-            !node.base.path.is_root(),
-            "attempted to delete the root node"
-        );
+        assert!(!node.base.path.is_root(), "attempted to delete the root node");
 
         //let path_str = node.base.path.to_string();
         let id = node.base.id;

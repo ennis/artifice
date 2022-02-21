@@ -1,15 +1,15 @@
 use crate::model::{Document, ModelPath, Node};
 use kyute::{
     cache, composable,
-    shell::{drawing::Color, winit::window::WindowBuilder},
+    shell::winit::window::WindowBuilder,
     style::BoxStyle,
     text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
     theme,
     widget::{
-        Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu,
-        MenuItem, Null, Orientation, Shortcut, Slider, TextEdit,
+        Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu, MenuItem, Null,
+        Orientation, Shortcut, Slider, TextEdit,
     },
-    Cache, Data, Key, State, Widget, WidgetPod, Window,
+    Cache, Color, Data, Key, State, Widget, WidgetPod, Window,
 };
 use rusqlite::Connection;
 use std::{fmt, fmt::Formatter, sync::Arc};
@@ -64,10 +64,7 @@ pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     let path = node.base.path.to_string();
     let last_sep = path.rfind('/').unwrap();
     let path_text = FormattedText::from(path)
-        .with_attribute(
-            0..=last_sep,
-            Attribute::Color(Color::new(0.7, 0.7, 0.7, 1.0)),
-        )
+        .with_attribute(0..=last_sep, Attribute::Color(Color::new(0.7, 0.7, 0.7, 1.0)))
         .with_attribute(.., Attribute::FontSize(17.0))
         .with_attribute(.., FontFamily::new("Cambria"))
         .with_attribute(.., FontStyle::Italic);
@@ -75,14 +72,7 @@ pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     // rename
     let name_edit = TextEdit::new(path_text);
 
-    let dropdown = DropDown::new(
-        vec![
-            DropDownTest::First,
-            DropDownTest::Second,
-            DropDownTest::Third,
-        ],
-        0,
-    );
+    let dropdown = DropDown::new(vec![DropDownTest::First, DropDownTest::Second, DropDownTest::Third], 0);
 
     if let Some(item) = dropdown.selected_item_changed() {
         tracing::info!("changed option: {:?}", item);
@@ -104,7 +94,7 @@ pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
 }
 
 /// Root document view.
-#[composable]
+#[composable(cached)]
 pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Widget + Clone {
     tracing::trace!("document_window_contents");
 
@@ -120,7 +110,7 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
     // Root nodes
     for (_name, node) in document_model.root.children.iter() {
         cache::scoped(node.base.id as usize, || {
-            #[compose] node_item(document, &mut grid, node);
+            node_item(document, &mut grid, node);
         })
     }
 
@@ -139,14 +129,13 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
     slider_value.update(slider.value_changed());
     grid.add_row(slider);
 
-    let container = Container::new(grid)
-        .box_style(BoxStyle::new().fill(theme::keys::UNDER_PAGE_BACKGROUND_COLOR));
+    let container = Container::new(grid).box_style(BoxStyle::new().fill(theme::keys::UNDER_PAGE_BACKGROUND_COLOR));
 
     Arc::new(container)
 }
 
 /// Main menu bar.
-#[composable]
+#[composable(cached)]
 pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
     let file_new = Action::with_shortcut(Shortcut::from_str("Ctrl+N"));
     let file_open = Action::with_shortcut(Shortcut::from_str("Ctrl+O"));
@@ -187,10 +176,7 @@ pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
         MenuItem::separator(),
         MenuItem::new("Quit", file_quit),
     ]);
-    let mut edit_menu = Menu::new(vec![
-        MenuItem::new("Undo", edit_undo),
-        MenuItem::new("Redo", edit_redo),
-    ]);
+    let mut edit_menu = Menu::new(vec![MenuItem::new("Undo", edit_undo), MenuItem::new("Redo", edit_redo)]);
     let menu_bar = Menu::new(vec![
         MenuItem::submenu("File", file_menu),
         MenuItem::submenu("Edit", edit_menu),
@@ -200,7 +186,7 @@ pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
 }
 
 /// Native window displaying a document.
-#[composable]
+#[composable(cached)]
 pub fn document_window(#[uncached] document: &mut Document) -> Window {
     //
     tracing::trace!("document_window");
