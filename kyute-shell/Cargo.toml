@@ -7,10 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# windowing
 anyhow = "1.0.43"
-winit = { path = "../ext/winit" }
-#euclid = "0.22"   # basic 2D geometric types
+#winit = { path = "../ext/winit" }
+kyute-common = { path="../kyute-common" }
 bitflags = "1.2.1"
 lazy_static = "1.4.0"
 keyboard-types = "0.6"

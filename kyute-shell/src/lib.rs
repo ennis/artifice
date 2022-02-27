@@ -4,6 +4,7 @@
 pub mod application;
 mod backend;
 pub mod error;
+mod event;
 mod shortcut;
 pub mod window;
 
