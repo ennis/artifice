@@ -3,7 +3,7 @@ use kyute::{
     cache, composable,
     shell::winit::window::WindowBuilder,
     style::BoxStyle,
-    text::{Attribute, FontFamily, FontStyle, FormattedText, ParagraphStyle, TextStyle},
+    text::{Attribute, FontFamily, FontStyle, FormattedText},
     theme,
     widget::{
         Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu, MenuItem, Null,
@@ -64,10 +64,10 @@ pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     let path = node.base.path.to_string();
     let last_sep = path.rfind('/').unwrap();
     let path_text = FormattedText::from(path)
-        .with_attribute(0..=last_sep, Attribute::Color(Color::new(0.7, 0.7, 0.7, 1.0)))
-        .with_attribute(.., Attribute::FontSize(17.0))
-        .with_attribute(.., FontFamily::new("Cambria"))
-        .with_attribute(.., FontStyle::Italic);
+        .attribute(0..=last_sep, Attribute::Color(Color::new(0.7, 0.7, 0.7, 1.0)))
+        .attribute(.., Attribute::FontSize(17.0))
+        .attribute(.., FontFamily::new("Cambria"))
+        .attribute(.., FontStyle::Italic);
 
     // rename
     let name_edit = TextEdit::new(path_text);
