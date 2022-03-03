@@ -205,10 +205,10 @@ fn try_open_document() -> anyhow::Result<Document> {
 }
 
 /// Application root.
-#[composable(uncached)]
+#[composable]
 pub fn application_root() -> Arc<WidgetPod> {
     let document_state = cache::state(|| -> Option<Document> { None });
-    let mut document = document_state.take();
+    let mut document = document_state.take_without_invalidation();
 
     let mut invalidate = false;
     let old_revision: Option<usize> = document.as_ref().map(|doc| doc.revision());
