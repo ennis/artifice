@@ -6,6 +6,8 @@ use kyute::{
     text::{Attribute, FontFamily, FontStyle, FormattedText},
     theme,
     widget::{
+        drop_down,
+        grid::{GridRow, GridTrackDefinition},
         Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu, MenuItem, Null,
         Orientation, Shortcut, Slider, TextEdit,
     },
@@ -27,9 +29,14 @@ impl fmt::Display for DropDownTest {
     }
 }
 
+const LABEL_COLUMN: &str = "label";
+const ADD_COLUMN: &str = "add";
+const DELETE_COLUMN: &str = "delete";
+const VALUE_COLUMN: &str = "value";
+
 /// Node view.
 #[composable]
-pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
+pub fn node_item(document: &mut Document, node: &Node) -> GridRow<'static> {
     let delete_button = Button::new("Delete".to_string());
 
     if delete_button.clicked() {
@@ -72,25 +79,28 @@ pub fn node_item(document: &mut Document, grid: &mut Grid, node: &Node) {
     // rename
     let name_edit = TextEdit::new(path_text);
 
-    let dropdown = DropDown::new(vec![DropDownTest::First, DropDownTest::Second, DropDownTest::Third], 0);
+    let dropdown = DropDown::with_selected(
+        DropDownTest::First,
+        vec![DropDownTest::First, DropDownTest::Second, DropDownTest::Third],
+        drop_down::DebugFormatter,
+    );
 
     if let Some(item) = dropdown.selected_item_changed() {
         tracing::info!("changed option: {:?}", item);
     }
 
-    let row = grid.row_count();
-
-    grid.add(
-        row,
-        0,
+    let mut row = GridRow::new();
+    row.add(
+        LABEL_COLUMN,
         Baseline::new(
             22.0,
             Label::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
         ),
     );
-    grid.add(row, 1, Baseline::new(22.0, delete_button));
-    grid.add(row, 2, Baseline::new(22.0, dropdown));
-    grid.add(row, 3, Baseline::new(22.0, name_edit));
+    row.add(DELETE_COLUMN, Baseline::new(22.0, delete_button));
+    row.add(ADD_COLUMN, Baseline::new(22.0, dropdown));
+    row.add(VALUE_COLUMN, Baseline::new(22.0, name_edit));
+    row
 }
 
 /// Root document view.
@@ -100,17 +110,17 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
 
     let document_model = document.model().clone();
 
-    let mut grid = Grid::with_columns([
-        GridLength::Fixed(100.0),
-        GridLength::Fixed(60.0),
-        GridLength::Fixed(60.0),
-        GridLength::Flex(1.0),
+    let mut grid = Grid::with_column_definitions([
+        GridTrackDefinition::named(LABEL_COLUMN, GridLength::Fixed(100.0)),
+        GridTrackDefinition::named(DELETE_COLUMN, GridLength::Fixed(60.0)),
+        GridTrackDefinition::named(ADD_COLUMN, GridLength::Fixed(60.0)),
+        GridTrackDefinition::named(VALUE_COLUMN, GridLength::Flex(1.0)),
     ]);
 
     // Root nodes
     for (_name, node) in document_model.root.children.iter() {
         cache::scoped(node.base.id as usize, || {
-            node_item(document, &mut grid, node);
+            grid.add_row(node_item(document, node));
         })
     }
 
@@ -121,13 +131,13 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
         let name = document_model.root.make_unique_child_name("node");
         document.create_node(ModelPath::root().join(name));
     }
-    grid.add_row(add_node_button);
+    grid.add_item(grid.row_count(), 0, add_node_button);
 
     // Slider test
     let slider_value = State::new(|| 0.0);
     let slider = Slider::new(0.0, 10.0, slider_value.get());
     slider_value.update(slider.value_changed());
-    grid.add_row(slider);
+    grid.add_item(grid.row_count(), .., slider);
 
     let container = Container::new(grid).box_style(BoxStyle::new().fill(theme::keys::UNDER_PAGE_BACKGROUND_COLOR));
 
@@ -212,30 +222,6 @@ pub fn application_root() -> Arc<WidgetPod> {
 
     let mut invalidate = false;
     let old_revision: Option<usize> = document.as_ref().map(|doc| doc.revision());
-
-    // BIG ISSUE:
-    // the windows that we return in the branches of the conditional are not
-    // wrapped in **separate WidgetPods**, so they will be assigned the **same ID**
-    // This is a problem because WidgetPod "remembers" if it sent the `Initialize`
-    // message to the widget, but we pass two different inner widgets on different calls!
-    //
-    // Possible solution:
-    // 1. Widget constructors return WidgetPod<T> (it properly derefmuts to T, now)
-    //      however, causes problems with inline setters
-    // 2. Find another mechanism for initialization
-    //      handle routeinitialize?
-    //      always send initialize, let the widget store the flag
-    //
-    // Underlying issue: it feels very wrong that the "identity" of a widget is not derived from the callsite of `Button::new`,
-    // but rather at the callsite at which the widget is wrapped in WidgetPod.
-    // Problem: wrapping the thing in WidgetPod early makes for inconvenient APIs.
-    // Take the problem in reverse? i.e. store the widgetID inside the widget?
-    //
-    // Options:
-    // - always return WidgetPods in widget constructors: prevents fluent "builder-like" APIs; also, sometimes we don't care to assign an ID to a widget.
-    // - let the user handle this: when a widget needs an identity, don't forget to wrap it in widgetpod
-    //      - but do note that the identity is derived from the call site
-
     let window = if let Some(ref mut document) = document {
         let window = WidgetPod::new(document_window(document));
         invalidate = Some(document.revision()) != old_revision;
