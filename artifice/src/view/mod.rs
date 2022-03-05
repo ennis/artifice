@@ -6,13 +6,14 @@ use kyute::{
     text::{Attribute, FontFamily, FontStyle, FormattedText},
     theme,
     widget::{
-        drop_down,
+        drop_down, grid,
         grid::{GridRow, GridTrackDefinition},
         Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu, MenuItem, Null,
         Orientation, Shortcut, Slider, TextEdit,
     },
     Cache, Color, Data, Key, State, Widget, WidgetPod, Window,
 };
+use kyute_common::Length;
 use rusqlite::Connection;
 use std::{fmt, fmt::Formatter, sync::Arc};
 
@@ -92,14 +93,11 @@ pub fn node_item(document: &mut Document, node: &Node) -> GridRow<'static> {
     let mut row = GridRow::new();
     row.add(
         LABEL_COLUMN,
-        Baseline::new(
-            22.0,
-            Label::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
-        ),
+        Label::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
     );
-    row.add(DELETE_COLUMN, Baseline::new(22.0, delete_button));
-    row.add(ADD_COLUMN, Baseline::new(22.0, dropdown));
-    row.add(VALUE_COLUMN, Baseline::new(22.0, name_edit));
+    row.add(DELETE_COLUMN, delete_button);
+    row.add(ADD_COLUMN, dropdown);
+    row.add(VALUE_COLUMN, name_edit);
     row
 }
 
@@ -115,7 +113,9 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
         GridTrackDefinition::named(DELETE_COLUMN, GridLength::Fixed(60.0)),
         GridTrackDefinition::named(ADD_COLUMN, GridLength::Fixed(60.0)),
         GridTrackDefinition::named(VALUE_COLUMN, GridLength::Flex(1.0)),
-    ]);
+    ])
+    .align_items(grid::AlignItems::Baseline)
+    .row_gap(Length::Px(2.0));
 
     // Root nodes
     for (_name, node) in document_model.root.children.iter() {
@@ -233,7 +233,7 @@ pub fn application_root() -> Arc<WidgetPod> {
             Ok(new_document) => {
                 document = Some(new_document);
                 invalidate = true;
-                Arc::new(Flex::vertical())
+                Arc::new(Flex::new(Orientation::Vertical))
             }
             Err(e) => {
                 // error message
