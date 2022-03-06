@@ -11,7 +11,7 @@ use kyute::{
         Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu, MenuItem, Null,
         Orientation, Shortcut, Slider, TextEdit,
     },
-    Cache, Color, Data, Key, State, Widget, WidgetPod, Window,
+    Cache, Color, Data, Key, Widget, WidgetPod, Window,
 };
 use kyute_common::Length;
 use rusqlite::Connection;
@@ -104,8 +104,10 @@ pub fn node_item(document: &mut Document, node: &Node) -> GridRow<'static> {
 /// Root document view.
 #[composable(cached)]
 pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Widget + Clone {
-    tracing::trace!("document_window_contents");
+    #[state]
+    let mut slider_value = 0.0;
 
+    tracing::trace!("document_window_contents");
     let document_model = document.model().clone();
 
     let mut grid = Grid::with_column_definitions([
@@ -134,9 +136,7 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
     grid.add_item(grid.row_count(), 0, add_node_button);
 
     // Slider test
-    let slider_value = State::new(|| 0.0);
-    let slider = Slider::new(0.0, 10.0, slider_value.get());
-    slider_value.update(slider.value_changed());
+    let slider = Slider::new(0.0, 10.0, slider_value).on_value_changed(|v| slider_value = v);
     grid.add_item(grid.row_count(), .., slider);
 
     let container = Container::new(grid).box_style(BoxStyle::new().fill(theme::keys::UNDER_PAGE_BACKGROUND_COLOR));
