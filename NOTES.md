@@ -2687,3 +2687,10 @@ Also, `Environment` was at first designed to be overriden during widget layout a
 ~~- kyute~~
   ~~- kyute::drawing: Drawing stuff. Lengths, paints, etc. Maybe move basic types into a `kyute-common` crate.~~
 
+
+# Retained state in Widgets
+It's easy to get retained local state during comp with `#[state]` (i.e. putting stuff in the cache). 
+But it's harder to retain state directly in the widget struct, because it is frequently rebuilt from scratch during recomp. 
+The usual answer is something like an `Arc<RefCell<RetainedState>>` that is stored in the cache, but that's repulsive.
+
+=> find a way to have retained state in the "widget" context
