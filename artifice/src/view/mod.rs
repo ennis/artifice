@@ -11,7 +11,7 @@ use kyute::{
         Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu, MenuItem, Null,
         Orientation, Shortcut, Slider, TextEdit,
     },
-    Cache, Color, Data, Key, Widget, WidgetPod, Window,
+    Color, Data, Key, Widget, WidgetPod, Window,
 };
 use kyute_common::Length;
 use rusqlite::Connection;
