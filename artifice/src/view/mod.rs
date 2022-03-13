@@ -216,14 +216,14 @@ fn try_open_document() -> anyhow::Result<Document> {
 
 /// Application root.
 #[composable]
-pub fn application_root() -> Arc<WidgetPod> {
+pub fn application_root() -> impl Widget {
     let document_state = cache::state(|| -> Option<Document> { None });
     let mut document = document_state.take_without_invalidation();
 
     let mut invalidate = false;
     let old_revision: Option<usize> = document.as_ref().map(|doc| doc.revision());
     let window = if let Some(ref mut document) = document {
-        let window = WidgetPod::new(document_window(document));
+        let window = document_window(document);
         invalidate = Some(document.revision()) != old_revision;
         window
     } else {
@@ -241,11 +241,7 @@ pub fn application_root() -> Arc<WidgetPod> {
             }
         };
 
-        WidgetPod::new(Window::new(
-            WindowBuilder::new().with_title("No document"),
-            window_contents,
-            None,
-        ))
+        Window::new(WindowBuilder::new().with_title("No document"), window_contents, None)
     };
 
     if invalidate {
@@ -255,5 +251,5 @@ pub fn application_root() -> Arc<WidgetPod> {
         document_state.set_without_invalidation(document);
     }
 
-    Arc::new(window)
+    window
 }
