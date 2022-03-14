@@ -2,12 +2,7 @@ use crate::{
     arguments::{ArgumentBlock, Arguments, StaticArguments},
     frame::Frame,
 };
-use graal::{
-    ash,
-    descriptor::{DescriptorSetAllocator, DescriptorSetLayoutId},
-    swapchain::Swapchain,
-    vk, FrameNumber,
-};
+use graal::{ash, swapchain::Swapchain, vk, DescriptorSetLayoutId, FrameNumber};
 use mlr::{buffer::BufferData, image::ImageAny, sampler::SamplerType};
 use slotmap::{SecondaryMap, SlotMap};
 use std::{

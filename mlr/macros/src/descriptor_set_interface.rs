@@ -7,6 +7,7 @@ use darling::{
     util::{Flag, SpannedValue},
     FromDeriveInput, FromField, FromMeta,
 };
+use proc_macro::{Diagnostic, Level};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens, TokenStreamExt};
 use syn::{spanned::Spanned, Data, DeriveInput, Fields, GenericParam, Generics, Token};
@@ -23,18 +24,6 @@ struct ArgumentsStruct {
     vis: syn::Visibility,
     attrs: Vec<syn::Attribute>,
 }
-
-/*#[derive(Default, FromMeta)]
-#[darling(default)]
-struct StagesMeta {
-    all_graphics: Flag,
-    compute: Flag,
-    vertex: Flag,
-    fragment: Flag,
-    geometry: Flag,
-    tessellation_control: Flag,
-    tessellation_evaluation: Flag,
-}*/
 
 #[derive(Default, FromMeta)]
 struct RuntimeArrayMeta {
@@ -92,8 +81,20 @@ struct ArgumentAttr {
     binding: Option<u32>,
     #[darling(default)]
     runtime_array: Option<SpannedValue<RuntimeArrayMeta>>,
-    //#[darling(default)]
-    //uniform: Flag,
+    #[darling(default)]
+    stages: Option<StagesMeta>,
+}
+
+#[derive(Default, FromMeta)]
+#[darling(default)]
+struct StagesMeta {
+    all_graphics: Flag,
+    compute: Flag,
+    vertex: Flag,
+    fragment: Flag,
+    geometry: Flag,
+    tessellation_control: Flag,
+    tessellation_evaluation: Flag,
 }
 
 /*fn generate_shader_access_mask(stages: &SpannedValue<StagesMeta>) -> TokenStream {
@@ -120,7 +121,10 @@ struct ArgumentAttr {
         flags.push(quote! {#CRATE::vk::ShaderStageFlags::COMPUTE});
     }
     if flags.is_empty() {
-        syn::Error::new(stages.span(), "No shader stage specified. Expected one or more of `all_graphics`, `compute`, `vertex`, `fragment`, `geometry`, `tessellation_control`, `tessellation_evaluation`.").to_compile_error()
+        Diagnostic::spanned(stages.span().unwrap(), Level::Error, "No shader stage specified")
+            .note("Expected one or more of `all_graphics`, `compute`, `vertex`, `fragment`, `geometry`, `tessellation_control`, `tessellation_evaluation`")
+            .emit();
+        quote! {}
     } else {
         quote! {
             #CRATE::vk::ShaderStageFlags::from_raw(0 #(| #flags.as_raw())*)
@@ -207,12 +211,13 @@ struct Binding<'a> {
     binding: u32,
 }
 
-struct PrimaryUniform<'a> {
+/// A uniform variable directly specified in the structure instead of going through a uniform buffer.
+struct DirectUniform<'a> {
     field: &'a syn::Field,
     field_index: usize,
 }
 
-pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
+pub(crate) fn derive(input: proc_macro::TokenStream) -> TokenStream {
     let derive_input: syn::DeriveInput = match syn::parse(input) {
         Ok(input) => input,
         Err(e) => return e.into_compile_error(),
@@ -222,35 +227,37 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
     let fields = match derive_input.data {
         Data::Struct(ref struct_data) => &struct_data.fields,
         _ => {
-            return syn::Error::new(
-                derive_input.span(),
+            Diagnostic::spanned(
+                derive_input.span().unwrap(),
+                Level::Error,
                 "`Arguments` can only be derived on structs",
             )
-            .into_compile_error()
+            .emit();
+            return TokenStream::default();
         }
     };
 
     // check for `#[repr(C)]`
-    let repr_c_check = if !has_repr_c_attr(&derive_input) {
-        syn::Error::new(
-            derive_input.span(),
-            format!("`Arguments` can only be derived on `repr(C)` structs"),
+    if !has_repr_c_attr(&derive_input) {
+        Diagnostic::spanned(
+            derive_input.span().unwrap(),
+            Level::Error,
+            "`Arguments` can only be derived on `repr(C)` structs",
         )
-        .into_compile_error()
-    } else {
-        quote! {}
-    };
+        .emit();
+    }
 
     // parse struct-level `#[arguments(...)]` attribs.
-    let s: ArgumentsStruct =
-        match <ArgumentsStruct as FromDeriveInput>::from_derive_input(&derive_input) {
-            Ok(s) => s,
-            Err(e) => return e.write_errors(),
-        };
+    let s: ArgumentsStruct = match <ArgumentsStruct as FromDeriveInput>::from_derive_input(&derive_input) {
+        Ok(s) => s,
+        Err(e) => return e.write_errors(),
+    };
+    let struct_name = &derive_input.ident;
+    let (impl_generics, ty_generics, where_clause) = s.generics.split_for_impl();
 
     //let mut runtime_array_writes = Vec::new();
     let mut bindings = Vec::new();
-    let mut primary_uniform_fields = Vec::new();
+    let mut direct_uniform_fields = Vec::new();
     //let mut default_uniform_buffer_generics = Vec::new();
     let mut attrib_errors = Vec::new();
 
@@ -269,7 +276,7 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
                     })
                 } else {
                     // assume this is a primary uniform
-                    primary_uniform_fields.push(PrimaryUniform { field, field_index });
+                    direct_uniform_fields.push(DirectUniform { field, field_index });
                 }
             }
             Err(e) => attrib_errors.push(e.write_errors()),
@@ -278,19 +285,13 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
 
     // --- Collect generics of each primary uniform field ---
     let type_params = derive_input.generics.declared_type_params();
-    let primary_uniform_type_param_idents = primary_uniform_fields
+    let direct_uniform_type_param_idents = direct_uniform_fields
         .iter()
         .map(|x| x.field)
         .collect_type_params(&Purpose::Declare.into(), &type_params);
-    let primary_uniform_type_params: Vec<_> = primary_uniform_type_param_idents
+    let direct_uniform_type_params: Vec<_> = direct_uniform_type_param_idents
         .iter()
-        .map(|x| {
-            derive_input
-                .generics
-                .type_params()
-                .find(|tp| &tp.ident == *x)
-                .unwrap()
-        })
+        .map(|x| derive_input.generics.type_params().find(|tp| &tp.ident == *x).unwrap())
         .collect();
 
     // --- Generate descriptor set layout bindings ---
@@ -299,13 +300,15 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         .map(|b| {
             let ty = &b.field.ty;
             let binding = b.binding;
-            if binding == 0 && !primary_uniform_fields.is_empty() {
-                // binding #0 is reserved for the primary uniform buffer is there's one: ensure it's not used
-                syn::Error::new(
-                    b.field.span(),
-                    "Binding number 0 is reserved for primary uniforms",
+            if binding == 0 && !direct_uniform_fields.is_empty() {
+                // binding #0 is reserved for the direct uniform buffer is there's one: ensure it's not used
+                Diagnostic::spanned(
+                    b.field.span().unwrap(),
+                    Level::Error,
+                    "Binding number 0 is reserved for direct uniforms",
                 )
-                .into_compile_error()
+                .emit();
+                quote! {}
             } else {
                 quote! {
                     #CRATE::vk::DescriptorSetLayoutBinding {
@@ -320,8 +323,8 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         })
         .collect();
 
-    // --- Primary UBO binding (binding=#0) ---
-    let primary_ubo = if !primary_uniform_fields.is_empty() {
+    // --- Direct UBO binding (binding=#0) ---
+    let direct_ubo = if !direct_uniform_fields.is_empty() {
         quote! {
             #CRATE::vk::DescriptorSetLayoutBinding {
                 binding              : 0,
@@ -335,14 +338,6 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
         quote! {}
     };
 
-    /* quote! {
-        // upload inline uniforms
-        #[repr(C)]
-        struct PrimaryUniforms < #(#primary_uniform_type_params,)* > {
-            #(#primary_uniform_fields,)*
-        }
-    };*/
-
     // --- Generate update template entries ---
     let descriptor_update_template_entries: Vec<_> = bindings
         .iter()
@@ -355,59 +350,52 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
                     dst_array_element : 0,
                     descriptor_count  : <#ty as #CRATE::DescriptorBinding>::DESCRIPTOR_COUNT,
                     descriptor_type   : <#ty as #CRATE::DescriptorBinding>::DESCRIPTOR_TYPE,
-                    offset            : <#ty as #CRATE::DescriptorBinding>::UPDATE_OFFSET,
-                    stride            : <#ty as #CRATE::DescriptorBinding>::UPDATE_STRIDE
                 }
             }
         })
         .collect();
 
     // --- Descriptor update statements ---
-    let descriptor_prepare_update_statements: Vec<_> = bindings
+    let descriptor_write_statements: Vec<_> = bindings
         .iter()
         .map(|b| {
+            let binding = b.binding;
             if let Some(ref ident) = b.field.ident {
-                quote! { #CRATE::DescriptorBinding::prepare_descriptors(&mut self.#ident, ctx); }
+                quote! { #CRATE::DescriptorBinding::write_descriptors(&self.#ident, device, #binding, descriptor_set_builder); }
             } else {
                 let index = syn::Index::from(b.field_index);
-                quote! { #CRATE::DescriptorBinding::prepare_descriptors(&mut self.#index, ctx); }
+                quote! { #CRATE::DescriptorBinding::write_descriptors(&self.#index, device, #binding, descriptor_set_builder); }
             }
         })
         .collect();
 
-    // --- resource visitor statements ---
-    let descriptor_visit_stmts: Vec<_> = bindings
-        .iter()
-        .map(|b| {
-            if let Some(ref ident) = b.field.ident {
-                quote! { #CRATE::DescriptorBinding::visit(&self.#ident, visitor); }
-            } else {
-                let index = syn::Index::from(b.field_index);
-                quote! { #CRATE::DescriptorBinding::visit(&self.#index, visitor); }
-            }
-        })
-        .collect();
-
-    // --- primary uniform upload block
-    let primary_uniform_upload_stmts = if !primary_uniform_fields.is_empty() {
-        // --- Primary uniform struct ---
-        let primary_uniforms_struct = match fields {
+    // --- direct uniform upload block
+    let direct_uniforms_upload_stmts = if !direct_uniform_fields.is_empty() {
+        // --- direct uniform struct ---
+        let direct_uniforms = match fields {
             Fields::Named(named) => {
-                let fields_2 = primary_uniform_fields.iter().map(|f| &f.field);
+                let fields_2 = direct_uniform_fields.iter().map(|f| &f.field);
+                let field_idents = direct_uniform_fields.iter().map(|f| f.field.ident.as_ref().unwrap());
+                let field_idents_2 = direct_uniform_fields.iter().map(|f| f.field.ident.as_ref().unwrap());
                 quote! {
                     #[derive(Copy,Clone)]
                     #[repr(C)]
-                    struct PrimaryUniforms < #(#primary_uniform_type_params,)* > {
-                        #(#fields_2)*
+                    struct DirectUniforms < #(#direct_uniform_type_params,)* > {
+                        #(#fields_2,)*
                     }
+                    let data = DirectUniforms {
+                        #(#field_idents : self.#field_idents_2,)*
+                    };
                 }
             }
             Fields::Unnamed(unnamed) => {
-                let fields_2 = primary_uniform_fields.iter().map(|f| &f.field.ty);
+                let fields_2 = direct_uniform_fields.iter().map(|f| &f.field.ty);
+                let field_init = direct_uniform_fields.iter().map(|f| syn::Index::from(f.field_index));
                 quote! {
                     #[derive(Copy,Clone)]
                     #[repr(C)]
-                    struct PrimaryUniforms < #(#primary_uniform_type_params,)* >(#(#fields_2)*)
+                    struct DirectUniforms < #(#direct_uniform_type_params,)* >(#(#fields_2)*)
+                    let data = DirectUniforms(#(self.#field_init,)*);
                 }
             }
             Fields::Unit => {
@@ -415,35 +403,26 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
             }
         };
 
-        let primary_uniforms_field_init: Vec<_> = primary_uniform_fields
-            .iter()
-            .enumerate()
-            .map(|(i, f)| {
-                if let Some(ref ident) = f.field.ident {
-                    quote! { #ident : self.#ident }
-                } else {
-                    let i = syn::Index::from(i);
-                    let field_index = syn::Index::from(f.field_index);
-                    quote! { #i: self.#field_index }
-                }
-            })
-            .collect();
-
         quote! {
-            // upload inline uniforms
-            #primary_uniforms_struct
-            // TODO we could allocate the struct directly in the upload buffer and fill it there
-            let primary_uniforms = PrimaryUniforms { #(#primary_uniforms_field_init,)* };
-            let (buffer, offset) = ctx.upload_slice(::std::slice::from_ref(&primary_uniforms), #CRATE::vk::BufferUsageFlags::UNIFORM_BUFFER);
+            #direct_uniforms
+            let (buffer, offset) = ctx.upload_slice(::std::slice::from_ref(&data), #CRATE::vk::BufferUsageFlags::UNIFORM_BUFFER);
+            descriptor_set_builder.write_buffer_descriptor(
+                0,
+                0,
+                1,
+                #CRATE::vk::DescriptorType::UNIFORM_BUFFER,
+                #CRATE::vk::DescriptorBufferInfo {
+                    buffer: buffer.handle(),
+                    offset: offset,
+                    range: ::std::mem::size_of::<DirectUniforms>() as u32,
+                },
+            );
         }
     } else {
         quote! {}
     };
 
-    let struct_name = &derive_input.ident;
-    let (impl_generics, ty_generics, where_clause) = s.generics.split_for_impl();
-    let unique_type_name =
-        syn::Ident::new(&format!("__{}_UniqueType", struct_name), Span::call_site());
+    let unique_type_name = syn::Ident::new(&format!("__{}_UniqueType", struct_name), Span::call_site());
 
     // --- generics without lifetimes, to get a unique typeid (because of https://github.com/rust-lang/rust/issues/41875) ---
     // TODO recursively replace inner lifetimes with 'static => PITA
@@ -451,22 +430,36 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
     let type_generics_without_lifetimes = TypeGenericsWithoutLifetimes(&s.generics);
     let type_params: Vec<_> = s.generics.type_params().map(|tp| &tp.ident).collect();
 
-    quote! {
-        // potential compile_errors
-        #repr_c_check
-        #(#attrib_errors)*
+    // --- impl ResourceAccess ---
+    let impl_resource_access = {
+        let descriptor_register_stmts: Vec<_> = bindings
+            .iter()
+            .map(|b| {
+                if let Some(ref ident) = b.field.ident {
+                    quote! { #CRATE::arguments::ResourceAccess::register(&self.#ident, pass); }
+                } else {
+                    let index = syn::Index::from(b.field_index);
+                    quote! { #CRATE::arguments::ResourceAccess::register(&self.#index, pass); }
+                }
+            })
+            .collect();
 
-        // private type for getting a unique typeid.
-        // we don't need the bounds?
-        struct #unique_type_name  #impl_generics_without_lifetimes (::std::marker::PhantomData<(#(#type_params,)*)>);
-
-        impl #impl_generics #CRATE::ResourceHolder for #struct_name #ty_generics #where_clause {
-            fn walk_resources(&self, visitor: &mut dyn #CRATE::ResourceVisitor) {
-                #(#descriptor_visit_stmts)*
+        quote! {
+            impl #impl_generics #CRATE::arguments::ResourceAccess for #struct_name #ty_generics #where_clause {
+                fn register(&self, pass: &mut #CRATE::graal::PassBuilder<()>) {
+                    #(#descriptor_register_stmts)*
+                }
             }
         }
+    };
 
-        impl #impl_generics #CRATE::Arguments for #struct_name #ty_generics #where_clause {
+    quote! {
+        // private type for getting a unique typeid.
+        struct #unique_type_name  #impl_generics_without_lifetimes (::std::marker::PhantomData<(#(#type_params,)*)>);
+
+        #impl_resource_access
+
+        impl #impl_generics #CRATE::arguments::Arguments for #struct_name #ty_generics #where_clause {
 
             fn unique_type_id(&self) -> Option<::std::any::TypeId> {
                 Some( ::std::any::TypeId::of::<#unique_type_name #type_generics_without_lifetimes>())
@@ -474,29 +467,25 @@ pub fn derive(input: proc_macro::TokenStream) -> TokenStream {
 
             fn get_descriptor_set_layout_bindings(&self) -> &[#CRATE::vk::DescriptorSetLayoutBinding]
             {
-                &[#primary_ubo #(#descriptor_set_layout_bindings,)*]
+                &[#direct_ubo #(#descriptor_set_layout_bindings,)*]
             }
 
             fn get_descriptor_set_update_template_entries(
                 &self,
             ) -> Option<&[#CRATE::vk::DescriptorUpdateTemplateEntry]>
             {
-                Some(&[#(#descriptor_update_template_entries,)*])
+                None
+                //Some(&[#(#descriptor_update_template_entries,)*])
             }
 
             unsafe fn update_descriptor_set(
                 &mut self,
-                ctx: &mut #CRATE::ContextResources,
-                set: #CRATE::vk::DescriptorSet,
+                device: &#CRATE::graal::Device,
+                descriptor_set_builder: &mut #CRATE::arguments::DescriptorSetBuilder,
                 update_template: Option<#CRATE::vk::DescriptorUpdateTemplate>)
             {
-                #(#descriptor_prepare_update_statements)*
-                let device = ctx.vulkan_device();
-                // update with template
-                if let Some(update_template) = update_template {
-                    device.update_descriptor_set_with_template(set, update_template, self as *const _ as *const ::std::ffi::c_void);
-                }
-                #primary_uniform_upload_stmts
+                #direct_uniforms_upload_stmts
+                #(#descriptor_write_statements)*
             }
         }
     }

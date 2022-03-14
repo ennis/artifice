@@ -1,20 +1,13 @@
 //! Shader
-use crate::{
-    buffer::BufferAny,
-    context::Context,
-    image::ImageAny,
-    //sampler::Sampler,
-};
+use crate::{buffer::BufferAny, image::ImageAny};
 use graal::{
-    BufferId,
-    ImageId,
-    ResourceGroupId, ResourceId, vk, vk::{AccessFlags, ImageLayout, PipelineStageFlags},
+    vk,
+    vk::{AccessFlags, ImageLayout, PipelineStageFlags},
+    BufferId, ImageId, ResourceGroupId, ResourceId,
 };
 use graal_spirv::typedesc;
 use std::sync::Arc;
 use thiserror::Error;
-use graal::descriptor::DescriptorSetLayoutId;
-
 
 #[derive(Debug, Error)]
 pub enum CreateShaderError {
@@ -42,8 +35,8 @@ impl ShaderModule {
     }
 
     /// Creates a new shader immediately.
-    pub fn from_spirv(context: &Context, spirv: &[u32]) -> Result<ShaderModule, CreateShaderError> {
-        let device = context.device().clone();
+    pub fn from_spirv(device: &Arc<graal::Device>, spirv: &[u32]) -> Result<ShaderModule, CreateShaderError> {
+        let device = device.clone();
         let vk_device = &device.device;
 
         let shader_module = unsafe {
@@ -63,6 +56,11 @@ impl ShaderModule {
             device: Some(device),
             shader_module,
         })
+    }
+
+    pub fn get_or_create_shader_module(&self, device: &Arc<graal::Device>) -> vk::ShaderModule {
+        // TODO
+        self.shader_module
     }
 }
 

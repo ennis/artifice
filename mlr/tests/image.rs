@@ -10,15 +10,13 @@ use mlr::{
     shader::{ArgumentBlock, ShaderModule},
     SampledImage2D,
 };
+use mlr::pipeline::PipelineConfig;
 
 lazy_static! {
-    static ref BACKGROUND_VERTEX_SHADER_MODULE: Shader = Shader::from_spirv_static(include_spirv!(
-        "../graal-bench/shaders/background.vert",
-        vert
-    ));
-    static ref BACKGROUND_FRAGMENT_SHADER_MODULE: Shader = Shader::from_spirv_static(
-        include_spirv!("../graal-bench/shaders/background.frag", frag)
-    );
+    static ref BACKGROUND_VERTEX_SHADER_MODULE: Shader =
+        Shader::from_spirv_static(include_spirv!("../graal-bench/shaders/background.vert", vert));
+    static ref BACKGROUND_FRAGMENT_SHADER_MODULE: Shader =
+        Shader::from_spirv_static(include_spirv!("../graal-bench/shaders/background.frag", frag));
 }
 
 #[test]
@@ -60,15 +58,95 @@ fn test_image() {
     frame.finish();
 }
 
-/*/// Problem: I'd like to directly pass arguments there, but I wouldn't be able outside of a recording callback.
-/// Which means that I need to manually do the same setup/record for simple passes.
-fn draw_screen_quad(pipeline: &mlr::GraphicsPipeline, args: ?) {
+// The function is the pipeline.
+// -> the pipeline is "polymorphic", holds a cache of concrete pipelines that match
+//    the parameters
+#[mlr::pipeline_interface]
+fn draw_item<T>(
+    frame: &mlr::Frame,
+    pipeline: &mlr::Pipeline,
+    #[viewport] viewport: Viewport,
+    #[attachment] color: ColorAttachment,
+    #[attachment] normal: ColorAttachment,
+    #[attachment] tangent: ColorAttachment,
+    #[attachment] depth: DepthAttachment,
+    #[argument(set = 0)] scene_args: &SceneArguments,
+    #[argument(set = 1)] material_args: &MaterialArguments,
+    #[vertex(binding = 0, location = 0, per_vertex)] vertices: VertexBufferView<Vertex>,
+    #[vertex(binding = 2, location = 3, per_vertex)] previous_vertices: VertexBufferView<Vertex>,
+) {
+    // auto-generated
+    pipeline_impl!(frame, pipeline
+        COLOR_ATTACHMENT color, normal, tangent
 
-}*/
+        ARGUMENTS 0, SceneArguments, scene_args, 1, MaterialArguments, material_args
+        VERTEX 0, 0, PER_VERTEX, Vertex, vertices, 2, 3, PER_VERTEX, Vertex, previous_vertices
+    )
+
+    // get matching pipeline from collection, given:
+    // * static argument interfaces:
+    //      - SceneArguments
+    //      - MaterialArguments
+    // * color attachment formats:
+    //      - color, normal, tangent, depth
+    // * vertex input formats:
+    //      - vertices, previous_vertices
+
+    //pipeline_collection
+
+    device.create_pipeline::<mlr::ShaderInterface![draw_item]>(vertex, fragment, )
+
+    mlr::create_pipeline!(vertex, fragment, draw_item<>)
+}
+
+#[mlr::pipeline_interface]
+pub trait DrawItem {
+
+    fn draw(frame: &mut mlr::Frame,
+            #[viewport] viewport: Viewport,
+            #[attachment] color: ColorAttachment,
+            #[attachment] normal: ColorAttachment,
+            #[attachment] tangent: ColorAttachment,
+            #[attachment] depth: DepthAttachment,
+            #[argument(set = 0)] scene_args: &SceneArguments,
+            #[argument(set = 1)] material_args: &MaterialArguments,
+            #[vertex(binding = 0, location = 0, per_vertex)] vertices: VertexBufferView<Vertex>,
+            #[vertex(binding = 2, location = 3, per_vertex)] previous_vertices: VertexBufferView<Vertex>,)
+}
+
+#[mlr::pipeline]
+#[pipeline(interface=DrawItem)]
+#[pipeline(vertex_source_file="../")]
+pub struct StaticDrawItem;
+
+pub struct Dynamic_DrawItem {
+    pipeline: mlr::Pipeline,
+}
+
+impl dyn DrawItem {
+    pub fn new() -> Arc<dyn DrawItem> {
+        // does stuff, verifies the interface
+
+
+
+    }
+}
+
+// If the source is known statically, then resolves to a type that impls DrawItem
+// Otherwise, returns a dyn DrawItem
 
 #[test]
 fn test_scene() {
-    #[derive(mlr::ShaderArguments)]
+
+    Blur.draw(...);
+
+    let pipeline = DrawItem::new(
+        PipelineConfig {
+            vertex_shader:
+        }
+    );
+
+    #[derive(mlr::Arguments)]
     #[repr(C)]
     struct SceneArguments {
         // uniform variables will be put in a single uniform buffer, at location 0
@@ -78,42 +156,22 @@ fn test_scene() {
         u_inverse_proj_matrix: Mat4,
     }
 
-    #[derive(mlr::ShaderArguments)]
+    #[derive(mlr::Arguments)]
     #[repr(C)]
-    struct MaterialArguments {
+    struct MaterialArguments<'a> {
         u_color: Vec4,
         #[argument(binding = 1)]
-        t_color: SampledImage,
+        t_color: SampledImage<'a>,
         #[argument(binding = 2)]
-        t_specular: SampledImage,
+        t_specular: SampledImage<'a>,
     }
 
-    ctx.submit_pass(|pass| {
-        // this is annoying, because we have to duplicate every access
-        let target = ColorAttachment::new(pass, &background_image);
+    let scene_args = SceneArguments {
+        u_view_matrix: (),
+        u_proj_matrix: (),
+        u_view_proj_matrix: (),
+        u_inverse_proj_matrix: (),
+    };
 
-        move |ctx| {
-            let scene_args = ArgumentBlock::new(SceneArguments {
-                u_view_matrix: (),
-                u_proj_matrix: (),
-                u_view_proj_matrix: (),
-                u_inverse_proj_matrix: (),
-            });
-
-            for batch in material_batches.iter() {
-                let material_args = ArgumentBlock::new(
-                    ctx,
-                    MaterialArguments {
-                        u_color: (),
-                        t_color: TextureDescriptor::new(&batch.texture, Sampler::linear()),
-                    },
-                );
-
-                for mesh in batch.objects.iter() {
-                    // issue: validation that batch.texture is in the correct state here.
-                    ctx.draw(&[&scene_args, &material_args])
-                }
-            }
-        }
-    });
+    draw_item(frame, pipeline, &scene_args, &material_args, vertices);
 }

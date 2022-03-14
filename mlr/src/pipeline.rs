@@ -1,9 +1,7 @@
-use crate::{shader::ShaderModule, vk::GraphicsPipelineCreateInfo};
+use crate::{shader::ShaderModule, vk::GraphicsPipelineCreateInfo, Arguments};
 use bitflags::bitflags;
 use graal::vk;
-use mlr::{Arguments, Device};
 use std::{mem, os::raw::c_char, ptr, sync::Arc};
-use crate::device::Device;
 
 #[repr(transparent)]
 pub struct ArgumentLayout {
@@ -22,21 +20,7 @@ pub struct PipelineLayout {
 
 impl PipelineLayout {
     pub fn new(device: &graal::Device, descriptor: &PipelineLayoutDescriptor) -> PipelineLayout {
-        unsafe {
-            let create_info = vk::PipelineLayoutCreateInfo {
-                flags: vk::PipelineLayoutCreateFlags::empty(),
-                set_layout_count: descriptor.layouts.len() as u32,
-                p_set_layouts: descriptor.layouts.as_ptr() as *const vk::DescriptorSetLayout,
-                push_constant_range_count: 0,
-                p_push_constant_ranges: ptr::null(),
-                ..Default::default()
-            };
-            let layout = device
-                .device
-                .create_pipeline_layout(&create_info, None)
-                .expect("failed to create pipeline layout");
-            PipelineLayout { layout }
-        }
+        unsafe {}
     }
 }
 
@@ -50,10 +34,7 @@ pub struct GraphicsShaderStages {
 }
 
 impl GraphicsShaderStages {
-    pub fn new_vertex_fragment(
-        vertex: ShaderModule,
-        fragment: ShaderModule,
-    ) -> GraphicsShaderStages {
+    pub fn new_vertex_fragment(vertex: ShaderModule, fragment: ShaderModule) -> GraphicsShaderStages {
         GraphicsShaderStages {
             vertex,
             fragment: Some(fragment),
@@ -65,10 +46,7 @@ impl GraphicsShaderStages {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct VertexInputState<'a> {
-    bindings: &'a [vk::VertexInputBindingDescription],
-    attributes: &'a [vk::VertexInputAttributeDescription],
-}
+pub struct VertexInputState<'a> {}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum CompareFunction {
@@ -163,7 +141,6 @@ impl StencilState {
 
 #[derive(Copy, Clone, Debug)]
 pub struct DepthStencilState {
-    pub format: vk::Format,
     pub depth_write_enabled: bool,
     pub depth_compare: vk::CompareOp,
     pub stencil: StencilState,
@@ -211,7 +188,6 @@ bitflags::bitflags! {
 
 #[derive(Copy, Clone, Debug)]
 pub struct ColorTargetState {
-    pub format: vk::Format,
     pub blend: Option<BlendState>,
     pub write_mask: ColorWrites,
 }
@@ -293,7 +269,7 @@ impl PrimitiveTopology {
 #[derive(Copy, Clone, Debug)]
 pub struct PrimitiveState {
     pub topology: PrimitiveTopology,
-    pub strip_index_format: Option<IndexFormat>,
+    //pub strip_index_format: Option<IndexFormat>,
     pub front_face: FrontFace,
     pub cull_mode: Option<Face>,
     pub clamp_depth: bool,
@@ -308,14 +284,24 @@ pub struct MultisampleState {
     pub alpha_to_coverage_enabled: bool,
 }
 
-pub struct GraphicsPipelineDescriptor<'a> {
-    vertex_input: VertexInputState<'a>,
+// used internally by the pipeline macros
+pub struct PipelineConfig<'a> {
     vertex_shader: &'a ShaderModule,
     fragment_shader: &'a ShaderModule,
+
     primitive_state: PrimitiveState,
     multisample_state: MultisampleState,
     depth_stencil_state: Option<DepthStencilState>,
     color_attachments: &'a [ColorTargetState],
+}
+
+pub struct PipelineInterfaceDesc<'a> {
+    vertex_bindings: &'a [vk::VertexInputBindingDescription],
+    vertex_attributes: &'a [vk::VertexInputAttributeDescription],
+    descriptor_set_layouts: &'a [vk::DescriptorSetLayout],
+    color_attachment_formats: &'a [vk::Format],
+    depth_attachment_format: Option<vk::Format>,
+    stencil_attachment_format: Option<vk::Format>,
 }
 
 pub struct GraphicsPipeline {
@@ -323,16 +309,17 @@ pub struct GraphicsPipeline {
     pipeline: vk::Pipeline,
 }
 
-impl Device {
-    pub fn create_graphics_pipeline(
-        &mut self,
-        desc: &GraphicsPipelineDescriptor,
+impl GraphicsPipeline {
+    pub unsafe fn new(
+        device: &Arc<graal::Device>,
+        config: &PipelineConfig,
+        interface: &PipelineInterfaceDesc,
     ) -> GraphicsPipeline {
         let mut pipeline_shader_stages = Vec::new();
         pipeline_shader_stages.push(vk::PipelineShaderStageCreateInfo {
             flags: vk::PipelineShaderStageCreateFlags::empty(),
             stage: vk::ShaderStageFlags::VERTEX,
-            module: desc.vertex_shader.shader_module,
+            module: config.vertex_shader.get_or_create_shader_module(device),
             p_name: b"main\0".as_ptr() as *const c_char,
             p_specialization_info: ::std::ptr::null(),
             ..Default::default()
@@ -340,7 +327,7 @@ impl Device {
         pipeline_shader_stages.push(vk::PipelineShaderStageCreateInfo {
             flags: vk::PipelineShaderStageCreateFlags::empty(),
             stage: vk::ShaderStageFlags::FRAGMENT,
-            module: desc.fragment_shader.shader_module,
+            module: config.fragment_shader.get_or_create_shader_module(device),
             p_name: b"main\0".as_ptr() as *const c_char,
             p_specialization_info: ::std::ptr::null(),
             ..Default::default()
@@ -348,16 +335,16 @@ impl Device {
 
         let vertex_input_state = vk::PipelineVertexInputStateCreateInfo {
             flags: vk::PipelineVertexInputStateCreateFlags::empty(),
-            vertex_binding_description_count: desc.vertex_input.bindings.len() as u32,
-            p_vertex_binding_descriptions: desc.vertex_input.bindings.as_ptr(),
-            vertex_attribute_description_count: desc.vertex_input.attributes.len() as u32,
-            p_vertex_attribute_descriptions: desc.vertex_input.attributes.as_ptr(),
+            vertex_binding_description_count: interface.vertex_input.bindings.len() as u32,
+            p_vertex_binding_descriptions: interface.vertex_input.bindings.as_ptr(),
+            vertex_attribute_description_count: interface.vertex_input.attributes.len() as u32,
+            p_vertex_attribute_descriptions: interface.vertex_input.attributes.as_ptr(),
             ..Default::default()
         };
 
         let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo {
             flags: vk::PipelineInputAssemblyStateCreateFlags::empty(),
-            topology: desc.primitive_state.topology.to_vk(),
+            topology: config.primitive_state.topology.to_vk(),
             primitive_restart_enable: vk::FALSE,
             ..Default::default()
         };
@@ -377,9 +364,9 @@ impl Device {
             flags: Default::default(),
             depth_clamp_enable: vk::FALSE,
             rasterizer_discard_enable: vk::FALSE,
-            polygon_mode: desc.primitive_state.polygon_mode.to_vk(),
+            polygon_mode: config.primitive_state.polygon_mode.to_vk(),
             cull_mode: vk::CullModeFlags::NONE, // TODO
-            front_face: desc.primitive_state.front_face.to_vk(),
+            front_face: config.primitive_state.front_face.to_vk(),
             depth_bias_enable: vk::FALSE, // TODO
             depth_bias_constant_factor: 0.0,
             depth_bias_clamp: 0.0,
@@ -390,7 +377,7 @@ impl Device {
 
         let multisample_state = vk::PipelineMultisampleStateCreateInfo {
             flags: Default::default(),
-            rasterization_samples: match desc.multisample_state.count {
+            rasterization_samples: match config.multisample_state.count {
                 1 => vk::SampleCountFlags::TYPE_1,
                 2 => vk::SampleCountFlags::TYPE_2,
                 4 => vk::SampleCountFlags::TYPE_4,
@@ -403,7 +390,7 @@ impl Device {
             sample_shading_enable: vk::FALSE,
             min_sample_shading: 0.0,
             p_sample_mask: ptr::null(),
-            alpha_to_coverage_enable: if desc.multisample_state.alpha_to_coverage_enabled {
+            alpha_to_coverage_enable: if config.multisample_state.alpha_to_coverage_enabled {
                 vk::TRUE
             } else {
                 vk::FALSE
@@ -412,15 +399,11 @@ impl Device {
             ..Default::default()
         };
 
-        let depth_stencil_state = if let Some(ref dss) = desc.depth_stencil_state {
+        let depth_stencil_state = if let Some(ref dss) = config.depth_stencil_state {
             vk::PipelineDepthStencilStateCreateInfo {
                 flags: Default::default(),
                 depth_test_enable: vk::TRUE,
-                depth_write_enable: if dss.depth_write_enabled {
-                    vk::TRUE
-                } else {
-                    vk::FALSE
-                },
+                depth_write_enable: if dss.depth_write_enabled { vk::TRUE } else { vk::FALSE },
                 depth_compare_op: dss.depth_compare,
                 depth_bounds_test_enable: 0,
                 stencil_test_enable: vk::FALSE, // TODO
@@ -446,8 +429,8 @@ impl Device {
             }
         };
 
-        let mut color_blend_attachments = Vec::with_capacity(desc.color_attachments.len());
-        for cts in desc.color_attachments {
+        let mut color_blend_attachments = Vec::with_capacity(config.color_attachments.len());
+        for cts in config.color_attachments {
             let color_blend_attachment = if let Some(blend) = cts.blend {
                 vk::PipelineColorBlendAttachmentState {
                     blend_enable: vk::TRUE,
@@ -493,7 +476,34 @@ impl Device {
             ..Default::default()
         };
 
+        // create pipeline layout
+        let pipeline_layout = {
+            let pipeline_layout_create_info = vk::PipelineLayoutCreateInfo {
+                flags: vk::PipelineLayoutCreateFlags::empty(),
+                set_layout_count: interface.descriptor_set_layouts.len() as u32,
+                p_set_layouts: interface.descriptor_set_layouts.as_ptr(),
+                push_constant_range_count: 0,
+                p_push_constant_ranges: ptr::null(),
+                ..Default::default()
+            };
+            device
+                .device
+                .create_pipeline_layout(&pipeline_layout_create_info, None)
+                .expect("failed to create pipeline layout")
+        };
+
+        // VK_KHR_dynamic_rendering
+        let rendering_info = vk::PipelineRenderingCreateInfo {
+            view_mask: 0,
+            color_attachment_count: interface.color_attachment_formats.len() as u32,
+            p_color_attachment_formats: interface.color_attachment_formats.as_ptr(),
+            depth_attachment_format: interface.depth_attachment_format.unwrap_or(vk::Format::UNDEFINED),
+            stencil_attachment_format: interface.stencil_attachment_format.unwrap_or(vk::Format::UNDEFINED),
+            ..Default::default()
+        };
+
         let create_info = vk::GraphicsPipelineCreateInfo {
+            p_next: &rendering_info as *const _,
             flags: vk::PipelineCreateFlags::empty(),
             stage_count: pipeline_shader_stages.len() as u32,
             p_stages: pipeline_shader_stages.as_ptr(),
@@ -506,7 +516,7 @@ impl Device {
             p_depth_stencil_state: &depth_stencil_state,
             p_color_blend_state: &color_blend_state,
             p_dynamic_state: &dynamic_state,
-            layout: Default::default(),
+            layout: pipeline_layout,
             render_pass: Default::default(),
             subpass: 0,
             base_pipeline_handle: Default::default(),
@@ -515,14 +525,55 @@ impl Device {
         };
 
         unsafe {
-            let device = self.vulkan_device();
             let pipelines = device
+                .device
                 .create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
                 .expect("failed to create pipeline");
             GraphicsPipeline {
-                device: self.backend.clone(),
+                device: device.clone(),
                 pipeline: pipelines[0],
             }
         }
     }
+}
+
+macro_rules! create_pipeline {
+    (
+        $device:expr,
+        $config:expr,
+
+        // vertex input interface types (impl VertexInputInterface)
+        VERTEX_INPUT [ $vertex_input:ty ]
+        // shader resource interface (impl Arguments)
+        ARGUMENTS [ $($args:ty),* ]
+        // color attachment formats
+        FRAGMENT_OUTPUT COLOR [ $($color_fmt:ident),* ]
+        // optional depth attachment format
+        DEPTH [ $depth_fmt:expr ]
+        // optional stencil attachment format
+        STENCIL [ $stencil_fmt:expr ]
+    ) => {
+
+        {
+            let descriptor_set_layouts = &[ $($device.get_or_create_descriptor_set_layout_for_type::<$args>()),* ];
+            let interface_desc = PipelineInterfaceDesc {
+                vertex_bindings: <$vertex_input as $crate::VertexInputInterface>::BINDINGS,
+                vertex_attributes: <$vertex_input as $crate::VertexInputInterface>::ATTRIBUTES,
+                descriptor_set_layouts,
+                color_attachment_formats: &[$($color_fmt),*],
+                depth_attachment_format: $depth_fmt,
+                stencil_attachment_format: $stencil_fmt,
+            };
+            GraphicsPipeline::new(device, config, interface_desc)
+        }
+
+    };
+}
+
+fn test() {
+    create_pipeline!(device, config,
+        VERTEX_INPUT [ VertexBufferView<MyVertex> ]
+        ARGUMENTS    [ SceneArguments, MaterialArguments ]
+        FRAGMENT_OUTPUT COLOR [ R16G16B16A16_SFLOAT ] DEPTH [ None ] STENCIL [ None ]
+    )
 }

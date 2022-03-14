@@ -1,9 +1,5 @@
 //! Sampler objects
-use crate::{
-    device::{Device, SamplerId},
-    vk::SamplerCreateInfo,
-    Device,
-};
+use crate::vk::SamplerCreateInfo;
 use graal::{vk, SamplerId};
 use std::{
     any::{Any, TypeId},
@@ -66,7 +62,7 @@ pub(crate) struct SamplerInner {
 
 impl Drop for SamplerInner {
     fn drop(&mut self) {
-        self.device.destroy_sampler(self.id)
+        self.device.destroy_sampler(self.sampler)
     }
 }
 

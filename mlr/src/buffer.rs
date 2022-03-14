@@ -1,4 +1,3 @@
-use crate::context::Context;
 use std::sync::Arc;
 
 /// Marker trait for data that can be uploaded to a GPU buffer
@@ -41,9 +40,7 @@ impl BufferAny {
     }
 
     pub fn group_id(&self) -> Option<graal::ResourceGroupId> {
-        self.device
-            .get_buffer_state(self.buffer.id)
-            .map(|s| s.group_id)
+        self.device.get_buffer_state(self.buffer.id).map(|s| s.group_id)
     }
 
     /// Returns the vulkan handle (`VkBuffer`) of this buffer.
@@ -55,7 +52,6 @@ impl BufferAny {
     pub fn id(&self) -> graal::BufferId {
         self.buffer.id
     }
-
 }
 
 impl Drop for BufferAny {
@@ -63,5 +59,3 @@ impl Drop for BufferAny {
         self.device.destroy_buffer(self.buffer.id)
     }
 }
-
-pub struct BufferView {}

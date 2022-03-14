@@ -1,32 +1,30 @@
-use crate::{Context, vk};
+use crate::{
+    sampler::{Sampler, SamplerInner, SamplerType},
+    vk, Arguments,
+};
+use mlr::arguments::StaticArguments;
 use slotmap::{SecondaryMap, SlotMap};
 use std::{
     any::TypeId,
     borrow::BorrowMut,
     cell::Cell,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
 };
-use std::collections::VecDeque;
-use graal::descriptor::DescriptorSetAllocator;
-use mlr::sampler::SamplerInner;
-use crate::sampler::{Sampler, SamplerType};
 
 pub(crate) struct DeviceInner {
     current_frame: graal::FrameNumber,
-    descriptor_set_layout_by_typeid: HashMap<TypeId, graal::DescriptorSetLayoutId>,
-    sampler_by_typeid: HashMap<TypeId, graal::SamplerId>,
+    descriptor_set_layout_by_typeid: HashMap<TypeId, vk::DescriptorSetLayout>,
+    sampler_by_typeid: HashMap<TypeId, vk::Sampler>,
 }
 
 #[derive(Clone)]
 pub struct Device {
-    backend: Arc<graal::Device>,
-    inner: Arc<Mutex<DeviceInner>>,
+    pub(crate) backend: Arc<graal::Device>,
+    pub(crate) inner: Arc<Mutex<DeviceInner>>,
 }
 
 impl Device {
-
-
     /// Returns the underlying `graal::Device`.
     pub fn backend(&self) -> &Arc<graal::Device> {
         &self.backend
@@ -37,7 +35,52 @@ impl Device {
         &self.backend.device
     }
 
-    /// Creates a sampler object from a type implementing `ToSampler`.
+    /// Creates a descriptor set layout.
+    pub(crate) unsafe fn get_or_create_descriptor_set_layout(
+        &self,
+        type_id: Option<TypeId>,
+        bindings: &[vk::DescriptorSetLayoutBinding],
+    ) -> vk::DescriptorSetLayout {
+        let device = &self.backend.device;
+        let mut inner = self.inner.lock().unwrap();
+
+        if let Some(type_id) = type_id {
+            // look in the map to see if we have already created the layout for the given type.
+            *inner
+                .descriptor_set_layout_by_typeid
+                .entry(type_id)
+                .or_insert_with(|| unsafe {
+                    // not in the map, create layout and insert it into the map
+                    let descriptor_set_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
+                        binding_count: bindings.len() as u32,
+                        p_bindings: bindings.as_ptr(),
+                        ..Default::default()
+                    };
+                    device
+                        .create_descriptor_set_layout(&descriptor_set_layout_create_info, None)
+                        .expect("failed to create descriptor set layout")
+                })
+        } else {
+            // no associated typeid, create an "anonymous" descriptor set layout
+            let descriptor_set_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
+                binding_count: bindings.len() as u32,
+                p_bindings: bindings.as_ptr(),
+                ..Default::default()
+            };
+            device
+                .create_descriptor_set_layout(&descriptor_set_layout_create_info, None)
+                .expect("failed to create descriptor set layout")
+        }
+    }
+
+    /// Creates a descriptor set layout for the given type.
+    pub(crate) unsafe fn get_or_create_descriptor_set_layout_for_type<T: StaticArguments>(
+        &self,
+    ) -> vk::DescriptorSetLayout {
+        self.get_or_create_descriptor_set_layout(Some(T::TYPE_ID), T::LAYOUT)
+    }
+
+    /*/// Creates a sampler object from a type implementing `ToSampler`.
     ///
     /// The returned object lives as long as the context is alive.
     pub fn get_or_create_sampler(
@@ -58,78 +101,19 @@ impl Device {
                         device: self.clone(),
                         id,
                         sampler: Default::default()
-                    })
+                    }))
                 })
         } else {
             todo!()
         }
-    }
+    }*/
 
-    pub(crate) fn destroy_sampler(&self, id: SamplerId) {
+    /*pub(crate) fn destroy_sampler(&self, id: SamplerId) {
         let mut inner = self.inner.lock().unwrap();
         inner.samplers.destroy_on_frame_completed(inner.current_frame, );
     }
 
-    /// Creates a descriptor set layout.
-    pub(crate) fn get_or_create_descriptor_set_layout(
-        &mut self,
-        type_id: Option<TypeId>,
-        bindings: &[vk::DescriptorSetLayoutBinding],
-        update_template_entries: Option<&[vk::DescriptorUpdateTemplateEntry]>,
-    ) -> (vk::DescriptorSetLayout, DescriptorSetLayoutId) {
-        let device = &self.backend.device;
-        let layouts = &mut self.descriptor_set_layouts;
-        let update_templates = &mut self.descriptor_update_templates;
-        let id = if let Some(type_id) = type_id {
-            *self
-                .descriptor_set_layout_by_typeid
-                .entry(type_id)
-                .or_insert_with(|| unsafe {
-                    // --- create layout ---
-                    let descriptor_set_layout_create_info = vk::DescriptorSetLayoutCreateInfo {
-                        binding_count: bindings.len() as u32,
-                        p_bindings: bindings.as_ptr(),
-                        ..Default::default()
-                    };
-                    let layout = device
-                        .create_descriptor_set_layout(&descriptor_set_layout_create_info, None)
-                        .expect("failed to create descriptor set layout");
 
-                    let layout_id = layouts.insert(layout);
-
-                    // --- create update template ---
-                    if let Some(update_template_entries) = update_template_entries {
-                        unsafe {
-                            let descriptor_update_template_create_info =
-                                vk::DescriptorUpdateTemplateCreateInfo {
-                                    flags: vk::DescriptorUpdateTemplateCreateFlags::empty(),
-                                    descriptor_update_entry_count: update_template_entries.len()
-                                        as u32,
-                                    p_descriptor_update_entries: update_template_entries.as_ptr(),
-                                    template_type: vk::DescriptorUpdateTemplateType::DESCRIPTOR_SET,
-                                    descriptor_set_layout: Default::default(),
-                                    pipeline_bind_point: Default::default(),
-                                    pipeline_layout: Default::default(),
-                                    set: 0,
-                                    ..Default::default()
-                                };
-                            let update_template = device
-                                .create_descriptor_update_template(
-                                    &descriptor_update_template_create_info,
-                                    None,
-                                )
-                                .expect("failed to create descriptor update template");
-                            update_templates.insert(layout_id, update_template);
-                        }
-                    }
-                    layout_id
-                })
-        } else {
-            todo!()
-        };
-
-        (*self.descriptor_set_layouts.get(id).unwrap(), id)
-    }
 
     /// Creates an argument block
     pub fn create_argument_block<T: Arguments>(&mut self, mut args: T) -> ArgumentBlock<T> {
@@ -172,9 +156,10 @@ impl Device {
             T::UPDATE_TEMPLATE_ENTRIES,
         )
         .0
-    }
+    }*/
 }
 
+/*
 pub unsafe fn create_device_and_context(
     present_surface: Option<vk::SurfaceKHR>,
 ) -> (Device, Context) {
@@ -200,4 +185,4 @@ pub unsafe fn create_device_and_context(
             in_flight: VecDeque::new(),
         },
     )
-}
+}*/

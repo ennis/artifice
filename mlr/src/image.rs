@@ -1,21 +1,18 @@
-use crate::{arguments::SampledImage2D, context::Context, sampler::SamplerType, vk};
-use mlr::{arguments::CombinedImageSampler2D, Device};
+use crate::{arguments::SampledImage2D, sampler::SamplerType, vk};
+use mlr::arguments::CombinedImageSampler2D;
 use std::sync::Arc;
-use crate::device::Device;
 
 #[derive(Debug)]
 pub struct ImageAny {
-    device: Arc<graal::Device>,
-    image: graal::ImageInfo,
-    format: graal::vk::Format,
+    pub(crate) device: Arc<graal::Device>,
+    pub(crate) image: graal::ImageInfo,
+    pub(crate) format: graal::vk::Format,
 }
 
 impl ImageAny {
     /// Returns the ID of the resource group that this image belongs to.
     pub fn group_id(&self) -> Option<graal::ResourceGroupId> {
-        self.device
-            .get_image_state(self.image.id)
-            .map(|s| s.group_id)
+        self.device.get_image_state(self.image.id).map(|s| s.group_id)
     }
 
     /// Returns the backend ID of this image.
@@ -40,34 +37,15 @@ impl ImageAny {
 
     ///
     pub fn to_sampled_image_2d(&self) -> SampledImage2D {
-        SampledImage2D {
-            image: self,
-            // leave uninitialized
-            descriptor: vk::DescriptorImageInfo {
-                sampler: Default::default(),
-                image_view: Default::default(),
-                image_layout: Default::default(),
-            },
-        }
+        SampledImage2D { image: self }
     }
 
-    pub fn to_combined_image_sampler_2d<S: SamplerType>(
-        &self,
-        sampler: S,
-    ) -> CombinedImageSampler2D<S> {
-        CombinedImageSampler2D {
-            image: self,
-            sampler,
-            // leave uninitialized
-            descriptor: vk::DescriptorImageInfo {
-                sampler: Default::default(),
-                image_view: Default::default(),
-                image_layout: Default::default(),
-            },
-        }
+    pub fn to_combined_image_sampler_2d<S: SamplerType>(&self, sampler: S) -> CombinedImageSampler2D<S> {
+        CombinedImageSampler2D { image: self, sampler }
     }
 }
 
+/*
 impl Device {
     /// Creates a new, uninitialized image.
     pub fn create_image(
@@ -82,7 +60,7 @@ impl Device {
             format: create_info.format,
         }
     }
-}
+}*/
 
 impl Drop for ImageAny {
     fn drop(&mut self) {
