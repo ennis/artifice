@@ -1,9 +1,12 @@
 //! Vertex-related types
 
+use crate::{
+    buffer::BufferData,
+    vk::{VertexInputAttributeDescription, VertexInputBindingDescription},
+};
 use graal::vk;
 use graal_spirv::typedesc::TypeDesc;
 use std::{marker::PhantomData, mem};
-use crate::buffer::BufferData;
 
 /// Describes the type of indices contained in an index buffer.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -83,9 +86,7 @@ macro_rules! impl_attrib_prim_type {
     ($t:ty, $prim:ident, $fmt:ident) => {
         unsafe impl VertexAttributeType for $t {
             const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> =
-                graal_spirv::typedesc::TypeDesc::Primitive(
-                    graal_spirv::typedesc::PrimitiveType::$prim,
-                );
+                graal_spirv::typedesc::TypeDesc::Primitive(graal_spirv::typedesc::PrimitiveType::$prim);
             const FORMAT: vk::Format = vk::Format::$fmt;
         }
     };
@@ -94,11 +95,10 @@ macro_rules! impl_attrib_prim_type {
 macro_rules! impl_attrib_vector_type {
     ([$t:ty; $len:expr], $prim:ident, $fmt:ident) => {
         unsafe impl VertexAttributeType for [$t; $len] {
-            const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> =
-                graal_spirv::typedesc::TypeDesc::Vector {
-                    elem_ty: graal_spirv::typedesc::PrimitiveType::$prim,
-                    len: $len,
-                };
+            const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> = graal_spirv::typedesc::TypeDesc::Vector {
+                elem_ty: graal_spirv::typedesc::PrimitiveType::$prim,
+                len: $len,
+            };
             const FORMAT: vk::Format = vk::Format::$fmt;
         }
     };
@@ -205,87 +205,3 @@ impl_index_data!(u16, U16);
 impl_index_data!(u32, U32);
 
 // --------------------------------------------------------------------------------
-
-#[derive(Copy, Clone, Debug)]
-pub struct VertexBufferView<T: VertexData> {
-    pub buffer: vk::Buffer,
-    pub offset: vk::DeviceSize,
-    pub _phantom: PhantomData<*const T>,
-}
-
-pub trait VertexBindingInterface {
-    const ATTRIBUTES: &'static [VertexAttribute];
-    const STRIDE: usize;
-}
-
-impl<T: VertexData> VertexBindingInterface for VertexBufferView<T> {
-    const ATTRIBUTES: &'static [VertexAttribute] = T::ATTRIBUTES;
-    const STRIDE: usize = mem::size_of::<T>();
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct VertexInputBindingAttributes<'a> {
-    pub base_location: u32,
-    pub attributes: &'a [VertexAttribute],
-}
-
-pub trait VertexInputInterface {
-    const BINDINGS: &'static [vk::VertexInputBindingDescription];
-    const ATTRIBUTES: &'static [vk::VertexInputAttributeDescription];
-}
-
-/// Extension trait for VertexInputInterface
-pub trait VertexInputInterfaceExt: VertexInputInterface {
-    /// Helper function to get a `vk::PipelineVertexInputStateCreateInfo` from this vertex input struct.
-    fn get_pipeline_vertex_input_state_create_info() -> vk::PipelineVertexInputStateCreateInfo;
-}
-
-impl<T: VertexInputInterface> VertexInputInterfaceExt for T {
-    fn get_pipeline_vertex_input_state_create_info() -> vk::PipelineVertexInputStateCreateInfo {
-        vk::PipelineVertexInputStateCreateInfo {
-            vertex_binding_description_count: Self::BINDINGS.len() as u32,
-            p_vertex_binding_descriptions: Self::BINDINGS.as_ptr(),
-            vertex_attribute_description_count: Self::ATTRIBUTES.len() as u32,
-            p_vertex_attribute_descriptions: Self::ATTRIBUTES.as_ptr(),
-            ..Default::default()
-        }
-    }
-}
-
-pub mod vertex_macro_helpers {
-    use graal::vk;
-    use mlr::vertex::VertexAttribute;
-
-    pub const fn append_attributes<const N: usize>(
-        head: &'static [vk::VertexInputAttributeDescription],
-        binding: u32,
-        base_location: u32,
-        tail: &'static [VertexAttribute],
-    ) -> [vk::VertexInputAttributeDescription; N] {
-        const NULL_ATTR: vk::VertexInputAttributeDescription =
-            vk::VertexInputAttributeDescription {
-                location: 0,
-                binding: 0,
-                format: vk::Format::UNDEFINED,
-                offset: 0,
-            };
-        let mut result = [NULL_ATTR; N];
-        let mut i = 0;
-        while i < head.len() {
-            result[i] = head[i];
-            i += 1;
-        }
-        while i < N {
-            let j = i - head.len();
-            result[i] = vk::VertexInputAttributeDescription {
-                location: base_location + j as u32,
-                binding,
-                format: tail[j].format,
-                offset: tail[j].offset,
-            };
-            i += 1;
-        }
-
-        result
-    }
-}

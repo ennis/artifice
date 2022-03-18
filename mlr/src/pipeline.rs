@@ -1,7 +1,197 @@
-use crate::{shader::ShaderModule, vk::GraphicsPipelineCreateInfo, Arguments};
+use crate::{shader::ShaderModule, vk::GraphicsPipelineCreateInfo, Arguments, VertexAttribute, VertexData};
 use bitflags::bitflags;
 use graal::vk;
-use std::{mem, os::raw::c_char, ptr, sync::Arc};
+use mlr::{device::Device, vertex::VertexInputInterface};
+use std::{ffi::c_void, marker::PhantomData, mem, os::raw::c_char, ptr, sync::Arc};
+
+//--------------------------------------------------------------------------------------------------
+
+pub trait FormatT {
+    const FORMAT: vk::Format;
+}
+
+macro_rules! impl_format_ty {
+    ($t:ident : $format:ident) => {
+        #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+        pub struct $t;
+        impl FormatT for $t {
+            const FORMAT: vk::Format = vk::Format::$format;
+        }
+    };
+}
+
+impl_format_ty!(RGBA16Float: R16G16B16A16_SFLOAT);
+impl_format_ty!(RGBA8: R8G8B8A8_UNORM);
+impl_format_ty!(RG16Float: R16G16_SFLOAT);
+
+pub trait FragmentOutputColorInterface {
+    const COLOR_ATTACHMENT_FORMATS: &'static [vk::Format];
+    //const DEPTH_ATTACHMENT_FORMAT: Option<vk::Format>;
+}
+
+macro_rules! impl_tuple_fragment_output_interface {
+    (
+        @impl $($t:ident)*
+    ) => {
+        impl <$($t,)*> FragmentOutputColorInterface for ($($t,)*) where $($t: FormatT,)* {
+            const COLOR_ATTACHMENT_FORMATS: &'static [vk::Format] = &[ $($t::FORMAT,)* ];
+        }
+    };
+
+    (
+        $t:ident
+    ) => {
+        impl_tuple_fragment_output_interface!(@impl $t);
+    };
+
+    (
+        $t:ident $($ts:ident)+
+    ) => {
+        impl_tuple_fragment_output_interface!(@impl $t $($ts)*);
+        impl_tuple_fragment_output_interface!($($ts)*);
+    };
+}
+
+impl_tuple_fragment_output_interface!(T0 T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
+
+//--------------------------------------------------------------------------------------------------
+
+#[derive(Copy, Clone, Debug)]
+pub struct VertexBufferView<T: VertexData> {
+    pub buffer: vk::Buffer,
+    pub offset: vk::DeviceSize,
+    pub _phantom: PhantomData<*const T>,
+}
+
+pub trait VertexBindingInterface {
+    const ATTRIBUTES: &'static [VertexAttribute];
+    const STRIDE: usize;
+}
+
+impl<T: VertexData> VertexBindingInterface for VertexBufferView<T> {
+    const ATTRIBUTES: &'static [VertexAttribute] = T::ATTRIBUTES;
+    const STRIDE: usize = mem::size_of::<T>();
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct VertexInputBindingAttributes<'a> {
+    pub base_location: u32,
+    pub attributes: &'a [VertexAttribute],
+}
+
+pub trait VertexInputInterface {
+    const BINDINGS: &'static [vk::VertexInputBindingDescription];
+    const ATTRIBUTES: &'static [vk::VertexInputAttributeDescription];
+}
+
+macro_rules! impl_tuple_vertex_input_interface {
+    (
+        @impl $($t:ident)*
+    ) => {
+        impl <$($t,)*> VertexInputInterface for ($($t,)*) where $($t: VertexBindingInterface,)* {
+            const BINDINGS: &'static [vk::VertexInputBindingDescription] = {
+                let mut binding_counter = 0u32;
+                &[
+                     $(
+                        {
+                            let binding = binding_counter;
+                            binding_counter += 1;
+                             vk::VertexInputBindingDescription {
+                                binding,
+                                stride: $t::STRIDE,
+                                input_rate: vk::VertexInputRate::VERTEX,
+                             }
+                        },
+                     )*
+                 ]
+            };
+
+            const ATTRIBUTES: &'static [vk::VertexInputAttributeDescription] = {
+                let attrs = &[];
+                let mut binding = 0;
+                let mut base_location = 0;
+                $(
+                    let attrs = vertex_macro_helpers::append_attributes(attrs, binding, base_location, $t::ATTRIBUTES);
+                    binding += 1;
+                    base_location += $t::ATTRIBUTES.len();
+                )*
+                attrs
+            };
+        }
+    };
+
+    (
+        $t:ident
+    ) => {
+        impl_tuple_vertex_input_interface!(@impl $t);
+    };
+
+    (
+        $t:ident $($ts:ident)+
+    ) => {
+        impl_tuple_vertex_input_interface!(@impl $t $($ts)*);
+        impl_tuple_vertex_input_interface!($($ts)*);
+    };
+}
+
+impl_tuple_vertex_input_interface!(T0 T1 T2 T3);
+
+/// Extension trait for VertexInputInterface
+pub trait VertexInputInterfaceExt: VertexInputInterface {
+    /// Helper function to get a `vk::PipelineVertexInputStateCreateInfo` from this vertex input struct.
+    fn get_pipeline_vertex_input_state_create_info() -> vk::PipelineVertexInputStateCreateInfo;
+}
+
+/*impl<T: VertexInputInterface> VertexInputInterfaceExt for T {
+    fn get_pipeline_vertex_input_state_create_info() -> vk::PipelineVertexInputStateCreateInfo {
+        vk::PipelineVertexInputStateCreateInfo {
+            vertex_binding_description_count: Self::BINDINGS.len() as u32,
+            p_vertex_binding_descriptions: Self::BINDINGS.as_ptr(),
+            vertex_attribute_description_count: Self::ATTRIBUTES.len() as u32,
+            p_vertex_attribute_descriptions: Self::ATTRIBUTES.as_ptr(),
+            ..Default::default()
+        }
+    }
+}*/
+
+pub mod vertex_macro_helpers {
+    use graal::vk;
+    use mlr::vertex::VertexAttribute;
+
+    pub const fn append_attributes<const N: usize>(
+        head: &'static [vk::VertexInputAttributeDescription],
+        binding: u32,
+        base_location: u32,
+        tail: &'static [VertexAttribute],
+    ) -> [vk::VertexInputAttributeDescription; N] {
+        const NULL_ATTR: vk::VertexInputAttributeDescription = vk::VertexInputAttributeDescription {
+            location: 0,
+            binding: 0,
+            format: vk::Format::UNDEFINED,
+            offset: 0,
+        };
+        let mut result = [NULL_ATTR; N];
+        let mut i = 0;
+        while i < head.len() {
+            result[i] = head[i];
+            i += 1;
+        }
+        while i < N {
+            let j = i - head.len();
+            result[i] = vk::VertexInputAttributeDescription {
+                location: base_location + j as u32,
+                binding,
+                format: tail[j].format,
+                offset: tail[j].offset,
+            };
+            i += 1;
+        }
+
+        result
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
 
 #[repr(transparent)]
 pub struct ArgumentLayout {
@@ -20,7 +210,8 @@ pub struct PipelineLayout {
 
 impl PipelineLayout {
     pub fn new(device: &graal::Device, descriptor: &PipelineLayoutDescriptor) -> PipelineLayout {
-        unsafe {}
+        //unsafe {}
+        todo!()
     }
 }
 
@@ -44,9 +235,6 @@ impl GraphicsShaderStages {
         }
     }
 }
-
-#[derive(Copy, Clone, Debug)]
-pub struct VertexInputState<'a> {}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum CompareFunction {
@@ -284,15 +472,14 @@ pub struct MultisampleState {
     pub alpha_to_coverage_enabled: bool,
 }
 
-// used internally by the pipeline macros
-pub struct PipelineConfig<'a> {
-    vertex_shader: &'a ShaderModule,
-    fragment_shader: &'a ShaderModule,
-
-    primitive_state: PrimitiveState,
-    multisample_state: MultisampleState,
-    depth_stencil_state: Option<DepthStencilState>,
-    color_attachments: &'a [ColorTargetState],
+/// Create info for a graphics pipeline (excluding interfaces).
+pub struct GraphicsPipelineConfig<'a> {
+    pub vertex_shader: &'a ShaderModule,
+    pub fragment_shader: &'a ShaderModule,
+    pub primitive_state: PrimitiveState,
+    pub multisample_state: MultisampleState,
+    pub depth_stencil_state: Option<DepthStencilState>,
+    pub color_attachments: &'a [ColorTargetState],
 }
 
 pub struct PipelineInterfaceDesc<'a> {
@@ -304,17 +491,25 @@ pub struct PipelineInterfaceDesc<'a> {
     stencil_attachment_format: Option<vk::Format>,
 }
 
-pub struct GraphicsPipeline {
+pub trait PipelineInterface {
+    const VERTEX_INPUT_BINDINGS: &'static [vk::VertexInputBindingDescription];
+    const VERTEX_INPUT_ATTRIBUTES: &'static [vk::VertexInputAttributeDescription];
+    const COLOR_ATTACHMENT_FORMATS: &'static [vk::Format];
+    const DEPTH_ATTACHMENT_FORMAT: Option<vk::Format>;
+    const DESCRIPTOR_SET_LAYOUTS: &'static []
+}
+
+pub struct RawGraphicsPipeline {
     device: Arc<graal::Device>,
     pipeline: vk::Pipeline,
 }
 
-impl GraphicsPipeline {
+impl RawGraphicsPipeline {
     pub unsafe fn new(
         device: &Arc<graal::Device>,
-        config: &PipelineConfig,
+        config: &GraphicsPipelineConfig,
         interface: &PipelineInterfaceDesc,
-    ) -> GraphicsPipeline {
+    ) -> RawGraphicsPipeline {
         let mut pipeline_shader_stages = Vec::new();
         pipeline_shader_stages.push(vk::PipelineShaderStageCreateInfo {
             flags: vk::PipelineShaderStageCreateFlags::empty(),
@@ -335,10 +530,10 @@ impl GraphicsPipeline {
 
         let vertex_input_state = vk::PipelineVertexInputStateCreateInfo {
             flags: vk::PipelineVertexInputStateCreateFlags::empty(),
-            vertex_binding_description_count: interface.vertex_input.bindings.len() as u32,
-            p_vertex_binding_descriptions: interface.vertex_input.bindings.as_ptr(),
-            vertex_attribute_description_count: interface.vertex_input.attributes.len() as u32,
-            p_vertex_attribute_descriptions: interface.vertex_input.attributes.as_ptr(),
+            vertex_binding_description_count: interface.vertex_bindings.len() as u32,
+            p_vertex_binding_descriptions: interface.vertex_bindings.as_ptr(),
+            vertex_attribute_description_count: interface.vertex_attributes.len() as u32,
+            p_vertex_attribute_descriptions: interface.vertex_attributes.as_ptr(),
             ..Default::default()
         };
 
@@ -503,7 +698,7 @@ impl GraphicsPipeline {
         };
 
         let create_info = vk::GraphicsPipelineCreateInfo {
-            p_next: &rendering_info as *const _,
+            p_next: &rendering_info as *const _ as *const c_void,
             flags: vk::PipelineCreateFlags::empty(),
             stage_count: pipeline_shader_stages.len() as u32,
             p_stages: pipeline_shader_stages.as_ptr(),
@@ -529,7 +724,7 @@ impl GraphicsPipeline {
                 .device
                 .create_graphics_pipelines(vk::PipelineCache::null(), &[create_info], None)
                 .expect("failed to create pipeline");
-            GraphicsPipeline {
+            RawGraphicsPipeline {
                 device: device.clone(),
                 pipeline: pipelines[0],
             }
@@ -537,43 +732,93 @@ impl GraphicsPipeline {
     }
 }
 
-macro_rules! create_pipeline {
-    (
-        $device:expr,
-        $config:expr,
-
-        // vertex input interface types (impl VertexInputInterface)
-        VERTEX_INPUT [ $vertex_input:ty ]
-        // shader resource interface (impl Arguments)
-        ARGUMENTS [ $($args:ty),* ]
-        // color attachment formats
-        FRAGMENT_OUTPUT COLOR [ $($color_fmt:ident),* ]
-        // optional depth attachment format
-        DEPTH [ $depth_fmt:expr ]
-        // optional stencil attachment format
-        STENCIL [ $stencil_fmt:expr ]
-    ) => {
-
-        {
-            let descriptor_set_layouts = &[ $($device.get_or_create_descriptor_set_layout_for_type::<$args>()),* ];
-            let interface_desc = PipelineInterfaceDesc {
-                vertex_bindings: <$vertex_input as $crate::VertexInputInterface>::BINDINGS,
-                vertex_attributes: <$vertex_input as $crate::VertexInputInterface>::ATTRIBUTES,
-                descriptor_set_layouts,
-                color_attachment_formats: &[$($color_fmt),*],
-                depth_attachment_format: $depth_fmt,
-                stencil_attachment_format: $stencil_fmt,
-            };
-            GraphicsPipeline::new(device, config, interface_desc)
-        }
-
-    };
+pub struct GraphicsPipeline<VertexInput, FragmentOutputColor, ShaderResources> {
+    raw: RawGraphicsPipeline,
+    _vertex: PhantomData<VertexInput>,
+    _fragment: PhantomData<FragmentOutputColor>,
+    _shader: PhantomData<ShaderResources>,
 }
 
-fn test() {
-    create_pipeline!(device, config,
-        VERTEX_INPUT [ VertexBufferView<MyVertex> ]
-        ARGUMENTS    [ SceneArguments, MaterialArguments ]
-        FRAGMENT_OUTPUT COLOR [ R16G16B16A16_SFLOAT ] DEPTH [ None ] STENCIL [ None ]
-    )
+pub struct GraphicsPipelineBuilder<VertexInput, FragmentOutputColor, ShaderResources> {
+    _vertex: PhantomData<VertexInput>,
+    _fragment: PhantomData<FragmentOutputColor>,
+    _shader: PhantomData<ShaderResources>,
+}
+
+impl<VertexInput, FragmentOutputColor, ShaderResources>
+    GraphicsPipelineBuilder<VertexInput, FragmentOutputColor, ShaderResources>
+{
+    /// Begin building a graphics pipeline.
+    pub fn new() -> GraphicsPipelineBuilder<VertexInput, FragmentOutputColor, ShaderResources> {
+        GraphicsPipelineBuilder {
+            _vertex: PhantomData,
+            _fragment: PhantomData,
+            _shader: PhantomData,
+        }
+    }
+
+    /// Specifies the type of the fragment output interface (color attachments).
+    pub fn with_fragment_output<FO: FragmentOutputColorInterface>(
+        self,
+    ) -> GraphicsPipelineBuilder<VertexInput, FO, ShaderResources> {
+        GraphicsPipelineBuilder {
+            _vertex: PhantomData,
+            _fragment: PhantomData,
+            _shader: PhantomData,
+        }
+    }
+
+    pub fn with_vertex_input<VI: VertexInputInterface>(
+        self,
+    ) -> GraphicsPipelineBuilder<VI, FragmentOutputColor, ShaderResources> {
+        GraphicsPipelineBuilder {
+            _vertex: PhantomData,
+            _fragment: PhantomData,
+            _shader: PhantomData,
+        }
+    }
+}
+
+impl<VertexInput, FragmentOutputColor, ShaderResources>
+    GraphicsPipelineBuilder<VertexInput, FragmentOutputColor, ShaderResources>
+where
+    VertexInput: VertexInputInterface,
+    FragmentOutputColor: FragmentOutputColorInterface,
+    ShaderResources: ShaderResourceInterface,
+{
+    pub fn build(
+        self,
+        device: &Arc<graal::Device>,
+        config: &GraphicsPipelineConfig,
+    ) -> GraphicsPipeline<VertexInput, FragmentOutputColor, ShaderResources> {
+        let interface_desc = PipelineInterfaceDesc {
+            vertex_bindings: VertexInput::BINDINGS,
+            vertex_attributes: VertexInput::ATTRIBUTES,
+            descriptor_set_layouts: &[],
+            color_attachment_formats: FragmentOutputColorInterface::COLOR_ATTACHMENT_FORMATS,
+            depth_attachment_format: None,
+            stencil_attachment_format: None,
+        };
+        unsafe {
+            GraphicsPipeline {
+                raw: RawGraphicsPipeline::new(device, config, &interface_desc),
+                _vertex: PhantomData,
+                _fragment: PhantomData,
+                _shader: PhantomData,
+            }
+        }
+    }
+}
+
+pub fn draw<VI, FO, SR>(
+    frame: &mut graal::Frame<()>,
+    pipeline: &mut GraphicsPipeline<VI, FO, SR>,
+    vertex_input: &VI,
+    shader_resources: &SR,
+    fragment_output_color: &FO,
+) where
+    VI: VertexInputInterface,
+    SR: ShaderResourceInterface,
+    FO: FragmentOutputColorInterface,
+{
 }

@@ -144,45 +144,21 @@ impl Device {
             update_template: Default::default(),
             descriptor_set,
         }
-    }
-
-    /// Returns the descriptor set allocator for the given layout id.
-    pub fn get_or_create_descriptor_set_layout_for_type<T: StaticArguments>(
-        &mut self,
-    ) -> vk::DescriptorSetLayout {
-        self.get_or_create_descriptor_set_layout(
-            Some(T::TYPE_ID),
-            T::LAYOUT,
-            T::UPDATE_TEMPLATE_ENTRIES,
-        )
-        .0
     }*/
 }
 
-/*
-pub unsafe fn create_device_and_context(
-    present_surface: Option<vk::SurfaceKHR>,
-) -> (Device, Context) {
+pub unsafe fn create_device_and_context(present_surface: Option<vk::SurfaceKHR>) -> (Device, graal::Context) {
     let (backend_device, backend_context) = graal::create_device_and_context(present_surface);
-
 
     (
         Device {
             inner: Arc::new(Mutex::new(DeviceInner {
                 current_frame: Default::default(),
-                descriptor_set_layouts: Default::default(),
                 descriptor_set_layout_by_typeid: Default::default(),
                 sampler_by_typeid: Default::default(),
-                samplers: Default::default(),
-                pipeline_layouts: Default::default(),
-                pipelines: Default::default(),
-                descriptor_allocators: SecondaryMap::default(),
             })),
             backend: backend_device,
         },
-        Context {
-            backend: backend_context,
-            in_flight: VecDeque::new(),
-        },
+        backend_context,
     )
-}*/
+}

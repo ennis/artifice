@@ -1,5 +1,3 @@
-#![feature(const_fn_trait_bound)]
-
 pub mod buffer;
 //pub mod context;
 //pub mod frame;
@@ -22,4 +20,5 @@ pub use arguments::{
 };
 pub use graal::{self, vk};
 pub use mlr_macros::{Arguments, StructLayout, VertexData};
+pub use pipeline::{GraphicsPipelineBuilder, GraphicsPipelineConfig};
 pub use vertex::{VertexAttribute, VertexData};

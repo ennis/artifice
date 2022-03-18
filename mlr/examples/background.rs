@@ -1,7 +1,7 @@
 use graal::{swapchain::Swapchain, Device};
 use mlr::{
     context::RenderPassDescriptor,
-    pipeline::{GraphicsPipeline, PipelineLayout, PipelineLayoutDescriptor},
+    pipeline::{PipelineLayout, PipelineLayoutDescriptor, RawGraphicsPipeline},
     sampler::Linear_ClampToEdge,
     vk, AttachmentLoadOp, AttachmentStoreOp, ContextResources, RenderPassColorAttachment,
 };
@@ -50,7 +50,7 @@ struct BackgroundParams {
 //
 // The first option doesn't have that limitation.
 
-fn create_pipeline(device: &mut mlr::Device) -> GraphicsPipeline {
+fn create_pipeline(device: &mut mlr::Device) -> RawGraphicsPipeline {
     let layouts = &[device.get_or_create_descriptor_set_layout_for_type::<BackgroundParams>()];
 
     let pipeline_layout = PipelineLayout::new(ctx.device(), &PipelineLayoutDescriptor { layouts });
@@ -121,8 +121,7 @@ fn main() {
 
     let (device, mut context) = unsafe { mlr::create_device_and_context(Some(surface)) };
 
-    let mut swapchain =
-        unsafe { Swapchain::new(device.backend(), surface, window.inner_size().into()) };
+    let mut swapchain = unsafe { Swapchain::new(device.backend(), surface, window.inner_size().into()) };
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
