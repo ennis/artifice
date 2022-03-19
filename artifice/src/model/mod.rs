@@ -11,7 +11,6 @@ use std::{
     sync::{Arc, Weak},
 };
 
-pub mod atom;
 pub mod attribute;
 mod document;
 pub mod node;
@@ -19,8 +18,8 @@ mod path;
 mod share_group;
 mod value;
 
-pub use atom::Atom;
 pub use document::{Document, DocumentModel, Edit};
+pub use kyute_common::Atom;
 pub use node::Node;
 pub use path::ModelPath;
 pub use value::Value;

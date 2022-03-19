@@ -1,12 +1,10 @@
 //! Vertex-related types
-
 use crate::{
     buffer::BufferData,
     vk::{VertexInputAttributeDescription, VertexInputBindingDescription},
 };
 use graal::vk;
 use graal_spirv::typedesc::TypeDesc;
-use std::{marker::PhantomData, mem};
 
 /// Describes the type of indices contained in an index buffer.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -17,191 +15,88 @@ pub enum IndexFormat {
     U32,
 }
 
-/// Description of a vertex attribute within a vertex layout.
+/// Description of a vertex attribute within a vertex buffer layout.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct VertexAttribute {
-    pub format: vk::Format,
-    pub offset: u32,
+    /// Index of the attribute in the buffer layout.
+    index: usize,
+    /// Offset of the attribute within a vertex entry.
+    offset: usize,
+    /// Format of the attribute.
+    format: vk::Format,
 }
 
-/// Trait implemented by types that represent vertex data in a vertex buffer.
-pub unsafe trait VertexData: BufferData {
-    const ATTRIBUTES: &'static [VertexAttribute];
-}
-
-/// Trait implemented by types that can serve as indices.
-pub unsafe trait IndexData: BufferData {
-    /// Index type.
-    const FORMAT: IndexFormat;
-}
-
-/// Trait implemented by types that can serve as a vertex attribute.
-pub unsafe trait VertexAttributeType {
-    /// The equivalent type descriptor (the type seen by the shader).
-    const EQUIVALENT_TYPE: TypeDesc<'static>;
-    /// Returns the corresponding data format (the layout of the data in memory).
-    const FORMAT: vk::Format;
-}
-
-/// Wrapper type for normalized integer attributes.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Default)]
-#[repr(transparent)]
-pub struct Norm<T>(pub T);
-
-impl From<f32> for Norm<u8> {
-    fn from(v: f32) -> Self {
-        Norm((v * u8::MAX as f32) as u8)
+/// Returns the size of bytes of a vertex attribute of the given format.
+pub fn vertex_format_byte_size(format: vk::Format) -> usize {
+    match format {
+        vk::Format::R32G32B32_SFLOAT => 24,
+        vk::Format::R32G32B32A32_SFLOAT => 32,
+        vk::Format::R32G32_SFLOAT => 16,
+        vk::Format::R32_SFLOAT => 8,
+        vk::Format::R16G16_UNORM => 4,
+        vk::Format::R16G16B16A16_UNORM => 8,
+        _ => todo!("unsupported vertex format"),
     }
 }
 
-impl From<f64> for Norm<u8> {
-    fn from(v: f64) -> Self {
-        Norm((v * u8::MAX as f64) as u8)
+/// Builder for a vertex input layout.
+pub struct VertexBufferLayoutBuilder {
+    attributes: Vec<VertexAttribute>,
+    current_offset: usize,
+}
+
+impl VertexBufferLayoutBuilder {
+    /// Creates a new builder, starting with no attributes.
+    pub fn new() -> VertexBufferLayoutBuilder {
+        VertexBufferLayoutBuilder {
+            attributes: vec![],
+            current_offset: 0,
+        }
+    }
+
+    /// Pushes a vertex attribute to this buffer layout, and returns the offset and byte size of the
+    /// attribute within a vertex element.
+    pub fn push_attribute(&mut self, format: vk::Format) -> VertexAttribute {
+        let byte_size = vertex_format_byte_size(format);
+        let attr = VertexAttribute {
+            index: self.attributes.len(),
+            offset: byte_size,
+            format,
+        };
+        self.attributes.push(attr);
+        // FIXME: alignment
+        self.current_offset += byte_size;
+        attr
+    }
+
+    /// Returns the current stride between two consecutive vertices in the buffer.
+    pub fn stride(&self) -> usize {
+        self.current_offset
+    }
+
+    /// Finishes building the buffer layout and returns it.
+    pub fn build(self) -> VertexBufferLayout {
+        VertexBufferLayout {
+            attributes: self.attributes,
+            stride: self.current_offset,
+        }
     }
 }
 
-impl From<f32> for Norm<u16> {
-    fn from(v: f32) -> Self {
-        Norm((v * u16::MAX as f32) as u16)
+/// Layout of a vertex buffer.
+pub struct VertexBufferLayout {
+    attributes: Vec<VertexAttribute>,
+    stride: usize,
+}
+
+impl VertexBufferLayout {
+    /// Starts building a new vertex buffer layout.
+    pub fn build() -> VertexBufferLayoutBuilder {
+        VertexBufferLayoutBuilder::new()
+    }
+
+    /// Returns the vertex attributes of this layout.
+    pub fn attributes(&self) -> &[VertexAttribute] {
+        &self.attributes
     }
 }
-
-impl From<f64> for Norm<u16> {
-    fn from(v: f64) -> Self {
-        Norm((v * u16::MAX as f64) as u16)
-    }
-}
-
-// Vertex attribute types --------------------------------------------------------------------------
-macro_rules! impl_attrib_type {
-    ($t:ty, $equiv:expr, $fmt:ident) => {
-        unsafe impl VertexAttributeType for $t {
-            const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> = $equiv;
-            const FORMAT: vk::Format = vk::Format::$fmt;
-        }
-    };
-}
-
-macro_rules! impl_attrib_prim_type {
-    ($t:ty, $prim:ident, $fmt:ident) => {
-        unsafe impl VertexAttributeType for $t {
-            const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> =
-                graal_spirv::typedesc::TypeDesc::Primitive(graal_spirv::typedesc::PrimitiveType::$prim);
-            const FORMAT: vk::Format = vk::Format::$fmt;
-        }
-    };
-}
-
-macro_rules! impl_attrib_vector_type {
-    ([$t:ty; $len:expr], $prim:ident, $fmt:ident) => {
-        unsafe impl VertexAttributeType for [$t; $len] {
-            const EQUIVALENT_TYPE: graal_spirv::typedesc::TypeDesc<'static> = graal_spirv::typedesc::TypeDesc::Vector {
-                elem_ty: graal_spirv::typedesc::PrimitiveType::$prim,
-                len: $len,
-            };
-            const FORMAT: vk::Format = vk::Format::$fmt;
-        }
-    };
-}
-
-// F32
-impl_attrib_prim_type!(f32, Float, R32_SFLOAT);
-impl_attrib_vector_type!([f32; 2], Float, R32G32_SFLOAT);
-impl_attrib_vector_type!([f32; 3], Float, R32G32B32_SFLOAT);
-impl_attrib_vector_type!([f32; 4], Float, R32G32B32A32_SFLOAT);
-
-// U32
-impl_attrib_prim_type!(u32, UnsignedInt, R32_UINT);
-impl_attrib_vector_type!([u32; 2], UnsignedInt, R32G32_UINT);
-impl_attrib_vector_type!([u32; 3], UnsignedInt, R32G32B32_UINT);
-impl_attrib_vector_type!([u32; 4], UnsignedInt, R32G32B32A32_UINT);
-
-impl_attrib_prim_type!(i32, Int, R32_SINT);
-impl_attrib_vector_type!([i32; 2], Int, R32G32_SINT);
-impl_attrib_vector_type!([i32; 3], Int, R32G32B32_SINT);
-impl_attrib_vector_type!([i32; 4], Int, R32G32B32A32_SINT);
-
-// U16
-impl_attrib_prim_type!(u16, UnsignedInt, R16_UINT);
-impl_attrib_vector_type!([u16; 2], UnsignedInt, R16G16_UINT);
-impl_attrib_vector_type!([u16; 3], UnsignedInt, R16G16B16_UINT);
-impl_attrib_vector_type!([u16; 4], UnsignedInt, R16G16B16A16_UINT);
-
-impl_attrib_prim_type!(i16, Int, R16_SINT);
-impl_attrib_vector_type!([i16; 2], Int, R16G16_SINT);
-impl_attrib_vector_type!([i16; 3], Int, R16G16B16_SINT);
-impl_attrib_vector_type!([i16; 4], Int, R16G16B16A16_SINT);
-
-// UNORM16
-impl_attrib_prim_type!(Norm<u16>, Float, R16_UNORM);
-impl_attrib_vector_type!([Norm<u16>; 2], Float, R16G16_UNORM);
-impl_attrib_vector_type!([Norm<u16>; 3], Float, R16G16B16_UNORM);
-impl_attrib_vector_type!([Norm<u16>; 4], Float, R16G16B16A16_UNORM);
-
-// SNORM16
-impl_attrib_prim_type!(Norm<i16>, Float, R16_SNORM);
-impl_attrib_vector_type!([Norm<i16>; 2], Float, R16G16_SNORM);
-impl_attrib_vector_type!([Norm<i16>; 3], Float, R16G16B16_SNORM);
-impl_attrib_vector_type!([Norm<i16>; 4], Float, R16G16B16A16_SNORM);
-
-// U8
-impl_attrib_prim_type!(u8, UnsignedInt, R8_UINT);
-impl_attrib_vector_type!([u8; 2], UnsignedInt, R8G8_UINT);
-impl_attrib_vector_type!([u8; 3], UnsignedInt, R8G8B8_UINT);
-impl_attrib_vector_type!([u8; 4], UnsignedInt, R8G8B8A8_UINT);
-
-impl_attrib_prim_type!(Norm<u8>, UnsignedInt, R8_UNORM);
-impl_attrib_vector_type!([Norm<u8>; 2], UnsignedInt, R8G8_UNORM);
-impl_attrib_vector_type!([Norm<u8>; 3], UnsignedInt, R8G8B8_UNORM);
-impl_attrib_vector_type!([Norm<u8>; 4], UnsignedInt, R8G8B8A8_UNORM);
-
-impl_attrib_prim_type!(i8, Int, R8_SINT);
-impl_attrib_vector_type!([i8; 2], Int, R8G8_SINT);
-impl_attrib_vector_type!([i8; 3], Int, R8G8B8_SINT);
-impl_attrib_vector_type!([i8; 4], Int, R8G8B8A8_SINT);
-
-// Vertex types from glam --------------------------------------------------------------------------
-
-#[cfg(feature = "graal-glam")]
-impl_attrib_type!(
-    glam::Vec2,
-    TypeDesc::Vector {
-        elem_ty: PrimitiveType::Float,
-        len: 2
-    },
-    R32G32_SFLOAT
-);
-
-#[cfg(feature = "graal-glam")]
-impl_attrib_type!(
-    glam::Vec3,
-    TypeDesc::Vector {
-        elem_ty: PrimitiveType::Float,
-        len: 3
-    },
-    R32G32B32_SFLOAT
-);
-
-#[cfg(feature = "graal-glam")]
-impl_attrib_type!(
-    glam::Vec4,
-    TypeDesc::Vector {
-        elem_ty: PrimitiveType::Float,
-        len: 4
-    },
-    R32G32B32A32_SFLOAT
-);
-
-// Index data types --------------------------------------------------------------------------------
-macro_rules! impl_index_data {
-    ($t:ty, $fmt:ident) => {
-        unsafe impl IndexData for $t {
-            const FORMAT: IndexFormat = IndexFormat::$fmt;
-        }
-    };
-}
-
-impl_index_data!(u16, U16);
-impl_index_data!(u32, U32);
-
-// --------------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-use crate::model::atom::Atom;
+use crate::model::Atom;
 use kyute::Data;
 use serde::{
     de::{EnumAccess, Error, MapAccess, SeqAccess, Unexpected},

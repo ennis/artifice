@@ -19,6 +19,7 @@ pub use arguments::{
     ArgumentBlock, Arguments, CombinedImageSampler2D, DescriptorBinding, ResourceAccess, SampledImage2D, UniformBuffer,
 };
 pub use graal::{self, vk};
+pub use kyute_common::atom::Atom;
 pub use mlr_macros::{Arguments, StructLayout, VertexData};
 pub use pipeline::{GraphicsPipelineBuilder, GraphicsPipelineConfig};
 pub use vertex::{VertexAttribute, VertexData};

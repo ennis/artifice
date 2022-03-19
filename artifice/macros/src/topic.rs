@@ -1,12 +1,8 @@
 use crate::CRATE;
-use proc_macro2::Span;
 use quote::quote;
 use syn::spanned::Spanned;
 
-pub fn topic(
-    attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
+pub fn topic(attr: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
     // works only on trait declarations
     let trait_decl: syn::ItemTrait = syn::parse_macro_input!(item as syn::ItemTrait);
     let topic: syn::Ident = syn::parse_macro_input!(attr as syn::Ident);
@@ -20,8 +16,7 @@ pub fn topic(
             let sig = &method.sig;
 
             if let syn::ReturnType::Type(_, _) = &sig.output {
-                let err = syn::Error::new(item.span(), "listener methods cannot have output types")
-                    .to_compile_error();
+                let err = syn::Error::new(item.span(), "listener methods cannot have output types").to_compile_error();
                 publisher_methods.push(err);
             } else {
                 // Good path

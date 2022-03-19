@@ -16,7 +16,7 @@ members = [
     "kyute-shell",           # user interface library - windowing, drawing and system integration
     "kyute-style",           # user interface library - style files
     "kyute-text",            # user interface library - rich text
-    "kyute-style-editor",           # user interface library - style files
+    "kyute-style-editor"           # user interface library - style files
 ]
 exclude = ["ext/winit"]
 

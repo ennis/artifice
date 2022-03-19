@@ -1,4 +1,4 @@
-use crate::model::{atom::Atom, attribute::Attribute, NamedObject};
+use crate::model::{attribute::Attribute, Atom, NamedObject};
 use imbl::HashMap;
 use kyute::Data;
 use std::sync::Arc;

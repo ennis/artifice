@@ -1,6 +1,100 @@
 use crate::{buffer::BufferAny, image::ImageAny, sampler::SamplerType, vk};
 use graal::{Device, PassBuilder};
-use std::ptr;
+use graal_spirv::typedesc::TypeDesc;
+use kyute_common::Atom;
+use std::{ptr, sync::Arc};
+
+/// Description of a variable within a uniform buffer.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct UniformDesc {
+    binding: usize,
+    offset: usize,
+    size: usize,
+}
+
+/// Builder of ArgumentBlockLayouts.
+pub struct ArgumentBlockLayoutBuilder {
+    uniform_buffer_layout: Vec<UniformDesc>,
+    //textures:
+}
+
+impl ArgumentBlockLayoutBuilder {
+    pub fn new() -> ArgumentBlockLayoutBuilder {
+        ArgumentBlockLayoutBuilder {
+            uniform_buffer_layout: vec![],
+        }
+    }
+
+    /// Adds a uniform variable to the argument block with the specified type.
+    ///
+    /// Internally, it adds an entry to the default uniform buffer at binding #0.
+    pub fn add_uniform(&mut self, name: Atom, ty: TypeDesc) {
+        todo!()
+    }
+
+    /// Adds a uniform buffer input.
+    pub fn add_uniform_buffer(&mut self, ty: TypeDesc) -> UniformDesc {
+        todo!()
+    }
+
+    pub fn build(self) -> ArgumentBlockLayout {
+        // binding #0 is uniform buffer
+        let ubo = vk::DescriptorSetLayoutBinding {
+            binding: 0,
+            descriptor_type: Default::default(),
+            descriptor_count: 0,
+            stage_flags: vk::ShaderStageFlags::ALL, // TODO
+            p_immutable_samplers: ptr::null(),
+        };
+
+        // binding #1-#n are textures
+        //let mut bindings =
+
+        let create_info = vk::DescriptorSetLayoutCreateInfo {
+            flags: Default::default(),
+            binding_count: 0,
+            p_bindings: (),
+            ..Default::default()
+        };
+    }
+}
+
+/// Describes the layout of an arguments block (equivalent to a descriptor set).
+pub struct ArgumentBlockLayout {
+    device: Arc<graal::Device>,
+    descriptor_set_layout: vk::DescriptorSetLayout,
+}
+
+impl ArgumentBlockLayout {
+    pub fn builder() -> ArgumentBlockLayoutBuilder {
+        ArgumentBlockLayoutBuilder::new()
+    }
+}
+
+/// Builder for an argument block.
+pub struct ArgumentBlockBuilder {
+    layout: Arc<ArgumentBlockLayout>,
+}
+
+impl ArgumentBlockBuilder {
+    pub fn new(layout: Arc<ArgumentBlockLayout>) -> ArgumentBlockBuilder {
+        ArgumentBlockBuilder { layout }
+    }
+
+    // how to build an argument block?
+    // -> progressively specify all uniform variables, textures, and everything
+    pub unsafe fn set_uniform<T: Copy>(&mut self, index: usize, val: T) {
+        // check that size matches, at least, then copy into buffer
+    }
+}
+
+pub struct ArgumentBlock {}
+
+impl ArgumentBlock {
+    pub fn builder(layout: Arc<ArgumentBlockLayout>) -> ArgumentBlock {
+        ArgumentBlockBuilder::new(layout)
+    }
+}
 
 /// Trait implemented by types that hold references to resources.
 pub trait ResourceAccess {
@@ -335,14 +429,3 @@ impl<'a> ResourceAccess for UniformBuffer<'a> {
 }
 
 //--------------------------------------------------------------------------------------------------
-
-/// Argument blocks
-///
-/// Actually they are just descriptor sets.
-pub struct ArgumentBlock<T: Arguments> {
-    pub(crate) args: T,
-    pub(crate) set_layout_id: graal::DescriptorSetLayoutId,
-    pub(crate) set_layout: vk::DescriptorSetLayout,
-    pub(crate) update_template: vk::DescriptorUpdateTemplate,
-    pub(crate) descriptor_set: vk::DescriptorSet, // allocated on first use
-}

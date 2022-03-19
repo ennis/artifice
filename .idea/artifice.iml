@@ -84,6 +84,7 @@
       <sourceFolder url="file://$MODULE_DIR$/kyute-text/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kyute-common/macros/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/mlr/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/pointer-and-bits/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/ext/piet/target" />
       <excludeFolder url="file://$MODULE_DIR$/ext/winit/target" />

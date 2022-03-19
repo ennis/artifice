@@ -1,6 +1,6 @@
 use crate::{
     json,
-    model::{atom::Atom, NamedObject, Value},
+    model::{Atom, NamedObject, Value},
 };
 use anyhow::Error;
 use kyute::Data;

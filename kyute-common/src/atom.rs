@@ -1,8 +1,8 @@
-use kyute::Data;
+use crate::Data;
 use std::{fmt, ops::Deref};
 use string_cache::DefaultAtom;
 
-/// Atom (interned string used for names)
+/// Interned strings. Typically used for names and string identifiers.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Default, serde::Serialize, serde::Deserialize)]
 pub struct Atom(DefaultAtom);
 
@@ -35,10 +35,7 @@ impl fmt::Display for Atom {
 }
 
 /// Helper function to adjust a name so that it doesn't clash with existing names.
-pub fn make_unique_name<'a>(
-    base_name: impl Into<Atom>,
-    existing: impl Iterator<Item = Atom> + Clone,
-) -> Atom {
+pub fn make_unique_atom<'a>(base_name: impl Into<Atom>, existing: impl Iterator<Item = Atom> + Clone) -> Atom {
     let mut counter = 0;
     let base_name = base_name.into();
     let mut disambiguated_name = base_name.clone();
