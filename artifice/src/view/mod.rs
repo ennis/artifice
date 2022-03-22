@@ -13,7 +13,7 @@ use kyute::{
     },
     Color, Data, State, Widget, WidgetPod, Window,
 };
-use kyute_common::Length;
+use kyute_common::{Length, UnitExt};
 use rusqlite::Connection;
 use std::{fmt, fmt::Formatter, sync::Arc};
 
@@ -111,9 +111,9 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
     let document_model = document.model().clone();
 
     let mut grid = Grid::with_column_definitions([
-        GridTrackDefinition::named(LABEL_COLUMN, GridLength::Fixed(100.0)),
-        GridTrackDefinition::named(DELETE_COLUMN, GridLength::Fixed(60.0)),
-        GridTrackDefinition::named(ADD_COLUMN, GridLength::Fixed(60.0)),
+        GridTrackDefinition::named(LABEL_COLUMN, GridLength::Fixed(100.dip())),
+        GridTrackDefinition::named(DELETE_COLUMN, GridLength::Fixed(60.dip())),
+        GridTrackDefinition::named(ADD_COLUMN, GridLength::Fixed(60.dip())),
         GridTrackDefinition::named(VALUE_COLUMN, GridLength::Flex(1.0)),
     ])
     .align_items(grid::AlignItems::Baseline)
@@ -139,7 +139,7 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
     let slider = Slider::new(0.0, 10.0, slider_value).on_value_changed(|v| slider_value = v);
     grid.add_item(grid.row_count(), .., slider);
 
-    let container = Container::new(grid).box_style(BoxStyle::new().fill(theme::keys::UNDER_PAGE_BACKGROUND_COLOR));
+    let container = Container::new(grid).box_style(BoxStyle::new().fill(theme::palette::GREY_600));
 
     Arc::new(container)
 }
