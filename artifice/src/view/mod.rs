@@ -133,11 +133,11 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
         let name = document_model.root.make_unique_child_name("node");
         document.create_node(ModelPath::root().join(name));
     }
-    grid.add_item(grid.row_count(), 0, add_node_button);
+    grid.add_item(grid.row_count(), 0, 0, add_node_button);
 
     // Slider test
     let slider = Slider::new(0.0, 10.0, slider_value).on_value_changed(|v| slider_value = v);
-    grid.add_item(grid.row_count(), .., slider);
+    grid.add_item(grid.row_count(), .., 0, slider);
 
     let container = Container::new(grid).box_style(BoxStyle::new().fill(theme::palette::GREY_600));
 
