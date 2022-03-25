@@ -110,14 +110,14 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
     tracing::trace!("document_window_contents");
     let document_model = document.model().clone();
 
-    let mut grid = Grid::with_column_definitions([
-        GridTrackDefinition::named(LABEL_COLUMN, GridLength::Fixed(100.dip())),
-        GridTrackDefinition::named(DELETE_COLUMN, GridLength::Fixed(60.dip())),
-        GridTrackDefinition::named(ADD_COLUMN, GridLength::Fixed(60.dip())),
-        GridTrackDefinition::named(VALUE_COLUMN, GridLength::Flex(1.0)),
-    ])
-    .align_items(grid::AlignItems::Baseline)
-    .row_gap(Length::Px(2.0));
+    let mut grid = Grid::new();
+    grid.push_column_definition(GridTrackDefinition::named(LABEL_COLUMN, GridLength::Fixed(100.dip())));
+    grid.push_column_definition(GridTrackDefinition::named(DELETE_COLUMN, GridLength::Fixed(60.dip())));
+    grid.push_column_definition(GridTrackDefinition::named(ADD_COLUMN, GridLength::Fixed(60.dip())));
+    grid.push_column_definition(GridTrackDefinition::named(VALUE_COLUMN, GridLength::Flex(1.0)));
+
+    grid.set_align_items(grid::AlignItems::Baseline);
+    grid.set_row_gap(2.px());
 
     // Root nodes
     for (_name, node) in document_model.root.children.iter() {
