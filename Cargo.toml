@@ -5,23 +5,7 @@ members = [
     "artifice/macros",       # macros
     "mlr",                   # the mid-level renderer
     "mlr/macros",            # the mid-level renderer - proc macros
-    "graal",                 # graphics resource abstraction layer
-    "graal-bench",           # graphics resource abstraction layer - testbench
-    "graal-spirv",           # graphics resource abstraction layer - SPIRV reflection utilities
-    #"haikara", # shading stylization test
-    "kyute",                 # user interface library - widgets and application architecture
-    "kyute-common",          # user interface library - common types
-    "kyute-common/macros",   # user interface library - common types - proc macros
-    "kyute/macros",          # user interface library - widgets and application architecture - proc macros
-    "kyute-shell",           # user interface library - windowing, drawing and system integration
-    "kyute-style",           # user interface library - style files
-    "kyute-text",            # user interface library - rich text
-    "kyute-style-editor"           # user interface library - style files
 ]
-exclude = ["ext/winit"]
-
-[profile.dev]
-incremental = false
 
 [profile.release]
 debug = true

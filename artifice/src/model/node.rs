@@ -1,14 +1,22 @@
-use crate::model::{attribute::Attribute, Atom, NamedObject};
-use imbl::HashMap;
+use crate::model::{
+    attribute::{Attribute, AttributeAny},
+    Atom, FromValue, Metadata, ModelPath, NamedObject, Value,
+};
+use imbl::{HashMap, Vector};
 use kyute::Data;
 use std::sync::Arc;
 
 /// Nodes.
 #[derive(Clone, Debug)]
 pub struct Node {
+    /// Common properties of named objects.
     pub base: NamedObject,
+    /// Child nodes.
     pub children: HashMap<Atom, Node>,
-    //pub properties:
+    /// Attributes.
+    pub attributes: HashMap<Atom, AttributeAny>,
+    /// Node metadata.
+    pub metadata: HashMap<Atom, Value>,
 }
 
 impl Node {
@@ -21,6 +29,16 @@ impl Node {
         }
         Ok(())
     }*/
+
+    /// Creates a new node.
+    pub(crate) fn new(path: ModelPath) -> Node {
+        Node {
+            base: NamedObject { id: 0, path },
+            children: Default::default(),
+            attributes: Default::default(),
+            metadata: Default::default(),
+        }
+    }
 
     /// Generates a unique child name from the specified stem.
     pub fn make_unique_child_name(&self, stem: impl Into<Atom>) -> Atom {
@@ -55,9 +73,23 @@ impl Node {
     }
 
     /// Adds a child node. Used internally by `Document`.
-    pub(crate) fn add_child(&mut self, node: Node) {
-        self.children.insert(node.base.path.name(), node);
+    pub fn add_child(&mut self, name: Atom) -> &mut Node {
+        let child_path = self.base.path.join(name.clone());
+        self.children.entry(name).or_insert(Node::new(child_path))
     }
+
+    pub fn find_attribute(&self, name: &Atom) -> Option<&AttributeAny> {
+        self.attributes.get(name)
+    }
+
+    /// Returns a metadata value.
+    pub fn metadata<T: FromValue>(&self, metadata: Metadata<T>) -> Option<T> {
+        let v = self.metadata.get(&Atom::from(metadata.name))?;
+        T::from_value(v)
+    }
+
+    // Adds an attribute.
+    //pub fn add_attribute(&mut self, name: Atom)
 
     /// Recursively dumps the structure of this node and its children to the standard output.
     pub fn dump(&self, indent: usize) {

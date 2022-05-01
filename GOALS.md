@@ -1,4 +1,4 @@
-+Artifice: a code base for graphics experiments with GPU.
+Artifice: a code base for graphics experiments with GPU.
 
 Current pain points when trying stuff with GPU:
 - write from scratch: lots of boilerplate code
@@ -122,7 +122,7 @@ Alternatives:
 After the in-memory data model is update, write it back to disk, *but* only write what has changed.
 How do we know what has changed? 
 Need sync between database and data model => increased complexity.
-What about undo/redo? do we write to the database when undoing stuff? do we rollback a transation? what if it somehow 
+What about undo/redo? do we write to the database when undoing stuff? do we rollback a transaction? what if it somehow 
 becomes out-of-sync with the in-memory model? 
 Many chances to get stuff wrong.
 
@@ -133,7 +133,68 @@ Problem with hierarchies: the data model is a hierarchy of nodes, so loading a n
 whole file recursively.
 
 ### Data model
-- Nodes & properties
+- Nodes & attributes
+- Buses (groups of attributes)
+
+OpBlur 	
+  float standardDeviation  (doc = "Standard Deviation", min = 0.01)
+  image input:image        (doc = "Image to blur")
+  image output:image       (doc = "Blurred image")
+
+The "doc" metadata is not stored on each item, that would be wasteful; instead it's stored in the schema.
+Think of schemas as like a "struct declaration" in Rust; a node would be an instance of that struct (a bit more complicated
+than that actually, since it would be possible to dynamically add fields).
+
+```rust
+#[derive(Schema)]
+struct OpBlur {
+	/// Standard deviation of the gaussian kernel. Also determines the size in pixels of the kernel.
+	#[schema(name="standardDeviation", default_value=2.0, ui(min=0.1))]
+	standard_deviation: Attribute<f64>,
+	/// Input image.
+	// `Image` is a dummy type here
+	#[schema(name="input", ui(input_bus="main"))]
+	input: Attribute<Image>,
+}
+```
+
+Data:
+```
+
+Node (schema="OpBlur")
+	f64 standard_deviation (connection = ... 
+
+```
+
+
+Buses? by convention?
+Attribute metadata:
+	string ui:bus
+
+
+	OpBlur 	
+		float standardDeviation  (doc = "Standard Deviation", min = 0.01)
+		image input:image        (doc = "Image to blur", ui:inputBus = "main")
+		image output:image       (doc = "Blurred image", ui:outputBus = "main")
+
+
+	node[OpLoad] load_0
+		string filePath = "..." `File path of the image to load. Can be a URL.`
+		image output:image (ui:port = "output")
+		
+
+	node[OpLoad] load_1
+		string filePath = "..."
+
+	node[OpBlur] blur
+		float standardDeviation =  2.0						`Standard deviation` (ui:min=0.1)
+		image input:image       = connect </load_0.output> 	`Image to blur` (ui:inputBus = "main")
+		image output:image      						    `blurred image` (ui:outputBus = "main")
+		
+		
+
+
+Design a data model that accommodates only what's needed for the GUI: buses, connections.
 
 ### Presentation model
 - Current root node
@@ -304,3 +365,38 @@ fn widget(#[uncached] document: &mut DocumentDb, node: &Node) -> Widget {
 
 Try option C.
 
+## Node schemas
+What are they for?
+- currently, only for operators to get their parameters
+
+## Can schemas be static?
+It would be nice if all node schemas could be 'static (loaded at the start of the application).
+Problem is that the user might want to make its own non-static schemas, or load schemas from file.
+
+## Notes
+
+	// TODO:
+	// - obtain the node at the given path
+	// -
+
+	// Q: is it a path to a node? or to an (output) attribute? or nothing? A: it's a path to a node
+	// Q: how do I get the ID of the source operator? A: it's a metadata item on the node
+	//      - is it an attribute on the node?
+	//      - is it "something" on the attribute? its type?
+	// Q: what is the type of an attribute representing an image? it has no persistent value, so... ? A: it's a dummy, unrepresentable, unserializable type
+	//      - rule: nothing is stored in the file if an attribute "has no value"
+	//          -> only store data?
+	//      problem: the UI needs to query the operator to obtain unconnected inputs
+	// Q: how to access the document from ImagingEvalCtx? A: via the parent GeneralCtx
+	// Q: what about multiple outputs? A: yes
+	//
+	// Decisions:
+	//  - outputs are represented in the datamodel by valueless attributes of type image
+	//  - there can be multiple output images (called "planes"), however:
+	//      - they all share the same RoD
+	//      - they
+	//
+	//
+	// Decisions:
+	// - attributes may not have a defined value, because some attributes represent value that only make sense in specific contexts (i.e. they have a variability that
+	// - attributes may be "connected" to other attributes, signalling that they should use the connected attribute's value instead

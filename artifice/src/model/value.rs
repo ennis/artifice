@@ -354,3 +354,39 @@ impl<'de> serde::Deserialize<'de> for Value {
         todo!()
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// FromValue
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+pub trait FromValue {
+    fn from_value(value: &Value) -> Option<Self>;
+}
+
+impl FromValue for f64 {
+    fn from_value(value: &Value) -> Option<Self> {
+        match value {
+            Value::Number(num) => Some(*num),
+            _ => None,
+        }
+    }
+}
+
+impl FromValue for Atom {
+    fn from_value(value: &Value) -> Option<Self> {
+        match value {
+            Value::Token(ref atom) => Some(atom.clone()),
+            _ => None,
+        }
+    }
+}
+
+impl FromValue for String {
+    fn from_value(value: &Value) -> Option<String> {
+        match value {
+            Value::Token(ref atom) => Some(atom.to_string()),
+            Value::String(ref str) => Some(str.to_string()),
+            _ => None,
+        }
+    }
+}

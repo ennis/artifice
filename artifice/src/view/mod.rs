@@ -1,17 +1,19 @@
-use crate::model::{Document, ModelPath, Node};
+use crate::model::{DocumentConnection, ModelPath, Node};
 use kyute::{
     cache, composable,
-    shell::winit::window::WindowBuilder,
+    shell::{
+        text::{Attribute, FontFamily, FontStyle, FormattedText},
+        winit::window::WindowBuilder,
+    },
     style::BoxStyle,
-    text::{Attribute, FontFamily, FontStyle, FormattedText},
     theme,
     widget::{
         drop_down, grid,
         grid::{GridRow, GridTrackDefinition},
         Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu, MenuItem, Null,
-        Orientation, Shortcut, Slider, TextEdit,
+        Orientation, Shortcut, Slider, TextEdit, WidgetPod,
     },
-    Color, Data, State, Widget, WidgetPod, Window,
+    Color, Data, State, Widget, Window,
 };
 use kyute_common::{Length, UnitExt};
 use rusqlite::Connection;
@@ -37,7 +39,7 @@ const VALUE_COLUMN: &str = "value";
 
 /// Node view.
 #[composable]
-pub fn node_item(document: &mut Document, node: &Node) -> GridRow<'static> {
+pub fn node_item(document: &mut DocumentConnection, node: &Node) -> GridRow<'static> {
     let delete_button = Button::new("Delete".to_string());
 
     if delete_button.clicked() {
@@ -103,12 +105,12 @@ pub fn node_item(document: &mut Document, node: &Node) -> GridRow<'static> {
 
 /// Root document view.
 #[composable(cached)]
-pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Widget + Clone {
+pub fn document_window_contents(#[uncached] document: &mut DocumentConnection) -> impl Widget + Clone {
     #[state]
     let mut slider_value = 0.0;
 
     tracing::trace!("document_window_contents");
-    let document_model = document.model().clone();
+    let document_model = document.document().clone();
 
     let mut grid = Grid::new();
     grid.push_column_definition(GridTrackDefinition::named(LABEL_COLUMN, GridLength::Fixed(100.dip())));
@@ -146,7 +148,7 @@ pub fn document_window_contents(#[uncached] document: &mut Document) -> impl Wid
 
 /// Main menu bar.
 #[composable(cached)]
-pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
+pub fn main_menu_bar(#[uncached] document: &mut DocumentConnection) -> Menu {
     let file_new = Action::with_shortcut(Shortcut::from_str("Ctrl+N"));
     let file_open = Action::with_shortcut(Shortcut::from_str("Ctrl+O"));
     let file_save = Action::with_shortcut(Shortcut::from_str("Ctrl+S"));
@@ -197,7 +199,7 @@ pub fn main_menu_bar(#[uncached] document: &mut Document) -> Menu {
 
 /// Native window displaying a document.
 #[composable(cached)]
-pub fn document_window(#[uncached] document: &mut Document) -> Window {
+pub fn document_window(#[uncached] document: &mut DocumentConnection) -> Window {
     //
     tracing::trace!("document_window");
     let menu_bar = main_menu_bar(document);
@@ -210,14 +212,14 @@ pub fn document_window(#[uncached] document: &mut Document) -> Window {
     )
 }
 
-fn try_open_document() -> anyhow::Result<Document> {
-    Ok(Document::open(Connection::open("test.artifice")?)?)
+fn try_open_document() -> anyhow::Result<DocumentConnection> {
+    Ok(DocumentConnection::open(Connection::open("test.artifice")?)?)
 }
 
 /// Application root.
 #[composable]
 pub fn application_root() -> impl Widget {
-    let document_state = cache::state(|| -> Option<Document> { None });
+    let document_state = cache::state(|| -> Option<DocumentConnection> { None });
     let mut document = document_state.take_without_invalidation();
 
     let mut invalidate = false;

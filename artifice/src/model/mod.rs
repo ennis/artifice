@@ -11,31 +11,30 @@ use std::{
     sync::{Arc, Weak},
 };
 
-pub mod attribute;
+mod attribute;
+mod connection;
 mod document;
-pub mod node;
+pub mod metadata;
+mod named_object;
+mod node;
 mod path;
+mod schema;
 mod share_group;
 mod value;
 
-pub use document::{Document, DocumentModel, Edit};
+pub use attribute::Attribute;
+pub use connection::{DocumentConnection, Edit};
+pub use document::Document;
 pub use kyute_common::Atom;
+pub use metadata::Metadata;
+pub use named_object::NamedObject;
 pub use node::Node;
 pub use path::ModelPath;
-pub use value::Value;
+pub use share_group::ShareGroup;
+pub use value::{FromValue, Value};
 
-/// Objects that belong to the document object tree, they have a name and are accessible via their path.
-#[derive(Clone, Debug, Data)]
-pub struct NamedObject {
-    /// rowid in the `named_objects` table.
-    pub id: i64,
-    /// Path of this object in the document tree. Contains the name of the object.
-    pub path: ModelPath,
-}
-
-impl NamedObject {
-    /// Returns the name of this object.
-    pub fn name(&self) -> Atom {
-        self.path.name()
-    }
-}
+/// A dummy type for image-typed attributes.
+///
+/// It doesn't hold a value because it's not serializable.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub struct Image;

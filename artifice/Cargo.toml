@@ -9,19 +9,23 @@ edition = "2018"
 [dependencies]
 # private macros
 artifice-macros = { path = "macros" }
-slotmap = { git="https://github.com/ennis/slotmap", branch="manual-iterator-clone" }
+slotmap = "1.0.6"
 lazy_static = "1.4.0"
 tracing = "0.1.26"
 anyhow = "1.0.40"
 thiserror = "1.0.25"
-#graal = { path = "../graal" }
-typemap = "0.3.3"
+anymap = "1.0.0-beta.2"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-kyute = { path="../kyute", features = ["imbl"] }
-kyute-common = { path="../kyute-common" }
+kyute = { path="../../kyute/kyute", features = ["imbl"] }
+kyute-common = { path="../../kyute/kyute-common" }
 dashmap = "5.0.0"
 imbl = "1.0.1"
+openimageio = { path = "../../openimageio-rs" }
 rusqlite = { version = "0.26.3", features = ["bundled"] }
 serde_rusqlite = "0.29.0"
 parking_lot = "0.11.2"
+euclid = "0.22"
+async-trait = "0.1"
+futures = "0.3.21"
+tokio = { version = "1.17.0", features = ["rt-multi-thread", "time"] }

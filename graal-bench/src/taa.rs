@@ -1,1 +1,0 @@
-//! Temporal anti-aliasing utilities
