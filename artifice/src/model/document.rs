@@ -1,54 +1,184 @@
-use crate::model::{attribute::AttributeAny, ModelPath, Node, ShareGroup};
-use imbl::Vector;
-use kyute_common::Data;
+use crate::{
+    model,
+    model::{
+        attribute::AttributeAny, file::DocumentDatabase, metadata, node::NodeEditProxy, EditAction, Node, Path,
+        ShareGroup,
+    },
+};
+use artifice::model::node::NodeChange;
+use core::fmt;
+use imbl::{HashMap, Vector};
+use kyute::ToMemoizeArg;
+use kyute_common::{Atom, Data};
+use std::{
+    fmt::{Formatter, Write},
+    sync::Arc,
+};
 
-/// Root object of documents.
-#[derive(Clone, Debug)]
+/// The root object of artifice documents.
+#[derive(Clone)]
 pub struct Document {
     /// Document revision index
-    pub revision: usize,
+    revision: usize,
     /// Root node
-    pub root: Node,
-    /// Share groups
-    pub share_groups: Vector<ShareGroup>,
+    pub(crate) root: Node,
+    //nodes: HashMap<Path, Node>,
+    // Share groups
+    //pub share_groups: Vector<ShareGroup>,
 }
 
 impl Data for Document {
     fn same(&self, other: &Self) -> bool {
-        self.revision.same(&other.revision)
-            && self.root.same(&other.root)
-            && self.share_groups.ptr_eq(&other.share_groups)
+        self.revision.same(&other.revision) && self.root.same(&other.root)
     }
 }
 
 impl Document {
-    /// Finds the node with the given path.
-    pub fn find_node(&self, path: &ModelPath) -> Option<&Node> {
-        match path.split_last() {
-            None => Some(&self.root),
-            Some((prefix, last)) => {
-                let parent = self.find_node(&prefix)?;
-                parent.find_child(&last)
-            }
+    /// Returns a new document.
+    pub fn new() -> Document {
+        Document {
+            revision: 0,
+            //nodes: Default::default(),
+            root: Node::new(0, Path::root()),
         }
     }
 
-    /// Finds the node with the given path and returns a mutable reference to it.
-    pub fn find_node_mut(&mut self, path: &ModelPath) -> Option<&mut Node> {
-        match path.split_last() {
-            None => Some(&mut self.root),
-            Some((prefix, last)) => {
-                let parent = self.find_node_mut(&prefix)?;
-                parent.find_child_mut(&last)
-            }
+    /// Returns the node with the given path.
+    pub fn node(&self, path: &Path) -> Option<&Node> {
+        if path.is_root() {
+            Some(&self.root)
+        } else {
+            self.node(&path.parent().unwrap())?.children.get(&path.name())
         }
+    }
+
+    /// Returns a mutable reference to the node with the given path.
+    pub fn node_mut(&mut self, path: &Path) -> Option<&mut Node> {
+        if path.is_root() {
+            Some(&mut self.root)
+        } else {
+            self.node_mut(&path.parent().unwrap())?.children.get_mut(&path.name())
+        }
+    }
+
+    pub fn root(&self) -> &Node {
+        &self.root
     }
 
     /// Returns the attribute at the given path.
-    pub fn find_attribute(&self, path: &ModelPath) -> Option<&AttributeAny> {
-        assert!(path.is_attribute());
-        let parent = path.parent().unwrap();
-        let node = self.find_node(&parent)?;
-        node.find_attribute(&path.name())
+    pub fn attribute(&self, path: &Path) -> Option<&AttributeAny> {
+        self.node(&path.parent()?)?.attribute(&path.name())
+    }
+
+    pub fn dump(&self, out: &mut dyn std::fmt::Write) {
+        let mut printer = DocumentPrettyPrinter::new(out);
+        printer.print_node(&self.root, true);
+    }
+
+    /// Edits the root node.
+    pub fn edit<R>(&mut self, db: &mut DocumentDatabase, f: impl FnOnce(&mut NodeEditProxy) -> R) -> R {
+        let mut proxy = NodeEditProxy::borrowed(&self.root, db);
+        let result = f(&mut proxy);
+        match proxy.finish() {
+            Some(NodeChange::Modified(node)) => {
+                self.root = node;
+            }
+            Some(NodeChange::Removed) => {
+                panic!("attempted to remove the root node")
+            }
+            None => {}
+        }
+        result
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Dump
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+impl fmt::Debug for Document {
+    fn fmt(&self, f: &mut fmt::Formatter) -> std::fmt::Result {
+        self.dump(f);
+        Ok(())
+    }
+}
+
+struct DocumentPrettyPrinter<'a> {
+    output: &'a mut dyn std::fmt::Write,
+    indent: usize,
+    lines: Vec<usize>,
+}
+
+impl<'a> DocumentPrettyPrinter<'a> {
+    fn new(output: &'a mut dyn std::fmt::Write) -> DocumentPrettyPrinter<'a> {
+        DocumentPrettyPrinter {
+            output,
+            indent: 0,
+            lines: vec![],
+        }
+    }
+
+    fn print_line_prefix(&mut self) {
+        let mut pad = vec![' '; self.indent];
+        for &p in self.lines.iter() {
+            pad[p] = '│';
+        }
+        for c in pad {
+            self.output.write_char(c);
+        }
+    }
+
+    fn print_node(&mut self, node: &Node, is_last: bool) {
+        self.print_line_prefix();
+        self.output.write_char(if is_last { '└' } else { '├' });
+        write!(self.output, "{}", node.path.name().as_ref());
+        if let Some(op) = node.metadata(metadata::OPERATOR) {
+            write!(self.output, " <{}>", op.as_ref());
+        }
+        writeln!(self.output, " ({:?})", node.path);
+
+        let child_item_count = node.children.len() + node.attributes.len();
+        let mut child_index = 0;
+
+        if !is_last {
+            self.lines.push(self.indent);
+        }
+        self.indent += 2;
+
+        for attr in node.attributes.values() {
+            child_index += 1;
+            if child_index == child_item_count {
+                self.print_attribute(attr, true);
+            } else {
+                self.print_attribute(attr, false);
+            }
+        }
+
+        for n in node.children.values() {
+            child_index += 1;
+            if child_index == child_item_count {
+                self.print_node(n, true);
+            } else {
+                self.print_node(n, false);
+            }
+        }
+
+        self.indent -= 2;
+        if !is_last {
+            self.lines.pop();
+        }
+    }
+
+    fn print_attribute(&mut self, attr: &AttributeAny, is_last: bool) {
+        self.print_line_prefix();
+        self.output.write_char(if is_last { '└' } else { '├' });
+        write!(self.output, "{} [{}]", attr.path.name().as_ref(), attr.ty.as_ref());
+        if let Some(ref val) = attr.value {
+            write!(self.output, " = {:?}", val);
+        }
+        if let Some(ref cx) = attr.connection {
+            write!(self.output, " ⇒ {:?}", cx);
+        }
+        writeln!(self.output);
     }
 }

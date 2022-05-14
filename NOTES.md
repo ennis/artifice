@@ -2694,3 +2694,4 @@ But it's harder to retain state directly in the widget struct, because it is fre
 The usual answer is something like an `Arc<RefCell<RetainedState>>` that is stored in the cache, but that's repulsive.
 
 => find a way to have retained state in the "widget" context
+

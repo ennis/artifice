@@ -123,6 +123,12 @@ impl From<String> for Value {
     }
 }
 
+impl<'a> From<&'a str> for Value {
+    fn from(v: &'a str) -> Self {
+        Value::String(v.into())
+    }
+}
+
 impl serde::Serialize for Value {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -351,7 +357,7 @@ impl<'de> serde::Deserialize<'de> for Value {
     where
         D: Deserializer<'de>,
     {
-        todo!()
+        deserializer.deserialize_any(ValueVisitor)
     }
 }
 
@@ -359,7 +365,7 @@ impl<'de> serde::Deserialize<'de> for Value {
 // FromValue
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-pub trait FromValue {
+pub trait FromValue: Sized {
     fn from_value(value: &Value) -> Option<Self>;
 }
 

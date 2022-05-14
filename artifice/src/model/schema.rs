@@ -1,5 +1,5 @@
-use crate::model::{Metadata, Value};
-use kyute_common::Atom;
+use crate::model::{Atom, Metadata, Value};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct AttributeSchema {
@@ -10,7 +10,7 @@ pub struct AttributeSchema {
     /// Default value.
     pub default_value: Option<Value>,
     /// Default metadata.
-    pub metadata: Vec<Metadata>,
+    pub metadata: HashMap<Atom, Value>,
 }
 
 /// A set of required attributes on a node.

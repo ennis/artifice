@@ -1,4 +1,5 @@
-use crate::model::{DocumentConnection, ModelPath, Node};
+use crate::model::{Document, Node, NodeEditProxy, Path};
+use artifice::model::DocumentFile;
 use kyute::{
     cache, composable,
     shell::{
@@ -39,39 +40,14 @@ const VALUE_COLUMN: &str = "value";
 
 /// Node view.
 #[composable]
-pub fn node_item(document: &mut DocumentConnection, node: &Node) -> GridRow<'static> {
-    let delete_button = Button::new("Delete".to_string());
-
-    if delete_button.clicked() {
-        tracing::info!("delete node clicked {:?}", node.base.path);
-        document.delete_node(node);
-    }
-
-    /*let result = cache::enqueue(async move || {
-        wait(300.ms()).await;
-        // do stuff
-        wait(300.ms()).await;
+pub fn node_item(node: &mut NodeEditProxy) -> GridRow<'static> {
+    let delete_button = Button::new("Delete".to_string()).on_clicked(|| {
+        tracing::info!("delete node clicked {:?}", node.path);
+        node.remove();
     });
 
-    if asset_changed(asset_id) {
-        // reload asset?
-    }
-
-    if let Some(result) = result {
-        // future (or stream) finished (or produced something)
-    }*/
-
-    // animations:
-    // will recomp at some fixed intervals for 300ms, producing a different value every time
-    // (pray that we don't allocate too much)
-    //let y_pos = animate(delete_button.clicked(), 300.ms(), 0.0, 100.0, Easing::InOut);
-
-    // state machines:
-    // e.g.
-    // click -> state1, click again -> state2
-
     // format name
-    let path = node.base.path.to_string();
+    let path = node.path.to_string();
     let last_sep = path.rfind('/').unwrap();
     let path_text = FormattedText::from(path)
         .attribute(0..=last_sep, Attribute::Color(Color::new(0.7, 0.7, 0.7, 1.0)))
@@ -95,7 +71,7 @@ pub fn node_item(document: &mut DocumentConnection, node: &Node) -> GridRow<'sta
     let mut row = GridRow::new();
     row.add(
         LABEL_COLUMN,
-        Label::new(format!("{}({})", node.base.path.to_string(), node.base.id)),
+        Label::new(format!("{}({})", node.path.to_string(), node.id)),
     );
     row.add(DELETE_COLUMN, delete_button);
     row.add(ADD_COLUMN, dropdown);
@@ -105,12 +81,11 @@ pub fn node_item(document: &mut DocumentConnection, node: &Node) -> GridRow<'sta
 
 /// Root document view.
 #[composable(cached)]
-pub fn document_window_contents(#[uncached] document: &mut DocumentConnection) -> impl Widget + Clone {
+pub fn document_window_contents(document: &mut NodeEditProxy) -> impl Widget + Clone {
     #[state]
     let mut slider_value = 0.0;
 
     tracing::trace!("document_window_contents");
-    let document_model = document.document().clone();
 
     let mut grid = Grid::new();
     grid.push_column_definition(GridTrackDefinition::named(LABEL_COLUMN, GridLength::Fixed(100.dip())));
@@ -122,18 +97,18 @@ pub fn document_window_contents(#[uncached] document: &mut DocumentConnection) -
     grid.set_row_gap(2.px());
 
     // Root nodes
-    for (_name, node) in document_model.root.children.iter() {
-        cache::scoped(node.base.id as usize, || {
-            grid.add_row(node_item(document, node));
+    document.edit_children(|node| {
+        cache::scoped(node.id as usize, || {
+            grid.add_row(node_item(node));
         })
-    }
+    });
 
     // "Add Node" button
     let add_node_button = Button::new("Add Node".to_string());
     if add_node_button.clicked() {
         tracing::info!("add node clicked");
-        let name = document_model.root.make_unique_child_name("node");
-        document.create_node(ModelPath::root().join(name));
+        let name = document.make_unique_child_name("node");
+        document.get_or_create_node(name, |node| {});
     }
     grid.add_item(grid.row_count(), 0, 0, add_node_button);
 
@@ -148,7 +123,7 @@ pub fn document_window_contents(#[uncached] document: &mut DocumentConnection) -
 
 /// Main menu bar.
 #[composable(cached)]
-pub fn main_menu_bar(#[uncached] document: &mut DocumentConnection) -> Menu {
+pub fn main_menu_bar(document: &mut NodeEditProxy) -> Menu {
     let file_new = Action::with_shortcut(Shortcut::from_str("Ctrl+N"));
     let file_open = Action::with_shortcut(Shortcut::from_str("Ctrl+O"));
     let file_save = Action::with_shortcut(Shortcut::from_str("Ctrl+S"));
@@ -199,7 +174,7 @@ pub fn main_menu_bar(#[uncached] document: &mut DocumentConnection) -> Menu {
 
 /// Native window displaying a document.
 #[composable(cached)]
-pub fn document_window(#[uncached] document: &mut DocumentConnection) -> Window {
+pub fn document_window(document: &mut NodeEditProxy) -> Window {
     //
     tracing::trace!("document_window");
     let menu_bar = main_menu_bar(document);
@@ -212,45 +187,29 @@ pub fn document_window(#[uncached] document: &mut DocumentConnection) -> Window 
     )
 }
 
-fn try_open_document() -> anyhow::Result<DocumentConnection> {
-    Ok(DocumentConnection::open(Connection::open("test.artifice")?)?)
+fn try_open_document() -> anyhow::Result<DocumentFile> {
+    Ok(DocumentFile::open(Connection::open("test.artifice")?)?)
 }
 
 /// Application root.
 #[composable]
 pub fn application_root() -> impl Widget {
-    let document_state = cache::state(|| -> Option<DocumentConnection> { None });
-    let mut document = document_state.take_without_invalidation();
+    let document_file_state = cache::state(|| Some(try_open_document().unwrap()));
+    let mut document_file = document_file_state.take_without_invalidation().unwrap();
 
-    let mut invalidate = false;
-    let old_revision: Option<usize> = document.as_ref().map(|doc| doc.revision());
-    let window = if let Some(ref mut document) = document {
-        let window = document_window(document);
-        invalidate = Some(document.revision()) != old_revision;
-        window
+    let mut changed = false;
+    let window = document_file.edit(|mut document| {
+        let w = document_window(&mut document);
+        if document.changed() {
+            changed = true;
+        }
+        w
+    });
+
+    if changed {
+        document_file_state.set(Some(document_file));
     } else {
-        // create document
-        // TODO open file dialog
-        let window_contents: Arc<dyn Widget> = match try_open_document() {
-            Ok(new_document) => {
-                document = Some(new_document);
-                invalidate = true;
-                Arc::new(Flex::new(Orientation::Vertical))
-            }
-            Err(e) => {
-                // error message
-                Arc::new(Label::new(format!("Could not open file: {}", e)))
-            }
-        };
-
-        Window::new(WindowBuilder::new().with_title("No document"), window_contents, None)
-    };
-
-    if invalidate {
-        tracing::trace!("invalidating document");
-        document_state.set(document);
-    } else {
-        document_state.set_without_invalidation(document);
+        document_file_state.set_without_invalidation(Some(document_file));
     }
 
     window

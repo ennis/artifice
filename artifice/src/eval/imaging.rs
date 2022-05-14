@@ -1,7 +1,7 @@
 //! Imaging evaluation context
 use crate::{
     eval::{registry::operator_registry, EvalError, EvalKey, GeneralEvalState, OpCtx, TaskMap},
-    model::{metadata, Document, ModelPath, Node},
+    model::{metadata, Document, Node, Path},
 };
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -139,12 +139,13 @@ impl Hash for RequestWindow {
 
 /// A request for some region of an input image.
 pub struct ImageInputRequest {
-    pub path: ModelPath,
+    pub path: Path,
     pub time: f64,
     pub window: RequestWindow,
 }
 
 /// Region of definition returned by `OpImaging::compute_region_of_definition`.
+#[derive(Copy, Clone, Debug)]
 pub struct RegionOfDefinition {
     /// The target-independent region of definition.
     pub rect: TiRect,
@@ -199,11 +200,6 @@ impl Deref for OpImagingCtx {
 }
 
 impl OpImagingCtx {
-    /// Returns the evaluation time.
-    pub fn time(&self) -> f64 {
-        self.general.time()
-    }
-
     /// Computes the region of definition of the image at the specified model path.
     pub async fn compute_input_region_of_definition(
         &self,
@@ -218,18 +214,18 @@ impl OpImagingCtx {
         input: impl Into<Atom>,
         time: f64,
     ) -> Result<RegionOfDefinition, EvalError> {
-        let path = self.node.base.path.join_attribute(input);
+        let path = self.node.path.join_attribute(input);
         self.op_ctx
-            .compute_region_of_definition(self.transform, path, time)
+            .compute_region_of_definition(path, self.transform, time)
             .await
     }
 
-    pub fn request_input(&mut self, path: &ModelPath, time: f64, roi: Rect) {
+    /*pub fn request_input(&mut self, path: &ModelPath, time: f64, roi: Rect) {
         // Get or create a request for the image
         let imaging_ctx = self.eval.imaging.as_mut().unwrap();
         let req = imaging_ctx.get_or_create_request(path, time);
         // See if there's already a region
-    }
+    }*/
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -249,14 +245,15 @@ pub struct ImageRequest {
     regions: Vec<Rect>,
 }*/
 
+/*
 /// Data uniquely identifying a request for some data from an image.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct ImageRequestKey {
     /// Path to the model object (should implement OpImaging) the produces the image.
     pub model_path: ModelPath,
     /// Evaluation time.
     pub time: f64,
-}
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // ImagingEvalCtx
@@ -301,38 +298,43 @@ impl OpCtx {
     /// Computes the region of definition of the image at the specified model path.
     pub async fn compute_region_of_definition(
         &self,
+        path: Path,
         transform: Transform,
-        path: ModelPath,
         time: f64,
     ) -> Result<RegionOfDefinition, EvalError> {
-        let key = EvalKey { path, time };
+        let key = EvalKey {
+            path: path.clone(),
+            time,
+        };
+        let eval = self.eval.clone();
 
-        let this = self.clone();
-        let document = self.document();
-
-        self.rod_tasks
+        self.eval
+            .imaging
+            .rod_tasks
             .fetch_or_spawn(key, async move {
                 // get the imaging operator for the target path
-                let node = document.find_node(&path).ok_or(EvalError::PathNotFound(path.clone()))?;
+                let node = eval
+                    .document
+                    .node(&path)
+                    .ok_or(EvalError::PathNotFound(path.clone()))?
+                    .clone();
                 let op_name = node
-                    .get_metadata(metadata::OPERATOR)
-                    .ok_or_else(|| EvalError::Other(anyhow!("target has no operator")))?;
+                    .metadata(metadata::OPERATOR)
+                    .ok_or_else(|| EvalError::general("target has no operator"))?;
                 let op = IMAGING_OPERATORS
                     .get(&op_name)
                     .ok_or(EvalError::UnknownOperator(op_name))?;
 
                 // issue: can't borrow self from another task
                 let mut op_ctx = OpImagingCtx {
-                    imaging_ctx: this,
-                    document: &document,
-                    node,
+                    op_ctx: OpCtx::new(eval, time, node),
                     transform,
-                    roi: Default::default(),
                 };
 
                 // invoke operator here
                 op.compute_region_of_definition(&op_ctx).await
             })
             .await
+            .unwrap()
     }
 }

@@ -400,3 +400,117 @@ Problem is that the user might want to make its own non-static schemas, or load 
 	// Decisions:
 	// - attributes may not have a defined value, because some attributes represent value that only make sense in specific contexts (i.e. they have a variability that
 	// - attributes may be "connected" to other attributes, signalling that they should use the connected attribute's value instead
+
+## Tree editing 
+problem: with immutable trees, can't have simultaneously:
+1. fast, direct tree traversals                     => for UI updates
+2. fast ModelPath lookups                           => for fast evaluation
+3. in-place mutation of nodes with exclusive `&mut` => for editing
+Solution/Workaround:
+Drop number 3. Instead of fast in-place mutation, use "edits", which collect nodes & attributes not yet inserted in the document.
+** But then editing is slow: you need to update the entry in the target node,
+Alternative:
+-> path resolution cache
+     in Document, Arc<RwLock<HashMap<Path,Weak<Node>>>>, checked on resolution
+-> mutations through edits
+     clone Document, get mut ref, apply edit => clears the path resolution cache
+The path resolution cache stays populated as long as the document is not edited.
+Document edits:
+-> during UI traversal, we have refs to Nodes, Attributes, we know their paths
+     -> can't propagate &mut Node, because it would incur a clone every time when using `#[composable(cached)]`
+             (because `#[composable(cached)]` keeps a clone of the Arc<Node>, and thus make_mut would clone every time because it never sees a unique strong ref).
+     -> instead, pass down a `&mut model::Edit`
+     -> collect edits inside
+         -> add node at path
+         -> remove node at path
+         -> add attrib
+         -> remove attrib
+ -> actually, Edit can wrap a `&Node` directly:
+
+```rust
+struct NodeEdit<'a> {
+	node: &'a Node,
+	// list of edits rooted at this position
+	edits: Vec<TreeEdit>,
+}
+
+// trick: NodeEdit is cloneable, but does not clone the edits, Data impl only compares the node ref.
+// it could also be a return value, but it's annoying 
+#[composable(cached)]
+fn gui(node: &mut model::NodeEdit) {
+	
+	
+	if button_clicked_or_whatever {
+		let node = edit.add_child(node, ...);
+		node.add_attribute(...);
+	}
+	
+	for a in node.attributes.iter() {
+		
+		edit.edit_attribute(node, a);
+		
+	}
+	
+	for n in node.children.iter() { // n: NodeEdit
+		
+	}
+	
+	let mut doc_edit = document.edit();
+	let mut node_edit = doc_edit.node("...")?;
+	
+	for node_edit in doc_edit.edit_children() {
+		for attr_edit in doc_edit.edit_attributes() {
+			attr_edit.set(...);
+			attr_edit.remove(...);
+		}
+	}
+	
+}
+
+```
+
+# Undo/redo
+With an immutable data model, it's easy in theory: just keep a copy of the document between every change, 
+and keep descriptions of the changes for the UI.
+
+However, we now have a database, and on every change, we apply the change to the DB. For undo, we need to record the opposite change to apply to the DB. Keeping a copy of the document is not enough anymore.
+
+
+# Data model mutation woes:
+1. avoid unnecessary copies during UI update / traversal
+2. must produce piecewise diffs that can be applied to a database
+3. support undo/redo easily
+4. keep DB and in-memory objects up-to-date
+5. can hold two refs to different parts to the document during UI traversal
+6. in-place update (at odds with 5.)
+
+## Facts
+- you can't use a `&mut Document` for UI traversal because this implies an inevitable deep clone due to previous doc stored in undo/redo stack
+  - copy-on-write might work
+- there will be a trait `DocumentBackend` that can be implemented to support different format
+  - this provides a "database-like" interface for editing documents on disk, abstracts away the underlying file format
+
+## Options
+
+### In-place write with `Cow<'a, Node>`: 
+1. OK, no clone if no modification
+2. OK, done on traversal
+3. OK, clone before traversal
+
+### In-place write with `&mut Node` (a.k.a. non-persistent data model):
+Can't do undo/redo "the easy way" by simply cloning the root node before potential modifications. Must keep an edit list.
+That said, we already have to keep an edit list because of the database interface.
+
+Benefits:
+- no need for persistent data structures
+
+Drawbacks:
+- if we want to perform operations in the background that read from the data model we need to either:
+  - deep clone the data model
+  - synchronize UI access with the background ops, blocking the UI, which defeats the purpose of running ops on a background thread
+  
+
+# TODO
+- type safety for attribute values (no need to specify the type of attributes, they would be inferred from values)
+- builder pattern for attributes
+- error reporting

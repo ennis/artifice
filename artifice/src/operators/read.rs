@@ -4,7 +4,8 @@ use crate::eval::{
     },
     EvalError, TaskMap,
 };
-use futures::future;
+use async_trait::async_trait;
+use futures::{future, TryFutureExt};
 use kyute_common::Atom;
 use parking_lot::Mutex;
 use std::{
@@ -45,13 +46,13 @@ struct OpRead {
 }
 
 impl OpRead {
-    /// Returns the headers for the image at the given path.
-    async fn get_image_headers<P: AsRef<Path>>(&self, path: P) -> Result<ImageHeaders, EvalError> {
-        let path = path.as_ref();
+    /// Returns the headers for the image at the given file path.
+    async fn get_image_headers(&self, path: impl Into<PathBuf>) -> Result<ImageHeaders, EvalError> {
+        let path = path.into();
 
         self.image_headers
-            .fetch_or_spawn_blocking(path.to_path_buf(), || {
-                let image_input = openimageio::ImageInput::open(path)?;
+            .fetch_or_spawn_blocking(path.clone(), || {
+                let image_input = openimageio::ImageInput::open(path).map_err(|e| EvalError::general(e.to_string()))?;
                 let spec = image_input.spec();
                 Ok(ImageHeaders {
                     width: spec.width(),
@@ -59,6 +60,7 @@ impl OpRead {
                 })
             })
             .await
+            .unwrap()
     }
 }
 
@@ -68,8 +70,8 @@ impl OpImaging for OpRead {
         &self,
         ctx: &OpImagingCtx,
         request: &RequestWindow,
-    ) -> Result<ImageInputRequest, EvalError> {
-        todo!()
+    ) -> Result<Vec<ImageInputRequest>, EvalError> {
+        Ok(vec![])
     }
 
     async fn compute_region_of_definition(&self, ctx: &OpImagingCtx) -> Result<RegionOfDefinition, EvalError> {

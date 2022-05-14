@@ -3,19 +3,19 @@ use crate::{
         imaging::{ImageInputRequest, OpImaging, OpImagingCtx, PxSize, RegionOfDefinition, RequestWindow, TiSize},
         EvalError,
     },
-    model::{Attribute, Image, Node},
+    model::{Image, Node},
 };
+use async_trait::async_trait;
 use kyute_common::Size;
 
 struct OpBlur {
-    /// Standard deviation of the gaussian kernel. Also determines the size in pixels of the kernel.
-    //#[schema(name = "standardDeviation", default_value = 2.0, ui(min = 0.1))]
-    standard_deviation: Attribute<f64>,
-    /// Input image.
-    // `Image` is a dummy type here
-    //#[schema(name = "input", ui(input_bus = "main"))]
-    input: Attribute<Image>,
-}
+    /*/// Standard deviation of the gaussian kernel. Also determines the size in pixels of the kernel.
+//#[schema(name = "standardDeviation", default_value = 2.0, ui(min = 0.1))]
+standard_deviation: Attribute<f64>,
+/// Input image.
+// `Image` is a dummy type here
+//#[schema(name = "input", ui(input_bus = "main"))]
+input: Attribute<Image>,*/}
 
 fn half_gaussian_window_size(std_dev: f64) -> u32 {
     (3.0 * std_dev).ceil() as u32
@@ -29,8 +29,9 @@ impl OpImaging for OpBlur {
         ctx: &OpImagingCtx,
         request: &RequestWindow,
     ) -> Result<Vec<ImageInputRequest>, EvalError> {
+        let input = ctx.mandatory_connected_input("input")?;
+
         let standard_deviation: f64 = ctx.eval_attribute("standardDeviation", ctx.time).await?;
-        let input = ctx.get_source("input");
         let kernel_size = half_gaussian_window_size(standard_deviation);
 
         // expand requested region

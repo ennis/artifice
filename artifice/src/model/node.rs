@@ -1,42 +1,39 @@
 use crate::model::{
-    attribute::{Attribute, AttributeAny},
-    Atom, FromValue, Metadata, ModelPath, NamedObject, Value,
+    attribute::{AttributeAny, AttributeChange, AttributeEditProxy, AttributeType},
+    file::{DocumentDatabase, DocumentFile},
+    Atom, EditAction, FromValue, Metadata, Path, Value,
 };
 use imbl::{HashMap, Vector};
 use kyute::Data;
-use std::sync::Arc;
+use std::{borrow::Cow, ops::Deref, sync::Arc};
 
 /// Nodes.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Data)]
 pub struct Node {
-    /// Common properties of named objects.
-    pub base: NamedObject,
-    /// Child nodes.
-    pub children: HashMap<Atom, Node>,
+    /// Revision index, incremented on every change.
+    pub(crate) rev: u64,
+    /// Unique node ID.
+    pub id: i64,
+    /// Path of this object in the document tree. Contains the name of the object.
+    pub path: Path,
     /// Attributes.
     pub attributes: HashMap<Atom, AttributeAny>,
     /// Node metadata.
     pub metadata: HashMap<Atom, Value>,
+    /// Child nodes
+    pub children: HashMap<Atom, Node>,
 }
 
 impl Node {
-    /*/// Writes this node into an open database.
-    pub fn write(&self, conn: &rusqlite::Connection) -> Result<()> {
-        // recursively write this node and children
-        self.base.write(conn)?;
-        for (_, n) in self.children.iter() {
-            n.write(conn);
-        }
-        Ok(())
-    }*/
-
     /// Creates a new node.
-    pub(crate) fn new(path: ModelPath) -> Node {
+    pub(crate) fn new(id: i64, path: Path) -> Node {
         Node {
-            base: NamedObject { id: 0, path },
-            children: Default::default(),
+            rev: 0,
+            id,
+            path,
             attributes: Default::default(),
             metadata: Default::default(),
+            children: Default::default(),
         }
     }
 
@@ -49,7 +46,7 @@ impl Node {
         'check: loop {
             // check for property with the same name
             for node in self.children.values() {
-                if node.base.path.name() == unique_name {
+                if node.name() == unique_name {
                     unique_name = Atom::from(format!("{}_{}", stem, counter));
                     counter += 1;
                     // restart check
@@ -62,24 +59,18 @@ impl Node {
         unique_name
     }
 
-    /// Finds a child node by name.
-    pub fn find_child(&self, name: &Atom) -> Option<&Node> {
-        self.children.get(name)
+    pub fn name(&self) -> Atom {
+        self.path.name()
     }
 
-    /// Finds a child node by name and returns a mutable reference to it.
-    pub fn find_child_mut(&mut self, name: &Atom) -> Option<&mut Node> {
-        self.children.get_mut(name)
-    }
-
-    /// Adds a child node. Used internally by `Document`.
-    pub fn add_child(&mut self, name: Atom) -> &mut Node {
-        let child_path = self.base.path.join(name.clone());
-        self.children.entry(name).or_insert(Node::new(child_path))
-    }
-
-    pub fn find_attribute(&self, name: &Atom) -> Option<&AttributeAny> {
+    /// Returns the attribute with the specified name.
+    pub fn attribute(&self, name: &Atom) -> Option<&AttributeAny> {
         self.attributes.get(name)
+    }
+
+    /// Returns a mutable reference to the attribute with the specified name.
+    pub fn attribute_mut(&mut self, name: &Atom) -> Option<&mut AttributeAny> {
+        self.attributes.get_mut(name)
     }
 
     /// Returns a metadata value.
@@ -88,31 +79,219 @@ impl Node {
         T::from_value(v)
     }
 
-    // Adds an attribute.
-    //pub fn add_attribute(&mut self, name: Atom)
+    pub fn child(&self, name: &Atom) -> Option<&Node> {
+        self.children.get(name)
+    }
 
-    /// Recursively dumps the structure of this node and its children to the standard output.
-    pub fn dump(&self, indent: usize) {
-        let name = self.base.path.name();
-
-        println!(
-            "{:indent$}{}",
-            "",
-            if name.is_empty() { "<root>" } else { &name },
-            indent = indent
-        );
-
-        {
-            let indent = indent + 2;
-            for n in self.children.values() {
-                n.dump(indent);
-            }
-        }
+    pub fn child_mut(&mut self, name: &Atom) -> Option<&mut Node> {
+        self.children.get_mut(name)
     }
 }
 
-impl Data for Node {
-    fn same(&self, other: &Self) -> bool {
-        self.base.same(&other.base) && self.children.ptr_eq(&other.children)
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Edits
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub struct NodeEditProxy<'a> {
+    node: Cow<'a, Node>,
+    db: &'a mut DocumentDatabase,
+    init_rev: u64,
+    removed: bool,
+}
+
+pub enum NodeChange {
+    Modified(Node),
+    Removed,
+}
+
+impl<'a> Deref for NodeEditProxy<'a> {
+    type Target = Node;
+    fn deref(&self) -> &Self::Target {
+        self.node.deref()
+    }
+}
+
+impl<'a> NodeEditProxy<'a> {
+    pub(crate) fn borrowed(node: &'a Node, db: &'a mut DocumentDatabase) -> NodeEditProxy<'a> {
+        let init_rev = node.rev;
+        NodeEditProxy {
+            node: Cow::Borrowed(node),
+            init_rev,
+            removed: false,
+            db,
+        }
+    }
+
+    pub(crate) fn owned(node: Node, db: &'a mut DocumentDatabase) -> NodeEditProxy<'a> {
+        let init_rev = node.rev;
+        NodeEditProxy {
+            node: Cow::Owned(node),
+            init_rev,
+            removed: false,
+            db,
+        }
+    }
+
+    pub fn finish(self) -> Option<NodeChange> {
+        if self.removed {
+            Some(NodeChange::Removed)
+        } else {
+            match self.node {
+                Cow::Borrowed(_) => None,
+                Cow::Owned(node) => Some(NodeChange::Modified(node)),
+            }
+        }
+    }
+
+    pub fn changed(&mut self) -> bool {
+        self.node.rev > self.init_rev || self.removed
+    }
+
+    pub fn get_or_create_attribute<R>(
+        &mut self,
+        name: impl Into<Atom>,
+        ty: impl Into<Atom>,
+        value: Option<Value>,
+        f: impl FnOnce(&mut AttributeEditProxy) -> R,
+    ) -> R {
+        let name = name.into();
+        let result;
+
+        let change = if let Some(attribute) = self.node.attribute(&name) {
+            let mut proxy = AttributeEditProxy::borrowed(attribute, self.db);
+            result = f(&mut proxy);
+            proxy.finish()
+        } else {
+            let ty = ty.into();
+            let path = self.node.path.join_attribute(name.clone());
+            let id = self
+                .db
+                .insert_attribute(self.node.id, &path, ty.clone(), value.clone(), None)
+                .unwrap();
+            let mut proxy = AttributeEditProxy::owned(AttributeAny::new(id, path, ty, value, None), self.db);
+            result = f(&mut proxy);
+            proxy.finish()
+        };
+
+        match change {
+            Some(AttributeChange::Modified(attr)) => {
+                self.node.to_mut().attributes.insert(name, attr);
+            }
+            Some(AttributeChange::Removed) => {
+                self.node.to_mut().attributes.remove(&name);
+            }
+            None => {}
+        }
+
+        result
+    }
+
+    /// Recursively edit this node's attributes.
+    ///
+    /// The provided closure is called with an `AttributeEditProxy` for each of this node's attributes.
+    pub fn edit_attributes(&mut self, mut f: impl FnMut(&mut AttributeEditProxy)) {
+        let mut changes = vec![];
+        for (_, attribute) in self.node.attributes.iter() {
+            let mut proxy = AttributeEditProxy::borrowed(attribute, self.db);
+            f(&mut proxy);
+            if let Some(change) = proxy.finish() {
+                changes.push((attribute.name(), change));
+            }
+        }
+
+        for (attr_name, change) in changes {
+            match change {
+                AttributeChange::Modified(attr) => {
+                    self.node.to_mut().attributes.insert(attr_name, attr);
+                }
+                AttributeChange::Removed => {
+                    self.node.to_mut().attributes.remove(&attr_name);
+                }
+            }
+        }
+    }
+
+    /// Edits a child node.
+    ///
+    /// The provided closure is called with a `NodeEditProxy` for the child node.
+    pub fn get_or_create_node<R>(&mut self, name: impl Into<Atom>, f: impl FnOnce(&mut NodeEditProxy) -> R) -> R {
+        let name = name.into();
+        let result;
+        let change;
+
+        if let Some(child) = self.node.child(&name) {
+            let mut proxy = NodeEditProxy::borrowed(child, self.db);
+            result = f(&mut proxy);
+            change = proxy.finish();
+        } else {
+            let path = self.node.path.join(name.clone());
+            let id = self.db.insert_node(self.node.id, &path).unwrap();
+            let mut proxy = NodeEditProxy::owned(Node::new(id, path), self.db);
+            result = f(&mut proxy);
+            change = proxy.finish();
+        };
+
+        match change {
+            Some(NodeChange::Modified(node)) => {
+                self.node.to_mut().children.insert(name, node);
+            }
+            Some(NodeChange::Removed) => {
+                self.node.to_mut().children.remove(&name);
+            }
+            None => {}
+        }
+
+        result
+    }
+
+    /// Recursively edit this node's children.
+    ///
+    /// The provided closure is called with an `NodeEditProxy` for each of this node's children.
+    pub fn edit_children(&mut self, mut f: impl FnMut(&mut NodeEditProxy)) {
+        let mut changes = vec![];
+        for (_, child) in self.node.children.iter() {
+            let mut proxy = NodeEditProxy::borrowed(child, self.db);
+            f(&mut proxy);
+            if let Some(change) = proxy.finish() {
+                changes.push((child.name(), change));
+            }
+        }
+
+        for (child_name, change) in changes {
+            match change {
+                NodeChange::Modified(node) => {
+                    self.node.to_mut().children.insert(child_name, node);
+                }
+                NodeChange::Removed => {
+                    self.node.to_mut().children.remove(&child_name);
+                }
+            }
+        }
+    }
+
+    /// Removes this node from the document.
+    pub fn remove(&mut self) {
+        assert!(!self.node.path.is_root(), "cannot remove root node");
+        self.db.remove_node(self.id);
+        self.removed = true;
+    }
+
+    pub(crate) fn removed(&self) -> bool {
+        self.removed
+    }
+}
+
+impl<'a> kyute::ToMemoizeArg for NodeEditProxy<'a> {
+    type Target = Node;
+    fn to_memoize_arg(&self) -> Self::Target {
+        self.node.deref().clone()
+    }
+}
+
+impl<'a, 'b> kyute::ToMemoizeArg for &'b mut NodeEditProxy<'a> {
+    type Target = Node;
+    fn to_memoize_arg(&self) -> Self::Target {
+        self.node.deref().clone()
     }
 }

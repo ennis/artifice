@@ -14,7 +14,10 @@ pub struct Metadata<T> {
 
 impl<T: FromValue> Metadata<T> {
     pub const fn new(name: &'static str) -> Metadata<T> {
-        Metadata { name, _phantom }
+        Metadata {
+            name,
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -31,7 +34,7 @@ impl<T> Clone for Metadata<T> {
 
 impl<T> fmt::Debug for Metadata<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_tuple("Metadata").field(self.name).finish()
+        f.debug_tuple("Metadata").field(&self.name).finish()
     }
 }
 

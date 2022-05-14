@@ -4,7 +4,6 @@ use kyute::Data;
 use lazy_static::lazy_static;
 use std::{
     fmt,
-    fmt::Formatter,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -69,37 +68,37 @@ lazy_static! {
 /// - `/network/node/param`: absolute path
 ///
 #[derive(Clone)]
-pub struct ModelPath {
+pub struct Path {
     node: Arc<PathNode>,
 }
 
-impl fmt::Debug for ModelPath {
+impl fmt::Debug for Path {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "ModelPath(`{}`)", self.to_string())
+        write!(f, "`{}`", self.to_string())
     }
 }
 
-impl From<Arc<PathNode>> for ModelPath {
+impl From<Arc<PathNode>> for Path {
     fn from(node: Arc<PathNode>) -> Self {
-        ModelPath { node }
+        Path { node }
     }
 }
 
-impl PartialEq for ModelPath {
+impl PartialEq for Path {
     fn eq(&self, other: &Self) -> bool {
         Arc::as_ptr(&self.node) == Arc::as_ptr(&other.node)
     }
 }
 
-impl Eq for ModelPath {}
+impl Eq for Path {}
 
-impl Hash for ModelPath {
+impl Hash for Path {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(Arc::as_ptr(&self.node) as usize)
     }
 }
 
-impl Data for ModelPath {
+impl Data for Path {
     fn same(&self, other: &Self) -> bool {
         self.node.same(&other.node)
     }
@@ -109,10 +108,10 @@ fn is_valid_path_part(part: &str) -> bool {
     !part.contains(&['/', '.'])
 }
 
-impl ModelPath {
+impl Path {
     /// Returns the path to the root object.
-    pub fn root() -> ModelPath {
-        ModelPath {
+    pub fn root() -> Path {
+        Path {
             node: ROOT_PATH_NODE.clone(),
         }
     }
@@ -123,19 +122,19 @@ impl ModelPath {
         PATH_NODE_TABLE
             .entry(PathKey {
                 parent: Arc::as_ptr(&self.node) as usize,
-                part: name.clone(),
+                part: part.clone(),
             })
             .or_insert_with(|| {
                 Arc::new(PathNode {
                     kind: if is_attribute {
                         PathNodeKind::Attribute {
                             parent: self.node.clone(),
-                            name: name.clone(),
+                            name: part.clone(),
                         }
                     } else {
                         PathNodeKind::Node {
                             parent: self.node.clone(),
-                            name: name.clone(),
+                            name: part.clone(),
                         }
                     },
                 })
@@ -144,18 +143,18 @@ impl ModelPath {
     }
 
     /// Returns a new path with the specified part appended to it.
-    pub fn join(&self, part: impl Into<Atom>) -> ModelPath {
+    pub fn join(&self, part: impl Into<Atom>) -> Path {
         let node = self.insert_path_node(part.into(), false);
-        ModelPath { node }
+        Path { node }
     }
 
-    pub fn join_attribute(&self, attrib: impl Into<Atom>) -> ModelPath {
+    pub fn join_attribute(&self, attrib: impl Into<Atom>) -> Path {
         assert!(
             matches!(self.node.kind, PathNodeKind::Node { .. }),
             "path should be a path to a node"
         );
-        let node = self.insert_path_node(part.into(), true);
-        ModelPath { node }
+        let node = self.insert_path_node(attrib.into(), true);
+        Path { node }
     }
 
     /// Returns whether this path is relative.
@@ -180,7 +179,7 @@ impl ModelPath {
     ///```
     ///
     pub fn is_node(&self) -> bool {
-        matches!(self.node, PathNodeKind::Node { .. })
+        matches!(self.node.kind, PathNodeKind::Node { .. })
     }
 
     /// Returns whether this is a path to a node attribute.
@@ -190,7 +189,7 @@ impl ModelPath {
     /// TODO
     ///
     pub fn is_attribute(&self) -> bool {
-        matches!(self.node, PathNodeKind::Attribute { .. })
+        matches!(self.node.kind, PathNodeKind::Attribute { .. })
     }
 
     /// Returns whether this is the root path.
@@ -204,11 +203,11 @@ impl ModelPath {
     }
 
     /// Returns the parent path.
-    pub fn parent(&self) -> Option<ModelPath> {
+    pub fn parent(&self) -> Option<Path> {
         match self.node.kind {
             PathNodeKind::Root => None,
             PathNodeKind::Node { ref parent, .. } | PathNodeKind::Attribute { ref parent, .. } => {
-                Some(ModelPath { node: parent.clone() })
+                Some(Path { node: parent.clone() })
             }
         }
     }
@@ -216,17 +215,17 @@ impl ModelPath {
     /// Splits the last part of the path, if there's one.
     ///
     /// Returns `None` for the root path.
-    pub fn split_last(&self) -> Option<(ModelPath, Atom)> {
+    pub fn split_last(&self) -> Option<(Path, Atom)> {
         match self.node.kind {
             PathNodeKind::Root => None,
             PathNodeKind::Node { ref parent, ref name } | PathNodeKind::Attribute { ref parent, ref name } => {
-                Some((ModelPath { node: parent.clone() }, name.clone()))
+                Some((Path { node: parent.clone() }, name.clone()))
             }
         }
     }
 
     /// Returns whether the specified path is a prefix of this one.
-    pub fn is_prefix(&self, other: &ModelPath) -> bool {
+    pub fn is_prefix(&self, other: &Path) -> bool {
         let mut p = Some(other.clone());
         while let Some(pp) = p {
             if &pp == self {
@@ -254,13 +253,14 @@ impl ModelPath {
     }
 
     /// Parses a path from a string representation.
-    pub fn parse(path: &str) -> ModelPath {
+    pub fn parse(path: &str) -> Path {
         if let Some(pos) = path.rfind(&['/', '.']) {
             let prefix = &path[0..pos];
             let name = &path[pos + 1..];
             match path.as_bytes()[pos] {
                 b'/' => Self::parse(prefix).join(name),
                 b'.' => Self::parse(prefix).join_attribute(name),
+                _ => unreachable!(),
             }
         } else {
             Self::root()

@@ -4,11 +4,11 @@ use kyute_common::Atom;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 
-pub struct Registry<T> {
+pub struct Registry<T: ?Sized + 'static> {
     operators: Mutex<HashMap<Atom, &'static T>>,
 }
 
-impl<T> Registry<T> {
+impl<T: ?Sized + 'static> Registry<T> {
     pub fn new() -> Registry<T> {
         Registry {
             operators: Default::default(),
@@ -16,14 +16,15 @@ impl<T> Registry<T> {
     }
 }
 
-impl<T: ?Sized + Sync> Registry<T> {
+impl<T: ?Sized + Sync + 'static> Registry<T> {
     /// Registers an imaging operator by name.
     pub fn register(&self, name: &Atom, op: &'static T) -> Result<(), EvalError> {
         let mut map = self.operators.lock();
         if map.contains_key(name) {
-            return Err(EvalError::Other(anyhow!(
-                "an operator with the same name has already been registered"
-            )));
+            // TODO do not use EvalError for that?
+            return Err(EvalError::general(
+                "an operator with the same name has already been registered",
+            ));
         }
         map.insert(name.clone(), op);
         Ok(())
@@ -39,7 +40,7 @@ impl<T: ?Sized + Sync> Registry<T> {
 macro_rules! operator_registry {
     ($registry_name:ident < $op_trait:ident > ) => {
         lazy_static::lazy_static! {
-            pub static ref $name: Registry<dyn $op_trait + Sync> = Registry::new();
+            pub static ref $registry_name: $crate::eval::Registry<dyn $op_trait + Sync> = $crate::eval::Registry::new();
         }
     };
 }

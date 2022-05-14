@@ -4,27 +4,19 @@ pub mod registry;
 mod task_map;
 
 pub use error::EvalError;
-pub use registry::OpRegistry;
-pub use task_map::TaskMap;
+pub use registry::Registry;
+pub use task_map::{TaskError, TaskMap};
 
 use crate::{
     eval::{imaging::ImagingEvalState, registry::operator_registry},
-    model::{metadata, Document, FromValue, ModelPath, Node},
+    model::{metadata, AttributeAny, Document, FromValue, Node, Path, Value},
 };
-use artifice::model::Value;
 use async_trait::async_trait;
-use futures::{future, FutureExt};
-use kyute::graal;
 use kyute_common::Atom;
-use lazy_static::lazy_static;
 use std::{
-    any::Any,
-    collections::HashMap,
-    future::Future,
     hash::{Hash, Hasher},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
-use tokio::{sync::RwLock, task};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // OpGeneral
@@ -46,7 +38,7 @@ operator_registry!(GENERAL_OPERATORS<OpGeneral>);
 /// Key identifying a particular evaluation.
 #[derive(Clone, Debug)]
 pub struct EvalKey {
-    pub path: ModelPath,
+    pub path: Path,
     pub time: f64,
 }
 
@@ -117,43 +109,62 @@ impl OpCtx {
         OpCtx { eval, time, node }
     }
 
+    /// Returns the path to the attribute connected to the current node's specified input.
+    ///
+    /// Returns None if the specified input is unconnected.
+    pub fn connected_input(&self, input_name: impl Into<Atom>) -> Result<Option<Path>, EvalError> {
+        let input_name = input_name.into();
+        let attribute = self
+            .node
+            .attribute(&input_name)
+            .ok_or_else(|| EvalError::PathNotFound(self.node.path.join_attribute(input_name.clone())))?;
+        Ok(attribute.connection.clone())
+    }
+
+    /// Same as `connected_input` but returns an error if the specified input is unconnected.
+    pub fn mandatory_connected_input(&self, input_name: impl Into<Atom>) -> Result<Path, EvalError> {
+        let input_name = input_name.into();
+        self.connected_input(input_name.clone())?
+            .ok_or(EvalError::MandatoryInputUnconnected { input_name })
+    }
+
     /// Evaluates an attribute of the current node.
     pub async fn eval_attribute<T: FromValue>(&self, attribute: impl Into<Atom>, time: f64) -> Result<T, EvalError> {
-        self.eval_any(self.node.base.path.join_attribute(attribute), time).await
+        self.eval(self.node.path.join_attribute(attribute), time).await
     }
 
     /// Evaluates an attribute at the given path, at the given time.
-    pub async fn eval_any(&self, path: ModelPath, time: f64) -> Result<Value, EvalError> {
+    pub async fn eval_any(&self, path: Path, time: f64) -> Result<Value, EvalError> {
         assert!(path.is_attribute());
-
-        let key = EvalKey { path, time };
+        let key = EvalKey {
+            path: path.clone(),
+            time,
+        };
 
         let document = self.eval.document.clone();
-        self.tasks
+        self.eval
+            .general
+            .tasks
             .fetch_or_spawn(key, async move {
-                let attribute = self
-                    .document
-                    .find_attribute(&path)
+                let attribute = document
+                    .attribute(&path)
                     .ok_or_else(|| EvalError::PathNotFound(path.clone()))?;
                 if let Some(ref value) = attribute.value {
-                    value.clone()
+                    Ok(value.clone())
                 } else {
                     // no value, evaluate attribute
-                    let parent_node = document.find_node(&path.parent().unwrap()).unwrap();
-                    let op_id = parent_node.find_metadata(metadata::OPERATOR).unwrap();
-                    let op: &'static dyn OpGeneral = GENERAL_OPERATORS.get(op_id).unwrap();
+                    let parent_node = document.node(&path.parent().unwrap()).unwrap();
+                    let op_id = parent_node.metadata(metadata::OPERATOR).unwrap();
+                    let op = GENERAL_OPERATORS.get(&op_id).unwrap();
                     op.eval(attribute, time).await
                 }
             })
             .await
+            .unwrap()
     }
 
-    pub async fn eval<T: FromValue>(&self, path: ModelPath, time: f64) -> Result<T, EvalError> {
+    pub async fn eval<T: FromValue>(&self, path: Path, time: f64) -> Result<T, EvalError> {
         let value = self.eval_any(path, time).await?;
         T::from_value(&value).ok_or(EvalError::TypeMismatch)
     }
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// EvalCtx
-////////////////////////////////////////////////////////////////////////////////////////////////////
