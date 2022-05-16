@@ -1,9 +1,9 @@
 use crate::model::{
-    attribute::{AttributeAny, AttributeChange, AttributeEditProxy, AttributeType},
+    attribute::{AttributeAny, AttributeType},
     file::{DocumentDatabase, DocumentFile},
     Atom, EditAction, FromValue, Metadata, Path, Value,
 };
-use imbl::{HashMap, Vector};
+use imbl::{HashMap, OrdMap, Vector};
 use kyute::Data;
 use std::{borrow::Cow, ops::Deref, sync::Arc};
 
@@ -17,11 +17,11 @@ pub struct Node {
     /// Path of this object in the document tree. Contains the name of the object.
     pub path: Path,
     /// Attributes.
-    pub attributes: HashMap<Atom, AttributeAny>,
+    pub attributes: OrdMap<Atom, AttributeAny>,
     /// Node metadata.
-    pub metadata: HashMap<Atom, Value>,
+    pub metadata: OrdMap<Atom, Value>,
     /// Child nodes
-    pub children: HashMap<Atom, Node>,
+    pub children: OrdMap<Atom, Node>,
 }
 
 impl Node {
@@ -92,6 +92,7 @@ impl Node {
 // Edits
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/*
 #[derive(Debug)]
 pub struct NodeEditProxy<'a> {
     node: Cow<'a, Node>,
@@ -280,18 +281,4 @@ impl<'a> NodeEditProxy<'a> {
     pub(crate) fn removed(&self) -> bool {
         self.removed
     }
-}
-
-impl<'a> kyute::ToMemoizeArg for NodeEditProxy<'a> {
-    type Target = Node;
-    fn to_memoize_arg(&self) -> Self::Target {
-        self.node.deref().clone()
-    }
-}
-
-impl<'a, 'b> kyute::ToMemoizeArg for &'b mut NodeEditProxy<'a> {
-    type Target = Node;
-    fn to_memoize_arg(&self) -> Self::Target {
-        self.node.deref().clone()
-    }
-}
+}*/

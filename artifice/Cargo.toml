@@ -11,7 +11,7 @@ edition = "2018"
 artifice-macros = { path = "macros" }
 slotmap = "1.0.6"
 lazy_static = "1.4.0"
-tracing = "0.1.26"
+tracing = "0.1.34"
 anyhow = "1.0.40"
 thiserror = "1.0.25"
 anymap = "1.0.0-beta.2"

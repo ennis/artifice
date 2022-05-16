@@ -2,6 +2,7 @@
 mod attribute;
 mod document;
 mod edit;
+mod error;
 mod file;
 pub mod metadata;
 mod named_object;
@@ -11,13 +12,14 @@ mod schema;
 mod share_group;
 mod value;
 
-pub use attribute::{AttributeAny, AttributeEditProxy};
+pub use attribute::AttributeAny;
 pub use document::Document;
 pub use edit::EditAction;
-pub use file::{DocumentDatabase, DocumentFile};
+pub use error::Error;
+pub use file::{DocumentDatabase, DocumentEditProxy, DocumentFile, NodeEditProxy};
 pub use kyute_common::Atom;
 pub use metadata::Metadata;
-pub use node::{Node, NodeEditProxy};
+pub use node::Node;
 pub use path::Path;
 pub use share_group::ShareGroup;
 pub use value::{FromValue, Value};

@@ -1,6 +1,7 @@
-use crate::model::{node::Node, path::Path, share_group::ShareGroup, AttributeAny, Document, EditAction, Value};
-use anyhow::Result;
-use artifice::model::NodeEditProxy;
+use crate::model::{
+    attribute::AttributeType, node::Node, path::Path, share_group::ShareGroup, AttributeAny, Document, EditAction,
+    Error, Metadata, Value,
+};
 use imbl::Vector;
 use kyute_common::{Atom, Data};
 use parking_lot::{Mutex, MutexGuard};
@@ -10,7 +11,7 @@ use std::sync::{Arc, Weak};
 const ARTIFICE_APPLICATION_ID: i32 = 0x41525446;
 
 /// Creates the database tables.
-fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
+fn setup_schema(conn: &rusqlite::Connection) -> anyhow::Result<()> {
     // named_objects: {obj_id} -> name, parent_obj_id      (name, parent must be unique)
     // share_groups: {share_id, obj_id, is_master}
     // attributes: {obj_id} -> type,value
@@ -43,6 +44,16 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
 
     conn.execute(
         // language=SQLITE-SQL
+        "CREATE TABLE IF NOT EXISTS metadata \
+                                    (obj_id  INTEGER REFERENCES named_objects(id) ON DELETE CASCADE,
+                                     name    TEXT NOT NULL,
+                                     value   TEXT, 
+                                     PRIMARY KEY (obj_id, name))",
+        [],
+    )?;
+
+    conn.execute(
+        // language=SQLITE-SQL
         "CREATE TABLE IF NOT EXISTS attributes \
                                     (obj_id      INTEGER REFERENCES named_objects(id) ON DELETE CASCADE, \
                                      type        TEXT NOT NULL, \
@@ -65,7 +76,7 @@ fn setup_schema(conn: &rusqlite::Connection) -> Result<()> {
 ///
 pub trait DocumentBackend {
     /// Inserts a node.
-    fn insert_node(&mut self, path: &Path) -> Result<i64>;
+    fn insert_node(&mut self, path: &Path) -> anyhow::Result<i64>;
 
     /// Inserts a node attribute.
     fn insert_attribute(
@@ -74,19 +85,19 @@ pub trait DocumentBackend {
         ty: Atom,
         value: Option<Value>,
         connection: Option<Path>,
-    ) -> Result<i64>;
+    ) -> anyhow::Result<i64>;
 
     /// Sets the value of an attribute.
-    fn set_attribute_value(&mut self, id: i64, value: Option<Value>) -> Result<()>;
+    fn set_attribute_value(&mut self, id: i64, value: Option<Value>) -> anyhow::Result<()>;
 
     /// Sets the connection of an attribute.
-    fn set_attribute_connection(&mut self, id: i64, connection: Option<Path>) -> Result<()>;
+    fn set_attribute_connection(&mut self, id: i64, connection: Option<Path>) -> anyhow::Result<()>;
 
     /// Removes a node.
-    fn remove_node(&mut self, id: i64) -> Result<()>;
+    fn remove_node(&mut self, id: i64) -> anyhow::Result<()>;
 
     /// Removes an attribute.
-    fn remove_attribute(&mut self, id: i64) -> Result<()>;
+    fn remove_attribute(&mut self, id: i64) -> anyhow::Result<()>;
 }
 
 #[derive(Debug)]
@@ -96,7 +107,7 @@ pub struct DocumentDatabase {
 
 impl DocumentDatabase {
     /// Inserts a row into the `named_objects` table (nodes & attributes).
-    fn insert_named_object(&mut self, parent: Option<i64>, path: &Path) -> Result<i64> {
+    fn insert_named_object(&mut self, parent: Option<i64>, path: &Path) -> anyhow::Result<i64> {
         let name = path.name().to_string();
         let path_str = path.to_string();
         // language=SQLITE-SQL
@@ -108,7 +119,7 @@ impl DocumentDatabase {
     }
 
     /// Inserts a node.
-    pub(crate) fn insert_node(&mut self, parent: i64, path: &Path) -> Result<i64> {
+    pub(crate) fn insert_node(&mut self, parent: i64, path: &Path) -> anyhow::Result<i64> {
         let id = self.insert_named_object(Some(parent), path)?;
         // language=SQLITE-SQL
         self.db.execute("INSERT INTO nodes(obj_id) VALUES (?1)", params![id])?;
@@ -123,7 +134,7 @@ impl DocumentDatabase {
         ty: Atom,
         value: Option<Value>,
         connection: Option<Path>,
-    ) -> Result<i64> {
+    ) -> anyhow::Result<i64> {
         let id = self.insert_named_object(Some(parent), path)?;
         let value_json = value.as_ref().map(|v| serde_json::to_string(v).unwrap());
         let ty_str = ty.to_string();
@@ -137,7 +148,7 @@ impl DocumentDatabase {
     }
 
     /// Sets the value of an attribute.
-    pub(crate) fn set_attribute_value(&mut self, id: i64, value: Option<Value>) -> Result<()> {
+    pub(crate) fn set_attribute_value(&mut self, id: i64, value: Option<Value>) -> anyhow::Result<()> {
         let value_json = value.as_ref().map(|v| serde_json::to_string(v).unwrap());
         // language=SQLITE-SQL
         self.db
@@ -145,8 +156,20 @@ impl DocumentDatabase {
         Ok(())
     }
 
+    /// Sets the value of an attribute.
+    pub(crate) fn set_metadata(&mut self, id: i64, metadata: Atom, value: Value) -> anyhow::Result<()> {
+        let name_str = metadata.as_ref();
+        let value_json = serde_json::to_string(&value)?;
+        // language=SQLITE-SQL
+        self.db.execute(
+            "INSERT OR REPLACE INTO metadata(id,name,value) VALUES (?1,?2,?3)",
+            params![id, name_str, value_json],
+        )?;
+        Ok(())
+    }
+
     /// Sets the connection of an attribute.
-    pub(crate) fn set_attribute_connection(&mut self, id: i64, connection: Option<Path>) -> Result<()> {
+    pub(crate) fn set_attribute_connection(&mut self, id: i64, connection: Option<Path>) -> anyhow::Result<()> {
         let conn_str = connection.as_ref().map(|c| c.to_string());
         // language=SQLITE-SQL
         self.db
@@ -155,7 +178,7 @@ impl DocumentDatabase {
     }
 
     /// Removes a node
-    pub(crate) fn remove_node(&mut self, id: i64) -> Result<()> {
+    pub(crate) fn remove_node(&mut self, id: i64) -> anyhow::Result<()> {
         // TODO remove child nodes
         // language=SQLITE-SQL
         self.db
@@ -163,7 +186,7 @@ impl DocumentDatabase {
         Ok(())
     }
 
-    pub(crate) fn remove_attribute(&mut self, id: i64) -> Result<()> {
+    pub(crate) fn remove_attribute(&mut self, id: i64) -> anyhow::Result<()> {
         // language=SQLITE-SQL
         self.db
             .execute("DELETE FROM attributes WHERE node_id=?1", params![id])?;
@@ -226,12 +249,12 @@ pub struct DocumentFile {
     /// Revision number, incremented on every change.
     revision: usize,
     /// In-memory document model.
-    document: Document,
+    document: Arc<Document>,
 }
 
 impl DocumentFile {
     /// Opens a document from a sqlite database connection.
-    pub fn open(connection: Connection) -> Result<DocumentFile> {
+    pub fn open(connection: Connection) -> anyhow::Result<DocumentFile> {
         // check for correct application ID
         if let Ok(ARTIFICE_APPLICATION_ID) = connection.pragma_query_value(None, "application_id", |v| v.get(0)) {
             // OK, app id matches, assume schema is in place
@@ -253,7 +276,7 @@ impl DocumentFile {
                 let id: i64 = row.get(0)?;
                 let path = match row.get_ref(1)? {
                     ValueRef::Null => Path::root(),
-                    e @ ValueRef::Text(text) => Path::parse(e.as_str()?),
+                    e @ ValueRef::Text(text) => Path::parse(e.as_str()?).unwrap(),
                     _ => {
                         anyhow::bail!("invalid column type")
                     }
@@ -290,7 +313,7 @@ impl DocumentFile {
                     .map(|v| serde_json::from_str(v).expect("invalid json"));
                 let connection: Option<String> = row.get(3)?;
                 let path: String = row.get(4)?;
-                let path = Path::parse(&path);
+                let path = Path::parse(&path).unwrap();
                 let parent = path.parent().unwrap();
                 document.node_mut(&parent).unwrap().attributes.insert(
                     path.name(),
@@ -300,7 +323,7 @@ impl DocumentFile {
                         path,
                         ty: ty.into(),
                         value,
-                        connection: connection.map(|c| Path::parse(&c)),
+                        connection: connection.map(|c| Path::parse(&c).unwrap()),
                         metadata: Default::default(),
                     },
                 );
@@ -310,13 +333,23 @@ impl DocumentFile {
         Ok(DocumentFile {
             db: DocumentDatabase { db: connection },
             revision: 0,
-            document,
+            document: Arc::new(document),
         })
     }
 
     /// Performs editing on the document
-    pub fn edit<R>(&mut self, f: impl FnOnce(&mut NodeEditProxy) -> R) -> R {
-        self.document.edit(&mut self.db, f)
+    pub fn edit<R>(&mut self, f: impl FnOnce(&Document, &mut DocumentEditProxy) -> R) -> R {
+        let document_clone = self.document.clone();
+        let mut proxy = DocumentEditProxy {
+            db: &mut self.db,
+            document: document_clone,
+        };
+        let result = f(&self.document, &mut proxy);
+        if !proxy.document.same(&self.document) {
+            self.document = proxy.document;
+            self.revision += 1;
+        }
+        result
     }
 
     /// Returns the document revision number.
@@ -327,5 +360,124 @@ impl DocumentFile {
     /// Returns the document model root.
     pub fn document(&self) -> &Document {
         &self.document
+    }
+}
+
+// DocumentEditProxy
+// - create{node,attribute,etc}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Edit proxy
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+pub struct NodeEditProxy<'a> {
+    db: &'a mut DocumentDatabase,
+    node: &'a mut Node,
+}
+
+impl<'a> NodeEditProxy<'a> {
+    fn get_or_create_attribute(
+        &mut self,
+        name: impl Into<Atom>,
+        ty: impl Into<Atom>,
+    ) -> Result<&mut AttributeAny, Error> {
+        let name = name.into();
+        let ty = ty.into();
+        let node_path = &self.node.path;
+        let db = &mut self.db;
+        let node_id = self.node.id;
+
+        let attr = self.node.attributes.entry(name.clone()).or_insert_with(|| {
+            let path = node_path.join_attribute(name.clone());
+            let id = db.insert_attribute(node_id, &path, ty.clone(), None, None).unwrap();
+            AttributeAny::new(id, path, ty.clone(), None, None)
+        });
+
+        if attr.ty != ty {
+            return Err(Error::MismatchedTypes);
+        }
+        Ok(attr)
+    }
+
+    /// Sets a metadata entry of the node.
+    pub fn metadata<T: Into<Value>>(&mut self, meta: Metadata<T>, value: T) -> Result<(), Error> {
+        let meta_name: Atom = meta.name.into();
+        let value = value.into();
+        self.node.metadata.insert(meta_name.clone(), value.clone());
+        self.db
+            .set_metadata(self.node.id, meta_name, value)
+            .map_err(Error::FileError)?;
+        Ok(())
+    }
+
+    /// Defines an attribute.
+    pub fn define(&mut self, name: impl Into<Atom>, ty: impl Into<Atom>) -> Result<(), Error> {
+        self.get_or_create_attribute(name, ty)?;
+        Ok(())
+    }
+
+    /// Sets the value of an attribute.
+    pub fn set(&mut self, name: impl Into<Atom>, value: impl Into<Value>) -> Result<(), Error> {
+        let attr = self.get_or_create_attribute(name, "")?;
+        let value = value.into();
+        attr.value = Some(value.clone());
+        let id = attr.id;
+        self.db.set_attribute_value(id, Some(value)).map_err(Error::FileError)?;
+        Ok(())
+    }
+
+    /// Sets the connection of an attribute.
+    pub fn connect(&mut self, name: impl Into<Atom>, to: Path) -> Result<(), Error> {
+        let attr = self.get_or_create_attribute(name, "")?;
+        attr.connection = Some(to.clone());
+        let id = attr.id;
+        self.db
+            .set_attribute_connection(id, Some(to))
+            .map_err(Error::FileError)?;
+        Ok(())
+    }
+
+    // Removes the attribute.
+    //pub fn remove(&mut self, name: impl Into<Atom>) -> Result<(), Error> {}
+}
+
+pub struct DocumentEditProxy<'a> {
+    db: &'a mut DocumentDatabase,
+    document: Arc<Document>,
+}
+
+impl<'a> DocumentEditProxy<'a> {
+    /// Creates a node at the specified path.
+    pub fn node(&mut self, path: Path) -> Result<NodeEditProxy, Error> {
+        if self.document.node(&path).is_some() {
+            let mut document = Arc::make_mut(&mut self.document);
+            // FIXME: can't call node_mut directly, borrowck doesn't like it
+            let node = document.node_mut(&path).unwrap();
+            Ok(NodeEditProxy { db: self.db, node })
+        } else {
+            // ensure that the parent node is created
+            let parent_id = self.node(path.parent().unwrap())?.node.id;
+            let id = self.db.insert_node(parent_id, &path).map_err(Error::FileError)?;
+            let node = Arc::make_mut(&mut self.document)
+                .node_mut(&path.parent().unwrap())
+                .unwrap()
+                .children
+                .entry(path.name())
+                .or_insert(Node::new(id, path));
+            Ok(NodeEditProxy { db: self.db, node })
+        }
+    }
+
+    /// Removes the node at the specified path.
+    pub fn remove(&mut self, path: &Path) -> Result<(), Error> {
+        assert!(path.is_node());
+        assert!(!path.is_root());
+        let document = Arc::make_mut(&mut self.document);
+        let parent = document
+            .node_mut(&path.parent().unwrap())
+            .ok_or(Error::NoObjectAtPath)?;
+        let node = parent.children.remove(&path.name()).ok_or(Error::NoObjectAtPath)?;
+        self.db.remove_node(node.id).map_err(Error::FileError)?;
+        Ok(())
     }
 }

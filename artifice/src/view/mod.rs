@@ -1,52 +1,81 @@
-use crate::model::{Document, Node, NodeEditProxy, Path};
-use artifice::model::DocumentFile;
+mod toolbar;
+
+use crate::{
+    model::{AttributeAny, Document, DocumentEditProxy, DocumentFile, Node, NodeEditProxy, Path},
+    view::toolbar::Toolbar,
+};
 use kyute::{
     cache, composable,
     shell::{
         text::{Attribute, FontFamily, FontStyle, FormattedText},
         winit::window::WindowBuilder,
     },
-    style::BoxStyle,
+    style::{BoxStyle, Paint},
     theme,
     widget::{
         drop_down, grid,
-        grid::{GridRow, GridTrackDefinition},
-        Action, Baseline, Button, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu, MenuItem, Null,
-        Orientation, Shortcut, Slider, TextEdit, WidgetPod,
+        grid::{GridRow, GridTrackDefinition, SHOW_GRID_LAYOUT_LINES},
+        Action, Baseline, Button, ColumnHeaders, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu,
+        MenuItem, Null, Orientation, Shortcut, Slider, TableRow, TableView, TableViewParams, Text, TextEdit, WidgetPod,
     },
-    Color, Data, State, Widget, Window,
+    Color, Data, Font, State, Widget, WidgetExt, Window,
 };
 use kyute_common::{Length, UnitExt};
 use rusqlite::Connection;
 use std::{fmt, fmt::Formatter, sync::Arc};
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Data)]
-enum DropDownTest {
-    First,
-    Second,
-    Third,
-}
-
-impl fmt::Display for DropDownTest {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(self, f)
-    }
-}
 
 const LABEL_COLUMN: &str = "label";
 const ADD_COLUMN: &str = "add";
 const DELETE_COLUMN: &str = "delete";
 const VALUE_COLUMN: &str = "value";
 
-/// Node view.
-#[composable]
-pub fn node_item(node: &mut NodeEditProxy) -> GridRow<'static> {
-    let delete_button = Button::new("Delete".to_string()).on_clicked(|| {
-        tracing::info!("delete node clicked {:?}", node.path);
-        node.remove();
-    });
+/// Attribute row
+#[composable(cached)]
+pub fn attribute_row(attribute: &AttributeAny, #[uncached] edit: &mut DocumentEditProxy) -> TableRow<i64> {
+    // format attribute name
+    let attr_name = attribute.path.name();
+    let mut label = FormattedText::new(attr_name.as_ref().into());
+    if let Some(p) = attr_name.rfind(':') {
+        label.add_attribute(0..p + 1, Attribute::Color(theme::palette::GREY_50.with_alpha(0.5)));
+    }
 
-    // format name
+    let mut row = TableRow::new(attribute.id, Text::new(label));
+    row.add_cell(1, Label::new(attribute.ty.to_string()));
+    row.add_cell(2, Label::new(format!("{:?}", attribute.value)));
+    row
+}
+
+/// Node view.
+#[composable(cached)]
+pub fn node_row(node: &Node, #[uncached] edit: &mut DocumentEditProxy) -> TableRow<i64> {
+    let label = if node.path.is_root() {
+        FormattedText::from("<root node>").attribute(.., FontStyle::Italic)
+    } else {
+        FormattedText::from(node.name().to_string())
+    };
+
+    let mut row = TableRow::new(node.id, Text::new(label));
+
+    for attr in node.attributes.values() {
+        cache::scoped(attr.id, || {
+            row.add_row(attribute_row(attr, edit));
+        });
+    }
+
+    for node in node.children.values() {
+        cache::scoped(node.id, || {
+            row.add_row(node_row(node, edit));
+        });
+    }
+
+    row
+
+    /*let delete_button = Button::new("Delete".to_string()).on_clicked(|| {
+        tracing::info!("delete node clicked {:?}", node.path);
+        edit.remove(&node.path);
+    });*/
+
+    /*// format name
     let path = node.path.to_string();
     let last_sep = path.rfind('/').unwrap();
     let path_text = FormattedText::from(path)
@@ -54,19 +83,6 @@ pub fn node_item(node: &mut NodeEditProxy) -> GridRow<'static> {
         .attribute(.., Attribute::FontSize(17.0))
         .attribute(.., FontFamily::new("Cambria"))
         .attribute(.., FontStyle::Italic);
-
-    // rename
-    let name_edit = TextEdit::new(path_text);
-
-    let dropdown = DropDown::with_selected(
-        DropDownTest::First,
-        vec![DropDownTest::First, DropDownTest::Second, DropDownTest::Third],
-        drop_down::DebugFormatter,
-    );
-
-    if let Some(item) = dropdown.selected_item_changed() {
-        tracing::info!("changed option: {:?}", item);
-    }
 
     let mut row = GridRow::new();
     row.add(
@@ -76,54 +92,69 @@ pub fn node_item(node: &mut NodeEditProxy) -> GridRow<'static> {
     row.add(DELETE_COLUMN, delete_button);
     row.add(ADD_COLUMN, dropdown);
     row.add(VALUE_COLUMN, name_edit);
-    row
+    row*/
 }
 
 /// Root document view.
 #[composable(cached)]
-pub fn document_window_contents(document: &mut NodeEditProxy) -> impl Widget + Clone {
-    #[state]
-    let mut slider_value = 0.0;
-
+pub fn document_window_contents(document: &Document, #[uncached] edit: &mut DocumentEditProxy) -> impl Widget + Clone {
     tracing::trace!("document_window_contents");
 
+    let root_row = node_row(&document.root, edit);
+
+    let table_params = TableViewParams {
+        selection: None,
+        columns: vec![
+            GridTrackDefinition::new(GridLength::Fixed(200.dip())),
+            GridTrackDefinition::new(GridLength::Fixed(200.dip())),
+            GridTrackDefinition::new(GridLength::Flex(1.0)),
+        ],
+        column_headers: Some(
+            ColumnHeaders::new()
+                .add(Text::new("Name"))
+                .add(Text::new("Type"))
+                .add(Text::new("Value")),
+        ),
+        main_column: 0,
+        row_height: GridLength::Auto,
+        rows: vec![root_row],
+        row_indent: Length::Dip(20.0),
+        resizeable_columns: false,
+        reorderable_rows: false,
+        reorderable_columns: false,
+        background: theme::palette::GREY_800.into(),
+        alternate_background: theme::palette::GREY_700.into(),
+        row_separator_width: Default::default(),
+        column_separator_width: Default::default(),
+        row_separator_background: Default::default(),
+        column_separator_background: Default::default(),
+        selected_style: Default::default(),
+    };
+
+    let table = TableView::new(table_params);
+
     let mut grid = Grid::new();
-    grid.push_column_definition(GridTrackDefinition::named(LABEL_COLUMN, GridLength::Fixed(100.dip())));
-    grid.push_column_definition(GridTrackDefinition::named(DELETE_COLUMN, GridLength::Fixed(60.dip())));
-    grid.push_column_definition(GridTrackDefinition::named(ADD_COLUMN, GridLength::Fixed(60.dip())));
-    grid.push_column_definition(GridTrackDefinition::named(VALUE_COLUMN, GridLength::Flex(1.0)));
 
-    grid.set_align_items(grid::AlignItems::Baseline);
-    grid.set_row_gap(2.px());
+    //grid!{ name: 100px | type: 100px | value:* | [100px] ) -- headers: 100dip -- [100px] -- }
 
-    // Root nodes
-    document.edit_children(|node| {
-        cache::scoped(node.id as usize, || {
-            grid.add_row(node_item(node));
-        })
-    });
+    let toolbar = Toolbar::new()
+        .text_icon_button("Create", "data/icons/file_new.png")
+        .text_icon_button("Open", "data/icons/file_folder.png")
+        .text_icon_button("Save", "data/icons/file_tick.png");
 
-    // "Add Node" button
-    let add_node_button = Button::new("Add Node".to_string());
-    if add_node_button.clicked() {
-        tracing::info!("add node clicked");
-        let name = document.make_unique_child_name("node");
-        document.get_or_create_node(name, |node| {});
-    }
-    grid.add_item(grid.row_count(), 0, 0, add_node_button);
+    grid.push_column_definition(GridTrackDefinition::new(GridLength::Flex(1.0)));
+    grid.push_row_definition(GridTrackDefinition::new(GridLength::Auto));
+    grid.push_row_definition(GridTrackDefinition::new(GridLength::Auto));
 
-    // Slider test
-    let slider = Slider::new(0.0, 10.0, slider_value).on_value_changed(|v| slider_value = v);
-    grid.add_item(grid.row_count(), .., 0, slider);
+    grid.add_item(0, 0, 0, toolbar);
+    grid.add_item(1, 0, 0, table);
 
-    let container = Container::new(grid).box_style(BoxStyle::new().fill(theme::palette::GREY_600));
-
-    Arc::new(container)
+    Arc::new(grid)
 }
 
 /// Main menu bar.
 #[composable(cached)]
-pub fn main_menu_bar(document: &mut NodeEditProxy) -> Menu {
+pub fn main_menu_bar(document: &Document) -> Menu {
     let file_new = Action::with_shortcut(Shortcut::from_str("Ctrl+N"));
     let file_open = Action::with_shortcut(Shortcut::from_str("Ctrl+O"));
     let file_save = Action::with_shortcut(Shortcut::from_str("Ctrl+S"));
@@ -174,7 +205,7 @@ pub fn main_menu_bar(document: &mut NodeEditProxy) -> Menu {
 
 /// Native window displaying a document.
 #[composable(cached)]
-pub fn document_window(document: &mut NodeEditProxy) -> Window {
+pub fn document_window(document: &Document, #[uncached] edit: &mut DocumentEditProxy) -> Window {
     //
     tracing::trace!("document_window");
     let menu_bar = main_menu_bar(document);
@@ -182,13 +213,13 @@ pub fn document_window(document: &mut NodeEditProxy) -> Window {
     // TODO document title
     Window::new(
         WindowBuilder::new().with_title("Document"),
-        document_window_contents(document),
+        document_window_contents(document, edit),
         Some(menu_bar),
     )
 }
 
 fn try_open_document() -> anyhow::Result<DocumentFile> {
-    Ok(DocumentFile::open(Connection::open("test.artifice")?)?)
+    Ok(DocumentFile::open(Connection::open("scene_info.db")?)?)
 }
 
 /// Application root.
@@ -197,16 +228,9 @@ pub fn application_root() -> impl Widget {
     let document_file_state = cache::state(|| Some(try_open_document().unwrap()));
     let mut document_file = document_file_state.take_without_invalidation().unwrap();
 
-    let mut changed = false;
-    let window = document_file.edit(|mut document| {
-        let w = document_window(&mut document);
-        if document.changed() {
-            changed = true;
-        }
-        w
-    });
-
-    if changed {
+    let rev = document_file.revision();
+    let window = document_file.edit(|document, edit| document_window(document, edit));
+    if document_file.revision() != rev {
         document_file_state.set(Some(document_file));
     } else {
         document_file_state.set_without_invalidation(Some(document_file));

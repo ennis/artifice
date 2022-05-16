@@ -106,6 +106,7 @@ pub struct TypedAttribute<T> {
 // EditProxies
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/*
 #[derive(Debug)]
 pub(crate) struct MetadataEdit {
     pub(crate) name: Atom,
@@ -244,3 +245,4 @@ impl<'a> kyute::ToMemoizeArg for AttributeEditProxy<'a> {
         (self.id, self.rev)
     }
 }
+*/

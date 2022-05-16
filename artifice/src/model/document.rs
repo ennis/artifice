@@ -1,14 +1,9 @@
 use crate::{
     model,
-    model::{
-        attribute::AttributeAny, file::DocumentDatabase, metadata, node::NodeEditProxy, EditAction, Node, Path,
-        ShareGroup,
-    },
+    model::{attribute::AttributeAny, file::DocumentDatabase, metadata, EditAction, Node, Path, ShareGroup},
 };
-use artifice::model::node::NodeChange;
 use core::fmt;
 use imbl::{HashMap, Vector};
-use kyute::ToMemoizeArg;
 use kyute_common::{Atom, Data};
 use std::{
     fmt::{Formatter, Write},
@@ -61,6 +56,7 @@ impl Document {
         }
     }
 
+    /// Returns a reference to the root node.
     pub fn root(&self) -> &Node {
         &self.root
     }
@@ -70,25 +66,10 @@ impl Document {
         self.node(&path.parent()?)?.attribute(&path.name())
     }
 
+    /// Prints a textual representation of this document.
     pub fn dump(&self, out: &mut dyn std::fmt::Write) {
         let mut printer = DocumentPrettyPrinter::new(out);
         printer.print_node(&self.root, true);
-    }
-
-    /// Edits the root node.
-    pub fn edit<R>(&mut self, db: &mut DocumentDatabase, f: impl FnOnce(&mut NodeEditProxy) -> R) -> R {
-        let mut proxy = NodeEditProxy::borrowed(&self.root, db);
-        let result = f(&mut proxy);
-        match proxy.finish() {
-            Some(NodeChange::Modified(node)) => {
-                self.root = node;
-            }
-            Some(NodeChange::Removed) => {
-                panic!("attempted to remove the root node")
-            }
-            None => {}
-        }
-        result
     }
 }
 

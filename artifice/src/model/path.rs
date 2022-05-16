@@ -1,8 +1,9 @@
-use crate::model::Atom;
+use crate::model::{Atom, Error};
 use dashmap::DashMap;
 use kyute::Data;
 use lazy_static::lazy_static;
 use std::{
+    convert::TryFrom,
     fmt,
     hash::{Hash, Hasher},
     sync::Arc,
@@ -253,17 +254,26 @@ impl Path {
     }
 
     /// Parses a path from a string representation.
-    pub fn parse(path: &str) -> Path {
+    pub fn parse(path: &str) -> Option<Path> {
+        // NOTE: right now parsing never fails, but it might in the future as path syntax evolves
         if let Some(pos) = path.rfind(&['/', '.']) {
             let prefix = &path[0..pos];
             let name = &path[pos + 1..];
             match path.as_bytes()[pos] {
-                b'/' => Self::parse(prefix).join(name),
-                b'.' => Self::parse(prefix).join_attribute(name),
+                b'/' => Some(Self::parse(prefix)?.join(name)),
+                b'.' => Some(Self::parse(prefix)?.join_attribute(name)),
                 _ => unreachable!(),
             }
         } else {
-            Self::root()
+            Some(Self::root())
         }
+    }
+}
+
+impl<'a> TryFrom<&'a str> for Path {
+    type Error = Error;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        Path::parse(value).ok_or(Error::PathSyntax)
     }
 }

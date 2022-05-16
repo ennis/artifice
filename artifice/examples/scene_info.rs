@@ -7,7 +7,7 @@ use artifice::{
         },
         EvalError,
     },
-    model::{Document, DocumentFile, Node, Path, Value},
+    model::{metadata, Document, DocumentFile, Node, Path, Value},
 };
 use async_trait::async_trait;
 use futures::future;
@@ -23,31 +23,34 @@ fn main() {
     let connection = rusqlite::Connection::open("scene_info.db").expect("could not open db file");
     let mut document = DocumentFile::open(connection).unwrap();
 
-    document.edit(|root| {
-        root.get_or_create_node("main", |main| {
-            main.get_or_create_node("load", |load| {
-                load.get_or_create_attribute(
-                    "input:filePath",
-                    "string",
-                    Some(Value::String("data/El4KUGDU0AAW64U.jpg".into())),
-                    |_| {},
-                );
+    document.edit(|document, edit| {
+        let mut load = edit.node(Path::parse("/main/load").unwrap()).unwrap();
+        //.metadata(metadata::OPERATOR, "OpLoad")
+        load.set("input:filePath", "data/El4KUGDU0AAW64U.jpg").unwrap();
+        load.define("output:output", "image").unwrap();
 
-                //load.attribute("input:filePath").value("data/El4KUGDU0AAW64U.jpg").define();  // or .create()
-
-                load.get_or_create_attribute("output:output", "image", None, |_| {});
-            });
-            main.get_or_create_node("blur", |blur| {
-                blur.get_or_create_attribute("operator", "token", Some(Value::Token("OpBlur".into())), |_| {});
-                blur.get_or_create_attribute("param:radius", "f64", Some(Value::Number(4.5)), |_| {});
-                blur.get_or_create_attribute("input:image", "image", None, |attr| {
-                    attr.set_connection(Path::parse("/main/load/output:output"))
-                });
-                // blur.attribute("input:image").connect("/main/load/output:output").create();
-                blur.get_or_create_attribute("output:image", "image", None, |_| {});
-            });
-        });
+        let mut blur = edit.node(Path::parse("/main/blur").unwrap()).unwrap();
+        //.metadata(metadata::OPERATOR, "OpBlur")
+        blur.set("param:radius", 4.5).unwrap();
+        blur.define("input:image", "image").unwrap();
+        blur.connect("input:image", Path::parse("/main/load/output:output").unwrap())
+            .unwrap();
+        blur.define("output:image", "image").unwrap();
     });
+
+    /*
+     main {
+       load <OpLoad> {
+           input:filePath[string] = "data/El4KUGDU0AAW64U.jpg";
+           output:output[image]
+       }
+       blur <OpBlur> {
+           param:radius[f64] = 4.5;
+           input:image[image] <- `/main/load/output:output`
+           output:image[image]
+       }
+     }
+    */
 
     eprintln!("{:?}", document);
 }
