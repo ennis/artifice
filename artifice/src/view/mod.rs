@@ -11,7 +11,7 @@ use kyute::{
         winit::window::WindowBuilder,
     },
     style::{BoxStyle, Paint},
-    theme,
+    theme, tweak,
     widget::{
         drop_down, grid,
         grid::{GridRow, GridTrackDefinition, SHOW_GRID_LAYOUT_LINES},
@@ -105,9 +105,9 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
     let table_params = TableViewParams {
         selection: None,
         columns: vec![
-            GridTrackDefinition::new(GridLength::Fixed(200.dip())),
-            GridTrackDefinition::new(GridLength::Fixed(200.dip())),
-            GridTrackDefinition::new(GridLength::Flex(1.0)),
+            GridTrackDefinition::new(GridLength::Fixed(tweak!(200).dip())),
+            GridTrackDefinition::new(GridLength::Fixed(tweak!(200).dip())),
+            GridTrackDefinition::new(GridLength::Flex(tweak!(1.0))),
         ],
         column_headers: Some(
             ColumnHeaders::new()
@@ -118,7 +118,7 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
         main_column: 0,
         row_height: GridLength::Auto,
         rows: vec![root_row],
-        row_indent: Length::Dip(20.0),
+        row_indent: Length::Dip(tweak!(20.0)),
         resizeable_columns: false,
         reorderable_rows: false,
         reorderable_columns: false,
@@ -142,6 +142,7 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
         .text_icon_button("Open", "data/icons/file_folder.png")
         .text_icon_button("Save", "data/icons/file_tick.png");
 
+    // GridLength won't be tweakable if length isn't
     grid.push_column_definition(GridTrackDefinition::new(GridLength::Flex(1.0)));
     grid.push_row_definition(GridTrackDefinition::new(GridLength::Auto));
     grid.push_row_definition(GridTrackDefinition::new(GridLength::Auto));
