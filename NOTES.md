@@ -2695,3 +2695,4 @@ The usual answer is something like an `Arc<RefCell<RetainedState>>` that is stor
 
 => find a way to have retained state in the "widget" context
 
+# BoxStyle minilanguage

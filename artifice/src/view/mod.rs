@@ -14,7 +14,7 @@ use kyute::{
     theme, tweak,
     widget::{
         drop_down, grid,
-        grid::{GridRow, GridTrackDefinition, SHOW_GRID_LAYOUT_LINES},
+        grid::{GridTemplate, SHOW_GRID_LAYOUT_LINES},
         Action, Baseline, Button, ColumnHeaders, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu,
         MenuItem, Null, Orientation, Shortcut, Slider, TableRow, TableView, TableViewParams, Text, TextEdit, WidgetPod,
     },
@@ -104,11 +104,7 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
 
     let table_params = TableViewParams {
         selection: None,
-        columns: vec![
-            GridTrackDefinition::new(GridLength::Fixed(tweak!(200).dip())),
-            GridTrackDefinition::new(GridLength::Fixed(tweak!(200).dip())),
-            GridTrackDefinition::new(GridLength::Flex(tweak!(1.0))),
-        ],
+        template: GridTemplate::parse("{auto} / 200 200 1fr").unwrap(),
         column_headers: Some(
             ColumnHeaders::new()
                 .add(Text::new("Name"))
@@ -116,7 +112,6 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
                 .add(Text::new("Value")),
         ),
         main_column: 0,
-        row_height: GridLength::Auto,
         rows: vec![root_row],
         row_indent: Length::Dip(tweak!(20.0)),
         resizeable_columns: false,
@@ -133,23 +128,13 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
 
     let table = TableView::new(table_params);
 
-    let mut grid = Grid::new();
-
-    //grid!{ name: 100px | type: 100px | value:* | [100px] ) -- headers: 100dip -- [100px] -- }
-
+    let mut grid = Grid::with_template("auto auto / 1fr");
     let toolbar = Toolbar::new()
         .text_icon_button("Create", "data/icons/file_new.png")
         .text_icon_button("Open", "data/icons/file_folder.png")
         .text_icon_button("Save", "data/icons/file_tick.png");
-
-    // GridLength won't be tweakable if length isn't
-    grid.push_column_definition(GridTrackDefinition::new(GridLength::Flex(1.0)));
-    grid.push_row_definition(GridTrackDefinition::new(GridLength::Auto));
-    grid.push_row_definition(GridTrackDefinition::new(GridLength::Auto));
-
-    grid.add_item(0, 0, 0, toolbar);
-    grid.add_item(1, 0, 0, table);
-
+    grid.insert(toolbar);
+    grid.insert(table);
     Arc::new(grid)
 }
 
