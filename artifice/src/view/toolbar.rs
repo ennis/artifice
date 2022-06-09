@@ -15,22 +15,16 @@ pub struct Toolbar {
 }
 
 impl Toolbar {
-    #[composable]
+    #[composable(tweak_literals)]
     pub fn new() -> Toolbar {
-        let mut grid = Grid::with_template(tweak!("40 20 / {55} [end] / 5 10"));
+        let mut grid = Grid::with_template("40 20 / {55} [end] / 5 10");
         grid.set_auto_flow(FlowDirection::Column);
 
-        /*Paint::from(
-            LinearGradient::new()
-                .angle(tweak!(90).degrees())
-                .stop(Color::from_hex(tweak!("#D7D5D7")), 0.0)
-                .stop(Color::from_hex(tweak!("#F6F5F6")), 1.0),
-        )*/
-
         let inner = Container::new(grid)
-            .background(tweak!["linear-gradient(50deg, #D7D5D7, #F6F5F6)"])
-            .content_padding(tweak!(10).dip(), tweak!(10).dip(), tweak!(10).dip(), tweak!(10).dip())
+            .background("linear-gradient(90deg, #D7D5D7, #F6F5F6)")
+            .content_padding(10.dip(), 10.dip(), 10.dip(), 10.dip())
             .centered();
+
         Toolbar { inner }
     }
 
