@@ -96,7 +96,7 @@ pub fn node_row(node: &Node, #[uncached] edit: &mut DocumentEditProxy) -> TableR
 }
 
 /// Root document view.
-#[composable(cached)]
+#[composable(cached, live_literals)]
 pub fn document_window_contents(document: &Document, #[uncached] edit: &mut DocumentEditProxy) -> impl Widget + Clone {
     tracing::trace!("document_window_contents");
 

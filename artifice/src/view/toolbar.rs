@@ -15,7 +15,7 @@ pub struct Toolbar {
 }
 
 impl Toolbar {
-    #[composable(tweak_literals)]
+    #[composable(live_literals)]
     pub fn new() -> Toolbar {
         let mut grid = Grid::with_template("40 20 / {55} [end] / 5 10");
         grid.set_auto_flow(FlowDirection::Column);
