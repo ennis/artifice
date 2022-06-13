@@ -1,3 +1,4 @@
+//! Registry of operators.
 use crate::eval::EvalError;
 use anyhow::anyhow;
 use kyute_common::Atom;

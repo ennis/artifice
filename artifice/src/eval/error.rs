@@ -27,6 +27,9 @@ pub enum EvalError {
     /// I/O-related error.
     #[error("I/O error: {0}")]
     Io(String),
+    /// Shader syntax error.
+    #[error("{0}")]
+    SyntaxError(String),
     /// General error with a message.
     #[error("{0}")]
     General(String),

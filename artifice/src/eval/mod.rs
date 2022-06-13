@@ -1,11 +1,14 @@
 mod error;
 pub mod imaging;
 pub mod registry;
+mod shader;
 mod task_map;
+mod variability;
 
 pub use error::EvalError;
 pub use registry::Registry;
 pub use task_map::{TaskError, TaskMap};
+pub use variability::Variability;
 
 use crate::{
     eval::{imaging::ImagingEvalState, registry::operator_registry},

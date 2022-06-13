@@ -11,7 +11,7 @@ use kyute::{
         winit::window::WindowBuilder,
     },
     style::{BoxStyle, Paint},
-    theme, tweak,
+    theme,
     widget::{
         drop_down, grid,
         grid::{GridTemplate, SHOW_GRID_LAYOUT_LINES},
@@ -113,7 +113,7 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
         ),
         main_column: 0,
         rows: vec![root_row],
-        row_indent: Length::Dip(tweak!(20.0)),
+        row_indent: Length::Dip(20.0),
         resizeable_columns: false,
         reorderable_rows: false,
         reorderable_columns: false,
