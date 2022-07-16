@@ -1,0 +1,26 @@
+document version 1
+
+node root {
+    node src Read {
+        string input:file = "data/El4KUGDU0AAW64U.jpg";
+        texture2D output:image;
+    }
+
+    node open OpenImagePipeline {
+        port input;
+        port output;
+        texture2D input:image <- </src/output:image>;
+    }
+}
+
+// Node template definition
+template SampleTexture2DFloat4 {
+    port input [in];
+    port output [out,passthrough=in];
+
+    texture2D input:image [autoconnect="type=texture2D"];
+    sampler input:sampler = sampler clampToEdge clampToEdge clampToEdge linear linear;
+
+    vec4 output:color;
+
+}

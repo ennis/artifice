@@ -1,9 +1,9 @@
 use crate::{
     eval::{
-        imaging::{ImageInputRequest, OpImaging, OpImagingCtx, PxSize, RegionOfDefinition, RequestWindow, TiSize},
+        imaging::{ImageInputRequest, OpImaging, OpImagingCtx, PxSizeI, RegionOfDefinition, RequestWindow, TiSize},
         EvalError,
     },
-    model::{Image, Node},
+    model::Node,
 };
 use async_trait::async_trait;
 use kyute_common::Size;
@@ -39,7 +39,7 @@ impl OpImaging for OpBlur {
         let expanded_roi = request.roi.inflate(ks, ks);
         // FIXME this is wrong (pixel density, pixel aspect ratio)
         // TODO move to method of RequestWindow
-        let expanded_resolution = PxSize::new(
+        let expanded_resolution = PxSizeI::new(
             request.resolution.width + 2 * kernel_size as i32,
             request.resolution.height + 2 * kernel_size as i32,
         );
@@ -67,7 +67,7 @@ impl OpImaging for OpBlur {
         // TODO move to method of RequestWindow
         let expanded_resolution = input_rod
             .native_resolution
-            .map(|res| PxSize::new(res.width + 2 * kernel_size as i32, res.height + 2 * kernel_size as i32));
+            .map(|res| PxSizeI::new(res.width + 2 * kernel_size as i32, res.height + 2 * kernel_size as i32));
 
         Ok(RegionOfDefinition {
             rect: expanded_rod,

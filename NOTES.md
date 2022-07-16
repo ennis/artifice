@@ -2696,3 +2696,27 @@ The usual answer is something like an `Arc<RefCell<RetainedState>>` that is stor
 => find a way to have retained state in the "widget" context
 
 # BoxStyle minilanguage
+
+
+# Examples of "big" rust document editing applications that are not plain text editors
+- runebender
+- ??? (plain text editors seem to be the most complex thing we're able to build nowadays)
+
+# Value spaces
+- In artifice, values live in three different "spaces":
+  - runtime: values are represented by the `Value` type: type-erased value container
+  - shaders: GLSL variables (e.g. `vec4 color;`), marshalled into uniform buffers.
+  - serialized: XML (or other) representation of values
+    - e.g. `<sampler><wrapModeS>clamp</wrapModeS></sampler>`
+- `TypeDesc` describes the type of a value
+- There should be a way to easily convert between representations
+
+```rust
+/// Instances of ValueType provide a description of a type, and instructions on how to read and write values of the type
+/// from/to a file. 
+trait ValueType {
+    fn type_desc(&self) -> TypeDesc;
+    fn read_value(&self, reader: &mut XmlReader) -> Value; 
+    fn write_value(&self, value: Value, writer: &mut XmlWriter); 
+}
+```

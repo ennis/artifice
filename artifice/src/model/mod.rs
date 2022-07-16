@@ -1,18 +1,19 @@
 //! Application data model
-mod attribute;
 mod document;
 mod edit;
 mod error;
 mod file;
 pub mod metadata;
-mod named_object;
 mod node;
+mod param;
+mod parser;
 mod path;
+mod sampler;
 mod schema;
 mod share_group;
+pub mod typedesc;
 mod value;
 
-pub use attribute::AttributeAny;
 pub use document::Document;
 pub use edit::EditAction;
 pub use error::Error;
@@ -20,12 +21,9 @@ pub use file::{DocumentDatabase, DocumentEditProxy, DocumentFile, NodeEditProxy}
 pub use kyute_common::Atom;
 pub use metadata::Metadata;
 pub use node::Node;
+pub use param::Param;
 pub use path::Path;
+pub use sampler::{Sampler, SamplerFilter, SamplerWrapMode};
 pub use share_group::ShareGroup;
+pub use typedesc::{PrimitiveType, TypeDesc};
 pub use value::{FromValue, Value};
-
-/// A dummy type for image-typed attributes.
-///
-/// It doesn't hold a value because it's not serializable.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
-pub struct Image;

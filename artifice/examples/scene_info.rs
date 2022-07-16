@@ -2,7 +2,7 @@ use crate::future::FutureExt;
 use artifice::{
     eval::{
         imaging::{
-            ImageInputRequest, OpImaging, OpImagingCtx, PxSize, RegionOfDefinition, RequestWindow, TiPoint, TiRect,
+            ImageInputRequest, OpImaging, OpImagingCtx, PxSizeI, RegionOfDefinition, RequestWindow, TiPoint, TiRect,
             TiSize,
         },
         EvalError,

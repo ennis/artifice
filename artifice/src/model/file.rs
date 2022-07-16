@@ -1,6 +1,6 @@
 use crate::model::{
-    attribute::AttributeType, node::Node, path::Path, share_group::ShareGroup, AttributeAny, Document, EditAction,
-    Error, Metadata, Value,
+    node::Node, param::AttributeType, path::Path, share_group::ShareGroup, Document, EditAction, Error, Metadata,
+    Param, Value,
 };
 use imbl::Vector;
 use kyute_common::{Atom, Data};
@@ -317,7 +317,7 @@ impl DocumentFile {
                 let parent = path.parent().unwrap();
                 document.node_mut(&parent).unwrap().attributes.insert(
                     path.name(),
-                    AttributeAny {
+                    Param {
                         rev: 0,
                         id,
                         path,
@@ -376,11 +376,7 @@ pub struct NodeEditProxy<'a> {
 }
 
 impl<'a> NodeEditProxy<'a> {
-    fn get_or_create_attribute(
-        &mut self,
-        name: impl Into<Atom>,
-        ty: impl Into<Atom>,
-    ) -> Result<&mut AttributeAny, Error> {
+    fn get_or_create_attribute(&mut self, name: impl Into<Atom>, ty: impl Into<Atom>) -> Result<&mut Param, Error> {
         let name = name.into();
         let ty = ty.into();
         let node_path = &self.node.path;
@@ -390,7 +386,7 @@ impl<'a> NodeEditProxy<'a> {
         let attr = self.node.attributes.entry(name.clone()).or_insert_with(|| {
             let path = node_path.join_attribute(name.clone());
             let id = db.insert_attribute(node_id, &path, ty.clone(), None, None).unwrap();
-            AttributeAny::new(id, path, ty.clone(), None, None)
+            Param::new(id, path, ty.clone(), None, None)
         });
 
         if attr.ty != ty {

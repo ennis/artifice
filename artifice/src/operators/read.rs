@@ -1,6 +1,6 @@
 use crate::eval::{
     imaging::{
-        ImageInputRequest, OpImaging, OpImagingCtx, PxSize, RegionOfDefinition, RequestWindow, TiPoint, TiRect, TiSize,
+        ImageInputRequest, OpImaging, OpImagingCtx, PxSizeI, RegionOfDefinition, RequestWindow, TiPoint, TiRect, TiSize,
     },
     EvalError, TaskMap,
 };
@@ -85,7 +85,7 @@ impl OpImaging for OpRead {
                 TiPoint::origin(),
                 TiSize::new(header.width as f64, header.height as f64),
             ),
-            native_resolution: Some(PxSize::new(header.width as i32, header.height as i32)),
+            native_resolution: Some(PxSizeI::new(header.width as i32, header.height as i32)),
         })
     }
 }

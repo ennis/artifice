@@ -1,11 +1,8 @@
 use kyute::{
-    composable,
-    style::{BoxStyle, LinearGradient, Paint},
-    theme,
-    widget::{grid::FlowDirection, Container, Grid, GridLength, Image, Scaling, Text, WidgetWrapper},
-    WidgetExt,
+    composable, theme,
+    widget::{grid::FlowDirection, Grid, Image, Scaling, Text, WidgetExt},
+    Color, UnitExt,
 };
-use kyute_common::{Color, UnitExt};
 
 struct ToolbarItem {}
 
@@ -38,7 +35,9 @@ impl Toolbar {
         let grid = self.inner.inner_mut();
         grid.insert((
             // Icon
-            Image::from_uri(icon_uri, Scaling::Contain).fix_size(32.dip(), 32.dip()),
+            Image::from_uri(icon_uri, Scaling::Contain)
+                .fix_width(32.dip())
+                .fix_height(32.dip()),
             // Text placeholder
             (),
         ));
@@ -51,7 +50,8 @@ impl Toolbar {
         grid.insert((
             Image::from_uri(icon_uri, Scaling::Contain)
                 .colorize(theme::palette::GREY_800)
-                .fix_size(32.dip(), 32.dip())
+                .fix_width(32.dip())
+                .fix_height(32.dip())
                 .centered(),
             Text::new(label.into()).color(theme::palette::GREY_800).centered(),
         ));

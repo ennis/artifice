@@ -1,0 +1,83 @@
+{
+  "nodes": {
+    "src": {
+      "op": "read",
+      "params": {
+        "input:file": {
+          "type": "string",
+          "value": "data/El4KUGDU0AAW64U.jpg"
+        },
+        "output:texture": {
+          "type": "texture2D"
+        }
+      }
+    },
+    "open": {
+      "op": "openImagePipeline",
+      "ports": {
+        "input": {},
+        "output": {}
+      },
+      "params": {
+        "input:texture": {
+          "type": "texture2D"
+        },
+        "output:texture": {
+          "type": "texture2D"
+        }
+      }
+    },
+    "sampleTexture2DFloat4": {
+      "op": "program",
+      "params": {
+        "input:texture": {
+          "type": "texture2D",
+          "connect": "/open/output:texture"
+        },
+        "input:sampler": {
+          "type": "sampler",
+          "value": {
+            "wrapModeS": "clamp",
+            "wrapModeT": "clamp",
+            "wrapModeR": "clamp",
+            "borderColor": [0.0,0.0,0.0,1.0]
+          }
+        },
+        "input:texcoords": {
+          "type": "float2"
+        },
+        "output:color": {
+          "type": "float4"
+        },
+        "input:colorMatrix": {
+          "type": "mat4"
+        },
+        "input:sourceCode": {
+          "type": "string",
+          "value": "\nin vec2 texcoords;\nuniform texture2D texture;\nuniform texture2D sampler;\nout vec4 color = sample(texture, texcoords, sampler);\n"
+        }
+      }
+    },
+    "close": {
+      "op": "closeImagePipeline",
+      "params": {
+        "input:fragColor": {
+          "type": "vec4",
+          "connect": "/program/output:color"
+        },
+        "output:renderTarget:color": {
+          "type": "texture2D"
+        }
+      }
+    },
+    "display": {
+      "op": "display",
+      "params": {
+        "input:image": {
+          "type": "texture2D",
+          "connect": "/close/output:renderTarget:color"
+        }
+      }
+    }
+  }
+}

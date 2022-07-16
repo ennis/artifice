@@ -6,14 +6,11 @@
 // Type of shader inputs/outputs?
 //
 
-use std::cmp::min;
-use crate::eval::Variability;
-use glsl_lang::{lexer::v2_min::str::Lexer, parse::Parse};
+use crate::eval::{pipeline::PipelineNode, EvalError, OpCtx, Variability};
 use graal_spirv::typedesc::TypeDesc;
 use imbl::HashMap;
 use kyute_common::Atom;
-use rusqlite::types::Type;
-use std::sync::Arc;
+use std::{cmp::min, sync::Arc};
 use thiserror::Error;
 use tracing::warn;
 
@@ -21,63 +18,29 @@ use tracing::warn;
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// stage?
-// step?
-// process?
-// assembly line?
-
-/// Shader value type.
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash, Data)]
-pub enum ValueType {
-    Float,
-    Vec2,
-    Vec3,
-    Vec4,
-    IVec2,
-    IVec3,
-    IVec4,
-    Mat3,
-    Mat4,
+/// Context passed to `OpPipeline` operators.
+pub struct OpPipelineCtx {
+    op_ctx: OpCtx,
 }
 
-/// Input or output variable of a program.
-pub struct InterfaceVariable {
-    /// Input name
-    pub name: Atom,
-    /// Input type
-    pub ty: TypeDesc,
-    /// Explicit variability
-    pub variability: Option<Variability>,
-    /// Whether this is an output of the program.
-    pub output: bool,
-}
-
-/// Error produced by ShaderNode.
-#[derive(Debug, Error)]
-pub enum PipelineError {
-    /// Could not parse the shader.
-    ///
-    /// Contains with a generic diagnostic string (may contain multiple errors).
-    #[error("parse error(s): \n{0}")]
-    ParseError(String),
-
-    ///
-    #[error("variable not found: {0}")]
-    VariableNotFound(Atom),
-}
-
-/// A program, taking a set of values as input and producing others as a result.
+/// GPU pipeline operators.
 ///
-/// These are composed to create GPU pipelines.
-#[derive(Clone, Debug)]
-pub struct Program {
-    /// Parsed GLSL translation unit.
-    translation_unit: glsl_lang::ast::TranslationUnit,
-    /// Inputs & outputs of the program.
-    interface_vars: HashMap<Atom, InterfaceVariable>,
+/// GPU pipeline operators produce GPU pipelines in the form of a DAG of pipeline nodes.
+pub trait OpPipeline {
+    fn create_pipeline_node(&self, ctx: &OpPipelineCtx) -> Result<Arc<PipelineNode>, EvalError>;
 }
 
+pub struct OpGpuProgram;
 
+//
+// Shaders are specified as a DAG of pipeline nodes
+// Programs, which are a kind of (pipeline) node
+
+// A stage is one of those: vertex, fragment, geometry, tesselation, compute, etc.
+// -> microstage?
+// -> program?
+
+/*
 /// A program with its inputs and outputs bound to named variables in a pipeline context.
 #[derive(Clone, Debug)]
 pub struct BoundProgram {
@@ -167,19 +130,17 @@ impl<'a> ProgramBuilder<'a> {
     }
 
     pub fn finish(mut self) {
+        todo!()
 
         // Check that all inputs have compatible (i.e. comparable) variabilities.
         // This ensures that we're not mixing, e.g., vertex and fragment streams.
 
-        let input_variabilities : Vec<_> = self.inputs.iter().map(|x| x.1.variability).collect();
+        //let input_variabilities : Vec<_> = self.inputs.iter().map(|x| x.1.variability).collect();
         //input_variabilities.so
 
-
-
-        let inferred_output_variability = self.inputs.iter().map(|x| x.1.variability).reduce(|min_variability, v| {
-
-        })
-
+        //let inferred_output_variability = self.inputs.iter().map(|x| x.1.variability).reduce(|min_variability, v| {
+        //
+        //})
     }
 }
 
@@ -238,12 +199,12 @@ mod tests {
         // language=glsl
         let source = r#"
         #include <ray_tracing>
-        
+
         in vec3 position;               // inferred variability
         in vec3 normals;                // inferred variability
-        uniform in vec3 param;          // explicit uniform variability 
+        uniform in vec3 param;          // explicit uniform variability
         out vec4 normals = f(position); // inferred variability
-        
+
         vec4 f() {
             return vec4(0.0,0.0,0.0,1.0);
         }
@@ -258,3 +219,4 @@ mod tests {
     #[test]
     fn test_program_builder() {}
 }
+*/

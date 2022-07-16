@@ -1,6 +1,6 @@
 use crate::{
     model,
-    model::{attribute::AttributeAny, file::DocumentDatabase, metadata, EditAction, Node, Path, ShareGroup},
+    model::{file::DocumentDatabase, metadata, param::Param, EditAction, Node, Path, ShareGroup},
 };
 use core::fmt;
 use imbl::{HashMap, Vector};
@@ -62,7 +62,7 @@ impl Document {
     }
 
     /// Returns the attribute at the given path.
-    pub fn attribute(&self, path: &Path) -> Option<&AttributeAny> {
+    pub fn attribute(&self, path: &Path) -> Option<&Param> {
         self.node(&path.parent()?)?.attribute(&path.name())
     }
 
@@ -150,7 +150,7 @@ impl<'a> DocumentPrettyPrinter<'a> {
         }
     }
 
-    fn print_attribute(&mut self, attr: &AttributeAny, is_last: bool) {
+    fn print_attribute(&mut self, attr: &Param, is_last: bool) {
         self.print_line_prefix();
         self.output.write_char(if is_last { '└' } else { '├' });
         write!(self.output, "{} [{}]", attr.path.name().as_ref(), attr.ty.as_ref());

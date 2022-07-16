@@ -73,10 +73,15 @@ pub type TiPoint = euclid::Point2D<f64, Tip>;
 pub type TiSize = euclid::Size2D<f64, Tip>;
 pub type TiOffset = euclid::Vector2D<f64, Tip>;
 
-pub type PxRect = euclid::Rect<i32, Px>;
-pub type PxPoint = euclid::Point2D<i32, Px>;
-pub type PxSize = euclid::Size2D<i32, Px>;
-pub type PxOffset = euclid::Vector2D<i32, Px>;
+pub type PxRectI = euclid::Rect<i32, Px>;
+pub type PxPointI = euclid::Point2D<i32, Px>;
+pub type PxSizeI = euclid::Size2D<i32, Px>;
+pub type PxOffsetI = euclid::Vector2D<i32, Px>;
+
+pub type PxRect = euclid::Rect<f32, Px>;
+pub type PxPoint = euclid::Point2D<f32, Px>;
+pub type PxSize = euclid::Size2D<f32, Px>;
+pub type PxOffset = euclid::Vector2D<f32, Px>;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // ImageRequest
@@ -88,7 +93,7 @@ pub struct RequestWindow {
     /// Requested region of interest in local, target-independent coordinates.
     pub roi: TiRect,
     /// Requested resolution (in device pixels). Combined with the RoI above, this also defines a pixel aspect ratio and pixel density.
-    pub resolution: PxSize,
+    pub resolution: PxSizeI,
 }
 
 impl RequestWindow {
@@ -154,7 +159,7 @@ pub struct RegionOfDefinition {
     /// For example, an operator that loads an image file may want to set this field to the
     /// pixel size of the image file. This can be important in "pixel-perfect" rendering pipelines
     /// to avoid unwanted resampling.
-    pub native_resolution: Option<PxSize>,
+    pub native_resolution: Option<PxSizeI>,
 }
 
 /// Arguments for `OpImaging::compute_input_requests`.

@@ -23,11 +23,17 @@ dashmap = "5.0.0"
 imbl = "1.0.1"
 openimageio = { path = "../../openimageio-rs" }
 rusqlite = { version = "0.26.3", features = ["bundled", "serde_json"] }
-serde_rusqlite = "0.29.0"
 parking_lot = "0.11.2"
 euclid = "0.22"
 async-trait = "0.1"
 futures = "0.3.21"
 tokio = { version = "1.17.0", features = ["rt-multi-thread", "time"] }
-glsl-lang = { version ="0.2.0", features = ["lexer-v2-min"] }
+glsl-lang = { version = "*", features = ["lexer-v2-full"] }
+glsl-lang-pp = { version = "*" }
 graal-spirv = { path = "../../graal/graal-spirv" }
+bitflags = "1.3.2"
+once_cell = "1.12.0"
+xmlparser = "0.13.3"
+lalrpop = "0.19.8"
+glam = "0.21"
+inventory = "0.3.0"

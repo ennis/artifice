@@ -1,28 +1,23 @@
-mod toolbar;
+//mod toolbar;
 
-use crate::{
-    model::{AttributeAny, Document, DocumentEditProxy, DocumentFile, Node, NodeEditProxy, Path},
-    view::toolbar::Toolbar,
-};
+use crate::model::{Document, DocumentEditProxy, DocumentFile, Node, NodeEditProxy, Param, Path};
 use kyute::{
     cache, composable,
     shell::{
         text::{Attribute, FontFamily, FontStyle, FormattedText},
         winit::window::WindowBuilder,
     },
-    style::{BoxStyle, Paint},
     theme,
     widget::{
         drop_down, grid,
         grid::{GridTemplate, SHOW_GRID_LAYOUT_LINES},
-        Action, Baseline, Button, ColumnHeaders, Container, DropDown, Flex, Grid, GridLength, Image, Label, Menu,
-        MenuItem, Null, Orientation, Shortcut, Slider, TableRow, TableView, TableViewParams, Text, TextEdit, WidgetPod,
+        Action, Button, ColumnHeaders, DropDown, Flex, Grid, Image, Label, Menu, MenuItem, Null, Orientation, Shortcut,
+        TableRow, TableView, TableViewParams, Text, WidgetPod,
     },
-    Color, Data, Font, State, Widget, WidgetExt, Window,
+    Color, Data, Font, Length, State, UnitExt, Widget, Window,
 };
-use kyute_common::{Length, UnitExt};
 use rusqlite::Connection;
-use std::{fmt, fmt::Formatter, sync::Arc};
+use std::{convert::TryFrom, fmt, fmt::Formatter, sync::Arc};
 
 const LABEL_COLUMN: &str = "label";
 const ADD_COLUMN: &str = "add";
@@ -31,7 +26,7 @@ const VALUE_COLUMN: &str = "value";
 
 /// Attribute row
 #[composable(cached)]
-pub fn attribute_row(attribute: &AttributeAny, #[uncached] edit: &mut DocumentEditProxy) -> TableRow<i64> {
+pub fn attribute_row(attribute: &Param, #[uncached] edit: &mut DocumentEditProxy) -> TableRow<i64> {
     // format attribute name
     let attr_name = attribute.path.name();
     let mut label = FormattedText::new(attr_name.as_ref().into());
@@ -104,7 +99,7 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
 
     let table_params = TableViewParams {
         selection: None,
-        template: GridTemplate::parse("{auto} / 200 200 1fr").unwrap(),
+        template: GridTemplate::try_from("{auto} / 200 200 1fr").unwrap(),
         column_headers: Some(
             ColumnHeaders::new()
                 .add(Text::new("Name"))
@@ -129,11 +124,11 @@ pub fn document_window_contents(document: &Document, #[uncached] edit: &mut Docu
     let table = TableView::new(table_params);
 
     let mut grid = Grid::with_template("auto auto / 1fr");
-    let toolbar = Toolbar::new()
-        .text_icon_button("Create", "data/icons/file_new.png")
-        .text_icon_button("Open", "data/icons/file_folder.png")
-        .text_icon_button("Save", "data/icons/file_tick.png");
-    grid.insert(toolbar);
+    //let toolbar = Toolbar::new()
+    //    .text_icon_button("Create", "data/icons/file_new.png")
+    //   .text_icon_button("Open", "data/icons/file_folder.png")
+    //    .text_icon_button("Save", "data/icons/file_tick.png");
+    //grid.insert(toolbar);
     grid.insert(table);
     Arc::new(grid)
 }

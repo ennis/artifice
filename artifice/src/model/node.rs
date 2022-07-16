@@ -1,6 +1,6 @@
 use crate::model::{
-    attribute::{AttributeAny, AttributeType},
     file::{DocumentDatabase, DocumentFile},
+    param::{AttributeType, Param},
     Atom, EditAction, FromValue, Metadata, Path, Value,
 };
 use imbl::{HashMap, OrdMap, Vector};
@@ -17,7 +17,7 @@ pub struct Node {
     /// Path of this object in the document tree. Contains the name of the object.
     pub path: Path,
     /// Attributes.
-    pub attributes: OrdMap<Atom, AttributeAny>,
+    pub attributes: OrdMap<Atom, Param>,
     /// Node metadata.
     pub metadata: OrdMap<Atom, Value>,
     /// Child nodes
@@ -64,12 +64,12 @@ impl Node {
     }
 
     /// Returns the attribute with the specified name.
-    pub fn attribute(&self, name: &Atom) -> Option<&AttributeAny> {
+    pub fn attribute(&self, name: &Atom) -> Option<&Param> {
         self.attributes.get(name)
     }
 
     /// Returns a mutable reference to the attribute with the specified name.
-    pub fn attribute_mut(&mut self, name: &Atom) -> Option<&mut AttributeAny> {
+    pub fn attribute_mut(&mut self, name: &Atom) -> Option<&mut Param> {
         self.attributes.get_mut(name)
     }
 

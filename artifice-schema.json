@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "definitions": {
+    "nodes": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/node"
+      }
+    },
+    "params": {
+      "type": "object",
+      "description": "List of named parameters",
+      "additionalProperties": {
+        "$ref": "#/definitions/param"
+      }
+    },
+    "param": {
+      "type": "object",
+      "description": "Node parameter",
+      "properties": {
+        "connect": {
+          "type": "string",
+          "description": "Input connection"
+        },
+        "type": {
+          "description": "The type of the parameter",
+          "type": "string",
+          "enum": [
+            "int",
+            "float",
+            "float2",
+            "float3",
+            "float4",
+            "string",
+            "vec2",
+            "vec3",
+            "vec4",
+            "int2",
+            "int3",
+            "int4",
+            "mat3",
+            "mat4",
+            "ivec2",
+            "ivec3",
+            "ivec4",
+            "texture2D",
+            "sampler"
+          ]
+        }
+      }
+    },
+    "node": {
+      "description": "Definition of a node",
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "description": "Node operator"
+        },
+        "params": {
+          "$ref": "#/definitions/params"
+        },
+        "nodes": {
+          "$ref": "#/definitions/nodes"
+        }
+      }
+    }
+  },
+  "properties": {
+    "nodes": {
+      "$ref": "#/definitions/nodes"
+    }
+  }
+}

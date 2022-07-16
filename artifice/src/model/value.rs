@@ -1,27 +1,100 @@
-use crate::model::Atom;
+use crate::model::{
+    parser::{XmlReader, XmlWriter},
+    Atom, PrimitiveType, TypeDesc,
+};
+use core::panicking::panic;
 use kyute::Data;
 use serde::{
     de::{EnumAccess, Error, MapAccess, SeqAccess, Unexpected},
     ser::{SerializeMap, SerializeSeq},
     Deserializer, Serializer,
 };
-use std::{collections::HashMap, convert::TryInto, fmt::Formatter, sync::Arc};
+use std::{any::Any, collections::HashMap, convert::TryInto, fmt, fmt::Write, io, sync::Arc};
+use thiserror::Error;
 
 pub type Map = imbl::HashMap<Atom, Value>;
 pub type Array = imbl::Vector<Value>;
 
+pub type Vec2 = glam::Vec2;
+pub type Vec3 = glam::Vec3;
+pub type Vec3A = glam::Vec3A;
+pub type Vec4 = glam::Vec4;
+
+pub type IVec2 = glam::IVec2;
+pub type IVec3 = glam::IVec3;
+pub type IVec3A = glam::IVec3A;
+pub type IVec4 = glam::IVec4;
+
+pub type UVec2 = glam::UVec2;
+pub type UVec3 = glam::UVec3;
+pub type UVec3A = glam::UVec3A;
+pub type UVec4 = glam::UVec4;
+
+pub type BVec2 = glam::BVec2;
+pub type BVec3 = glam::BVec3;
+pub type BVec3A = glam::BVec3A;
+pub type BVec4 = glam::BVec4;
+
+/// Type-erased value containers.
 #[derive(Clone, Data, Debug)]
 pub enum Value {
-    Number(f64),
+    // Store small values directly as variants of the enum. For more complex types,
+    // defer to Custom.
+    Int(i32),
+    UnsignedInt(u32),
+    Float(f32),
+    Double(f64),
+    Bool(bool),
+    Vec2(Vec2),
+    Vec3(Vec3A),
+    Vec4(Vec4),
+    IVec2(IVec2),
+    IVec3(IVec3A),
+    IVec4(IVec4),
+    UVec2(UVec2),
+    UVec3(UVec3A),
+    UVec4(UVec4),
+    BVec2(BVec2),
+    BVec3(BVec3A),
+    BVec4(BVec4),
     String(Arc<str>),
     Token(Atom),
     Map(Map),
     Array(Array),
-    Bool(bool),
+    Custom {
+        type_desc: Arc<TypeDesc>,
+        data: Arc<dyn Any>,
+    },
     Null,
 }
 
 impl Value {
+    /// Returns the type descriptor of the value contained inside this object.
+    pub fn type_desc(&self) -> &TypeDesc {
+        match self {
+            Value::Int(_) => &TypeDesc::INT,
+            Value::UnsignedInt(_) => &TypeDesc::UNSIGNED_INT,
+            Value::Float(_) => &TypeDesc::FLOAT,
+            Value::Double(_) => &TypeDesc::DOUBLE,
+            Value::Bool(_) => &TypeDesc::BOOL,
+            Value::Vec2(_) => &TypeDesc::VEC2,
+            Value::Vec3(_) => &TypeDesc::VEC3,
+            Value::Vec4(_) => &TypeDesc::VEC4,
+            Value::String(_) => &TypeDesc::String,
+            Value::Token(_) => {
+                todo!()
+            }
+            Value::Map(_) => {
+                todo!()
+            }
+            Value::Array(_) => {
+                todo!()
+            }
+            Value::Custom { ref type_desc, .. } => type_desc,
+            Value::Null => &TypeDesc::Void,
+        }
+    }
+
     pub fn as_token(&self) -> Option<&Atom> {
         if let Value::Token(token) = self {
             Some(token)

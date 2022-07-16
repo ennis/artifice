@@ -9,3 +9,10 @@ members = [
 
 [profile.release]
 debug = true
+
+[patch.crates-io]
+glsl-lang = { git = 'https://github.com/ennis/glsl-lang', rev = "8f292bef79b90b8349377b4447ad644221fc219d" }
+glsl-lang-pp = { git = 'https://github.com/ennis/glsl-lang', rev = "8f292bef79b90b8349377b4447ad644221fc219d" }
+glsl-lang-types = { git = 'https://github.com/ennis/glsl-lang', rev = "8f292bef79b90b8349377b4447ad644221fc219d" }
+lang-util = { git = 'https://github.com/ennis/glsl-lang', rev = "8f292bef79b90b8349377b4447ad644221fc219d" }
+lang-util-derive = { git = 'https://github.com/ennis/glsl-lang', rev = "8f292bef79b90b8349377b4447ad644221fc219d" }

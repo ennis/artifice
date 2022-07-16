@@ -1,5 +1,6 @@
 mod error;
 pub mod imaging;
+mod pipeline;
 pub mod registry;
 mod shader;
 mod task_map;
@@ -12,7 +13,7 @@ pub use variability::Variability;
 
 use crate::{
     eval::{imaging::ImagingEvalState, registry::operator_registry},
-    model::{metadata, AttributeAny, Document, FromValue, Node, Path, Value},
+    model::{metadata, Document, FromValue, Node, Param, Path, Value},
 };
 use async_trait::async_trait;
 use kyute_common::Atom;
@@ -29,7 +30,7 @@ use std::{
 #[async_trait]
 pub trait OpGeneral {
     /// Evaluates the specified attribute at the specified time.
-    async fn eval(&self, attribute: &AttributeAny, time: f64) -> Result<Value, EvalError>;
+    async fn eval(&self, attribute: &Param, time: f64) -> Result<Value, EvalError>;
 }
 
 operator_registry!(GENERAL_OPERATORS<OpGeneral>);
