@@ -90,7 +90,9 @@ fn std140_array_layout(elem_ty: &TypeDesc, arraylen: u32) -> Result<(u32, u32, A
     Ok((array_size, base_align, ArrayLayout { elem_layout, stride }))
 }
 
-fn std140_struct_layout<'a>(fields: impl Iterator<Item = &'a TypeDesc>) -> Result<(u32, u32, StructLayout), Layout> {
+fn std140_struct_layout<'a>(
+    fields: impl Iterator<Item = &'a TypeDesc>,
+) -> Result<(u32, u32, StructLayout), LayoutError> {
     /* If the member is a structure, the base alignment of the structure is N,
     where N is the largest base alignment value of any of its members,
     and rounded up to the base alignment of a vec4.
@@ -182,7 +184,7 @@ fn std140_layout(ty: &TypeDesc) -> Result<Layout, LayoutError> {
         }
         TypeDesc::Array { ref elem_ty, len } => match &**elem_ty {
             TypeDesc::Primitive(_) | TypeDesc::Vector { .. } | TypeDesc::Struct { .. } => {
-                let (size, align, layout) = std140_array_layout(elem_ty, len);
+                let (size, align, layout) = std140_array_layout(elem_ty, len)?;
                 Ok(Layout {
                     size,
                     align,
@@ -192,12 +194,12 @@ fn std140_layout(ty: &TypeDesc) -> Result<Layout, LayoutError> {
             ty => panic!("unsupported array element type: {:?}", ty),
         },
         TypeDesc::Struct(ref ty) => {
-            let (size, align, layout) = std140_struct_layout(ty.fields.iter().map(|f| &f.ty));
-            Layout {
+            let (size, align, layout) = std140_struct_layout(ty.fields.iter().map(|f| &f.ty))?;
+            Ok(Layout {
                 size,
                 align,
                 inner: Some(Box::new(InnerLayout::Struct(layout))),
-            }
+            })
         }
         ref ty => Err(LayoutError::OpaqueType),
     }

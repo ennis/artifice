@@ -3,7 +3,7 @@ use imbl::Vector;
 use kyute::Data;
 
 /// A group of attributes sharing a common value.
-#[derive(Clone, Debug, Data)]
+#[derive(Clone, Debug)]
 pub struct ShareGroup {
     shares: Vector<Path>,
     value: Value,

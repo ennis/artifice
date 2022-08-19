@@ -13,11 +13,12 @@ pub use variability::Variability;
 
 use crate::{
     eval::{imaging::ImagingEvalState, registry::operator_registry},
-    model::{metadata, Document, FromValue, Node, Param, Path, Value},
+    model::{metadata, Document, Node, Param, Path, Value},
 };
 use async_trait::async_trait;
 use kyute_common::Atom;
 use std::{
+    convert::TryFrom,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -133,7 +134,11 @@ impl OpCtx {
     }
 
     /// Evaluates an attribute of the current node.
-    pub async fn eval_attribute<T: FromValue>(&self, attribute: impl Into<Atom>, time: f64) -> Result<T, EvalError> {
+    pub async fn eval_attribute<T: TryFrom<Value>>(
+        &self,
+        attribute: impl Into<Atom>,
+        time: f64,
+    ) -> Result<T, EvalError> {
         self.eval(self.node.path.join_attribute(attribute), time).await
     }
 
@@ -167,8 +172,8 @@ impl OpCtx {
             .unwrap()
     }
 
-    pub async fn eval<T: FromValue>(&self, path: Path, time: f64) -> Result<T, EvalError> {
+    pub async fn eval<T: TryFrom<Value>>(&self, path: Path, time: f64) -> Result<T, EvalError> {
         let value = self.eval_any(path, time).await?;
-        T::from_value(&value).ok_or(EvalError::TypeMismatch)
+        T::try_from(value).map_err(|_| EvalError::ValueConversionError)
     }
 }

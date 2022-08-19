@@ -1,10 +1,18 @@
 //! Sampler values.
 
+use std::hash::{Hash, Hasher};
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum SamplerWrapMode {
     Clamp,
     Repeat,
     Mirror,
+}
+
+impl Default for SamplerWrapMode {
+    fn default() -> Self {
+        SamplerWrapMode::Clamp
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -13,7 +21,13 @@ pub enum SamplerFilter {
     Linear,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Hash)]
+impl Default for SamplerFilter {
+    fn default() -> Self {
+        SamplerFilter::Nearest
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
 pub struct Sampler {
     pub wrap_mode_s: SamplerWrapMode,
     pub wrap_mode_t: SamplerWrapMode,
@@ -21,4 +35,47 @@ pub struct Sampler {
     pub min_filter: SamplerFilter,
     pub mag_filter: SamplerFilter,
     pub border_color: glam::Vec4,
+}
+
+// required because we also have a custom hash impl
+// (https://rust-lang.github.io/rust-clippy/master/index.html#derive_hash_xor_eq)
+impl PartialEq for Sampler {
+    fn eq(&self, other: &Self) -> bool {
+        self.wrap_mode_s == other.wrap_mode_s
+            && self.wrap_mode_t == other.wrap_mode_t
+            && self.wrap_mode_r == other.wrap_mode_r
+            && self.min_filter == other.min_filter
+            && self.mag_filter == other.mag_filter
+            && self.border_color.x.to_bits() == other.border_color.x.to_bits()
+            && self.border_color.y.to_bits() == other.border_color.y.to_bits()
+            && self.border_color.z.to_bits() == other.border_color.z.to_bits()
+            && self.border_color.w.to_bits() == other.border_color.w.to_bits()
+    }
+}
+
+impl Hash for Sampler {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.wrap_mode_s.hash(state);
+        self.wrap_mode_t.hash(state);
+        self.wrap_mode_r.hash(state);
+        self.min_filter.hash(state);
+        self.mag_filter.hash(state);
+        self.border_color.x.to_bits().hash(state);
+        self.border_color.y.to_bits().hash(state);
+        self.border_color.z.to_bits().hash(state);
+        self.border_color.w.to_bits().hash(state);
+    }
+}
+
+impl Default for Sampler {
+    fn default() -> Self {
+        Sampler {
+            wrap_mode_s: Default::default(),
+            wrap_mode_t: Default::default(),
+            wrap_mode_r: Default::default(),
+            min_filter: Default::default(),
+            mag_filter: Default::default(),
+            border_color: Default::default(),
+        }
+    }
 }

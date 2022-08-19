@@ -1,6 +1,6 @@
 // macro support
-extern crate core;
-extern crate core;
+#[macro_use]
+extern crate tracing;
 extern crate self as artifice;
 
 use serde_json as json;

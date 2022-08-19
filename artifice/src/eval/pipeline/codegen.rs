@@ -65,7 +65,7 @@ struct Texture {}
 /// `mat4x3` => M43
 ///
 fn generate_mangled_type_name(out: &mut dyn fmt::Write, ty: &TypeDesc) -> fmt::Result {
-    let base = match ty {
+    match ty {
         TypeDesc::Void => write!(out, "Z")?,
         TypeDesc::Primitive(PrimitiveType::Float) => write!(out, "F")?,
         TypeDesc::Primitive(PrimitiveType::Int) => write!(out, "I")?,
@@ -125,6 +125,7 @@ fn generate_mangled_type_name(out: &mut dyn fmt::Write, ty: &TypeDesc) -> fmt::R
             generate_mangled_type_name(out, ty);
             write!(out, "P")?
         }
+        TypeDesc::String => write!(out, "Y")?,
         TypeDesc::Sampler => write!(out, "S")?,
         TypeDesc::ShadowSampler => write!(out, "W")?,
         TypeDesc::Unknown => write!(out, "?")?,

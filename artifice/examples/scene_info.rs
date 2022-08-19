@@ -29,6 +29,11 @@ fn main() {
         load.set("input:filePath", "data/El4KUGDU0AAW64U.jpg").unwrap();
         load.define("output:output", "image").unwrap();
 
+        Node::build()
+            .set("input:filePath", "data/El4KUGDU0AAW64U.jpg")
+            .define("output:output", "image")
+            .insert(document);
+
         let mut blur = edit.node(Path::parse("/main/blur").unwrap()).unwrap();
         //.metadata(metadata::OPERATOR, "OpBlur")
         blur.set("param:radius", 4.5).unwrap();

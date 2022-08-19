@@ -1,15 +1,19 @@
-use crate::model::{
-    parser::{XmlReader, XmlWriter},
-    Atom, PrimitiveType, TypeDesc,
-};
-use core::panicking::panic;
+use crate::model::{Atom, PrimitiveType, TypeDesc};
 use kyute::Data;
 use serde::{
     de::{EnumAccess, Error, MapAccess, SeqAccess, Unexpected},
     ser::{SerializeMap, SerializeSeq},
     Deserializer, Serializer,
 };
-use std::{any::Any, collections::HashMap, convert::TryInto, fmt, fmt::Write, io, sync::Arc};
+use std::{
+    any::Any,
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+    fmt,
+    fmt::Write,
+    io,
+    sync::Arc,
+};
 use thiserror::Error;
 
 pub type Map = imbl::HashMap<Atom, Value>;
@@ -22,12 +26,12 @@ pub type Vec4 = glam::Vec4;
 
 pub type IVec2 = glam::IVec2;
 pub type IVec3 = glam::IVec3;
-pub type IVec3A = glam::IVec3A;
+//pub type IVec3A = glam::IVec3A;
 pub type IVec4 = glam::IVec4;
 
 pub type UVec2 = glam::UVec2;
 pub type UVec3 = glam::UVec3;
-pub type UVec3A = glam::UVec3A;
+//pub type UVec3A = glam::UVec3A;
 pub type UVec4 = glam::UVec4;
 
 pub type BVec2 = glam::BVec2;
@@ -35,8 +39,29 @@ pub type BVec3 = glam::BVec3;
 pub type BVec3A = glam::BVec3A;
 pub type BVec4 = glam::BVec4;
 
+/// Trait for types that have an associated `TypeDesc`.
+pub trait HasTypeDesc {
+    fn type_desc() -> TypeDesc;
+}
+
+macro_rules! impl_has_type_desc_primitive {
+    ($t:ty, $prim:ident) => {
+        impl HasTypeDesc for $t {
+            fn type_desc() -> TypeDesc {
+                TypeDesc::Primitive(PrimitiveType::$prim)
+            }
+        }
+    };
+}
+
+impl_has_type_desc_primitive!(i32, Int);
+impl_has_type_desc_primitive!(u32, UnsignedInt);
+impl_has_type_desc_primitive!(f32, Float);
+impl_has_type_desc_primitive!(f64, Double);
+impl_has_type_desc_primitive!(bool, Bool);
+
 /// Type-erased value containers.
-#[derive(Clone, Data, Debug)]
+#[derive(Clone, Debug)]
 pub enum Value {
     // Store small values directly as variants of the enum. For more complex types,
     // defer to Custom.
@@ -49,21 +74,21 @@ pub enum Value {
     Vec3(Vec3A),
     Vec4(Vec4),
     IVec2(IVec2),
-    IVec3(IVec3A),
+    //IVec3(IVec3A),
     IVec4(IVec4),
     UVec2(UVec2),
-    UVec3(UVec3A),
+    //UVec3(UVec3A),
     UVec4(UVec4),
-    BVec2(BVec2),
+    /*BVec2(BVec2),
     BVec3(BVec3A),
-    BVec4(BVec4),
+    BVec4(BVec4),*/
     String(Arc<str>),
     Token(Atom),
     Map(Map),
     Array(Array),
     Custom {
-        type_desc: Arc<TypeDesc>,
-        data: Arc<dyn Any>,
+        type_desc: Option<TypeDesc>,
+        data: Arc<dyn Any + Send + Sync>,
     },
     Null,
 }
@@ -90,8 +115,15 @@ impl Value {
             Value::Array(_) => {
                 todo!()
             }
-            Value::Custom { ref type_desc, .. } => type_desc,
+            Value::Custom { ref type_desc, .. } => type_desc.as_ref().unwrap_or(&TypeDesc::Unknown),
             Value::Null => &TypeDesc::Void,
+            Value::IVec2(_) => &TypeDesc::IVEC2,
+            Value::IVec4(_) => &TypeDesc::IVEC3,
+            Value::UVec2(_) => &TypeDesc::UVEC2,
+            Value::UVec4(_) => &TypeDesc::UVEC4,
+            /*Value::BVec2(_) => &TypeDesc::
+            Value::BVec3(_) => {}
+            Value::BVec4(_) => {}*/
         }
     }
 
@@ -113,8 +145,8 @@ impl Value {
     }
 
     /// Extracts the number if this object contains one.
-    pub fn as_number(&self) -> Option<f64> {
-        if let Value::Number(num) = self {
+    pub fn as_double(&self) -> Option<f64> {
+        if let Value::Double(num) = self {
             Some(*num)
         } else {
             None
@@ -174,13 +206,13 @@ impl Default for Value {
 
 impl From<f64> for Value {
     fn from(v: f64) -> Self {
-        Value::Number(v)
+        Value::Double(v)
     }
 }
 
 impl From<i32> for Value {
     fn from(v: i32) -> Self {
-        Value::Number(v as f64)
+        Value::Int(v)
     }
 }
 
@@ -202,13 +234,13 @@ impl<'a> From<&'a str> for Value {
     }
 }
 
-impl serde::Serialize for Value {
+/*impl serde::Serialize for Value {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match *self {
-            Value::Number(num) => serializer.serialize_f64(num),
+            Value::Int(num) => serializer.serialize_f64(num),
             Value::String(ref str) => serializer.serialize_str(str),
             Value::Token(ref atom) => serializer.serialize_str(atom),
             Value::Map(ref map) => {
@@ -229,9 +261,9 @@ impl serde::Serialize for Value {
             Value::Null => serializer.serialize_none(),
         }
     }
-}
+}*/
 
-struct ValueVisitor;
+/*struct ValueVisitor;
 
 impl<'de> serde::de::Visitor<'de> for ValueVisitor {
     type Value = Value;
@@ -433,39 +465,48 @@ impl<'de> serde::Deserialize<'de> for Value {
         deserializer.deserialize_any(ValueVisitor)
     }
 }
+*/
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // FromValue
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-pub trait FromValue: Sized {
-    fn from_value(value: &Value) -> Option<Self>;
-}
+/// The error type return when a `Value` type conversion fails.
+#[derive(Debug, Error)]
+#[error("failed to convert value to target type")]
+pub struct TryFromValueError;
 
-impl FromValue for f64 {
-    fn from_value(value: &Value) -> Option<Self> {
+impl TryFrom<Value> for f64 {
+    type Error = TryFromValueError;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Number(num) => Some(*num),
-            _ => None,
+            Value::Int(v) => Ok(v as f64),
+            Value::UnsignedInt(v) => Ok(v as f64),
+            Value::Float(v) => Ok(v as f64),
+            Value::Double(v) => Ok(v),
+            _ => Err(TryFromValueError),
         }
     }
 }
 
-impl FromValue for Atom {
-    fn from_value(value: &Value) -> Option<Self> {
+impl TryFrom<Value> for Atom {
+    type Error = TryFromValueError;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Token(ref atom) => Some(atom.clone()),
-            _ => None,
+            Value::Token(v) => Ok(v),
+            Value::String(v) => Ok(Atom::from(&*v)),
+            _ => Err(TryFromValueError),
         }
     }
 }
 
-impl FromValue for String {
-    fn from_value(value: &Value) -> Option<String> {
+impl TryFrom<Value> for String {
+    type Error = TryFromValueError;
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Token(ref atom) => Some(atom.to_string()),
-            Value::String(ref str) => Some(str.to_string()),
-            _ => None,
+            Value::Token(v) => Ok(v.to_string()),
+            Value::String(v) => Ok(v.to_string()),
+            _ => Err(TryFromValueError),
         }
     }
 }

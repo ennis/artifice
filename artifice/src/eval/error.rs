@@ -1,4 +1,7 @@
-use crate::{eval::TaskError, model::Path};
+use crate::{
+    eval::TaskError,
+    model::{Path, TryFromValueError},
+};
 use kyute_common::Atom;
 use std::io;
 use thiserror::Error;
@@ -10,8 +13,8 @@ pub enum EvalError {
     #[error("unspecified evaluation error")]
     Unspecified,
     /// The resulting value wasn't of the expected type.
-    #[error("type mismatch")]
-    TypeMismatch,
+    #[error("value conversion error")]
+    ValueConversionError,
     /// A mandatory input was unconnected.
     #[error("mandatory input unconnected: `{input_name}`")]
     MandatoryInputUnconnected { input_name: Atom },

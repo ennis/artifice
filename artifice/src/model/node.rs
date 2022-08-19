@@ -1,14 +1,13 @@
 use crate::model::{
-    file::{DocumentDatabase, DocumentFile},
     param::{AttributeType, Param},
-    Atom, EditAction, FromValue, Metadata, Path, Value,
+    Atom, EditAction, Metadata, Path, Value,
 };
 use imbl::{HashMap, OrdMap, Vector};
 use kyute::Data;
-use std::{borrow::Cow, ops::Deref, sync::Arc};
+use std::{borrow::Cow, convert::TryFrom, ops::Deref, sync::Arc};
 
 /// Nodes.
-#[derive(Clone, Debug, Data)]
+#[derive(Clone, Debug)]
 pub struct Node {
     /// Revision index, incremented on every change.
     pub(crate) rev: u64,
@@ -74,9 +73,11 @@ impl Node {
     }
 
     /// Returns a metadata value.
-    pub fn metadata<T: FromValue>(&self, metadata: Metadata<T>) -> Option<T> {
+    ///
+    /// TODO propagate the reason for the error.
+    pub fn metadata<T: TryFrom<Value>>(&self, metadata: Metadata<T>) -> Option<T> {
         let v = self.metadata.get(&Atom::from(metadata.name))?;
-        T::from_value(v)
+        T::try_from(v.clone()).ok()
     }
 
     pub fn child(&self, name: &Atom) -> Option<&Node> {
@@ -91,6 +92,7 @@ impl Node {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Edits
 ////////////////////////////////////////////////////////////////////////////////////////////////////
+impl Node {}
 
 /*
 #[derive(Debug)]

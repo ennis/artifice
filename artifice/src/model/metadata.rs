@@ -1,4 +1,4 @@
-use crate::model::{FromValue, Value};
+use crate::model::Value;
 use kyute_common::Atom;
 use std::{fmt, fmt::Formatter, marker::PhantomData};
 
@@ -12,7 +12,7 @@ pub struct Metadata<T> {
     _phantom: PhantomData<T>,
 }
 
-impl<T: FromValue> Metadata<T> {
+impl<T> Metadata<T> {
     pub const fn new(name: &'static str) -> Metadata<T> {
         Metadata {
             name,

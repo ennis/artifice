@@ -1,7 +1,4 @@
-use crate::{
-    eval::TypeDesc,
-    model::{file::DocumentDatabase, Atom, Metadata, Path, Value},
-};
+use crate::model::{Atom, Metadata, Path, TypeDesc, Value};
 use imbl::HashMap;
 use kyute::Data;
 use lazy_static::lazy_static;
@@ -13,7 +10,7 @@ use std::{borrow::Cow, ops::Deref};
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// A parameter of a `Node`.
-#[derive(Clone, Debug, Data)]
+#[derive(Clone, Debug)]
 pub struct Param {
     pub(crate) rev: u64,
 

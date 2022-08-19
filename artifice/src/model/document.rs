@@ -1,6 +1,6 @@
 use crate::{
     model,
-    model::{file::DocumentDatabase, metadata, param::Param, EditAction, Node, Path, ShareGroup},
+    model::{metadata, param::Param, EditAction, Node, Path, ShareGroup},
 };
 use core::fmt;
 use imbl::{HashMap, Vector};
@@ -14,7 +14,7 @@ use std::{
 #[derive(Clone)]
 pub struct Document {
     /// Document revision index
-    revision: usize,
+    pub(crate) revision: usize,
     /// Root node
     pub(crate) root: Node,
     //nodes: HashMap<Path, Node>,
@@ -22,11 +22,11 @@ pub struct Document {
     //pub share_groups: Vector<ShareGroup>,
 }
 
-impl Data for Document {
+/*impl Data for Document {
     fn same(&self, other: &Self) -> bool {
         self.revision.same(&other.revision) && self.root.same(&other.root)
     }
-}
+}*/
 
 impl Document {
     /// Returns a new document.
@@ -153,7 +153,7 @@ impl<'a> DocumentPrettyPrinter<'a> {
     fn print_attribute(&mut self, attr: &Param, is_last: bool) {
         self.print_line_prefix();
         self.output.write_char(if is_last { '└' } else { '├' });
-        write!(self.output, "{} [{}]", attr.path.name().as_ref(), attr.ty.as_ref());
+        write!(self.output, "{} [{}]", attr.path.name(), attr.ty.display_glsl());
         if let Some(ref val) = attr.value {
             write!(self.output, " = {:?}", val);
         }
