@@ -1,14 +1,11 @@
 use crate::{
     model,
-    model::{metadata, param::Param, EditAction, Node, Path, ShareGroup},
+    model::{metadata, param::Param, Node, Path, ShareGroup},
 };
-use core::fmt;
+
 use imbl::{HashMap, Vector};
 use kyute_common::{Atom, Data};
-use std::{
-    fmt::{Formatter, Write},
-    sync::Arc,
-};
+use std::{fmt, sync::Arc};
 
 /// The root object of artifice documents.
 #[derive(Clone)]
@@ -85,7 +82,7 @@ impl fmt::Debug for Document {
 }
 
 struct DocumentPrettyPrinter<'a> {
-    output: &'a mut dyn std::fmt::Write,
+    output: &'a mut dyn fmt::Write,
     indent: usize,
     lines: Vec<usize>,
 }

@@ -1,6 +1,6 @@
 use crate::model::{
     param::{AttributeType, Param},
-    Atom, EditAction, Metadata, Path, Value,
+    Atom, Metadata, Path, Value,
 };
 use imbl::{HashMap, OrdMap, Vector};
 use kyute::Data;

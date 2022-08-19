@@ -3,7 +3,6 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/artifice.iml" filepath="$PROJECT_DIR$/.idea/artifice.iml" />
-      <module fileurl="file://$PROJECT_DIR$/../kyute/.idea/kyute.iml" filepath="$PROJECT_DIR$/../kyute/.idea/kyute.iml" />
     </modules>
   </component>
 </project>

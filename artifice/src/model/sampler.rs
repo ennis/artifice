@@ -1,5 +1,7 @@
 //! Sampler values.
 
+use crate::model::value::ValueType;
+use artifice::model::TypeDesc;
 use std::hash::{Hash, Hasher};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -27,8 +29,9 @@ impl Default for SamplerFilter {
     }
 }
 
+/// Sampler parameters.
 #[derive(Copy, Clone, Debug)]
-pub struct Sampler {
+pub struct SamplerParameters {
     pub wrap_mode_s: SamplerWrapMode,
     pub wrap_mode_t: SamplerWrapMode,
     pub wrap_mode_r: SamplerWrapMode,
@@ -39,7 +42,7 @@ pub struct Sampler {
 
 // required because we also have a custom hash impl
 // (https://rust-lang.github.io/rust-clippy/master/index.html#derive_hash_xor_eq)
-impl PartialEq for Sampler {
+impl PartialEq for SamplerParameters {
     fn eq(&self, other: &Self) -> bool {
         self.wrap_mode_s == other.wrap_mode_s
             && self.wrap_mode_t == other.wrap_mode_t
@@ -53,7 +56,7 @@ impl PartialEq for Sampler {
     }
 }
 
-impl Hash for Sampler {
+impl Hash for SamplerParameters {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.wrap_mode_s.hash(state);
         self.wrap_mode_t.hash(state);
@@ -67,9 +70,9 @@ impl Hash for Sampler {
     }
 }
 
-impl Default for Sampler {
+impl Default for SamplerParameters {
     fn default() -> Self {
-        Sampler {
+        SamplerParameters {
             wrap_mode_s: Default::default(),
             wrap_mode_t: Default::default(),
             wrap_mode_r: Default::default(),
@@ -77,5 +80,15 @@ impl Default for Sampler {
             mag_filter: Default::default(),
             border_color: Default::default(),
         }
+    }
+}
+
+impl ValueType for SamplerParameters {
+    fn hash(&self, mut hasher: &mut dyn Hasher) {
+        Hash::hash(self, &mut hasher)
+    }
+
+    fn type_desc(&self) -> Option<&TypeDesc> {
+        Some(&TypeDesc::Sampler)
     }
 }
