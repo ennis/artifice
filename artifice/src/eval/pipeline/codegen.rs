@@ -375,13 +375,13 @@ impl CodegenContext {
     }
 
     /// Adds a shader input (like `in vec3 position`).
-    ///
-    /// Returns the assigned location for the input (the `n` in `layout(location=n)`).
-    pub fn add_input(&mut self, name: impl Into<Arc<str>>, ty: TypeDesc) -> u32 {
-        let location = self.inputs.len() as u32;
+    pub fn add_input(&mut self, name: impl Into<Arc<str>>, ty: TypeDesc, location: u32) {
+        assert!(
+            self.inputs.iter().find(|input| input.location == location).is_none(),
+            "the given location was already assigned to another input"
+        );
         let name = name.into();
         self.inputs.push(InputOutput { name, ty, location });
-        location
     }
 
     /// Adds a shader output (like `out vec4 color`).
@@ -393,6 +393,8 @@ impl CodegenContext {
         let name = name.into();
         self.outputs.push(InputOutput { name, ty, location });
     }
+
+    //pub fn add_uniform(&mut self, name: impl Into<Arc<str>>)
 
     /// Adds a buffer uniform (like `layout(buffer_reference) buffer MyBuffer_tag { float[] contents; };`).
     pub fn add_buffer(&mut self, name: impl Into<Atom>, ty: TypeDesc) {
@@ -439,6 +441,7 @@ impl CodegenContext {
                                       initializer: Option<&ast::Initializer>| {
             if let Some(name) = name {
                 if let Some(initializer) = initializer {
+                    write!(s, "    ").unwrap();
                     show_identifier(s, name, formatting_state).unwrap();
                     write!(s, " = ").unwrap();
                     show_initializer(s, initializer, formatting_state).unwrap();
@@ -569,9 +572,7 @@ impl CodegenContext {
             )?;
         }
 
-        writeln!(out, "\n\n// DECLARATIONS ----------\n")?;
         writeln!(out, "{}", self.decls)?;
-        writeln!(out, "\n\n// BODY ----------")?;
         writeln!(out, "void main() {{")?;
         writeln!(out, "{}", self.body)?;
         writeln!(out, "}}")?;

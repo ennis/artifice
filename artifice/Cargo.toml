@@ -36,6 +36,8 @@ once_cell = "1.12.0"
 roxmltree = "0.15.0"
 glam = "0.21"
 inventory = "0.3.0"
+bumpalo = "3.11.0"
+stats_alloc = "0.1.10"
 
 [dev-dependencies]
 tracing-tree = "0.2.1"

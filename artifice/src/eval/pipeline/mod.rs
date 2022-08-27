@@ -243,6 +243,7 @@ pub enum InterpolationMode {
 struct InterpolatedVariable {
     in_: Arc<str>,
     out: Arc<str>,
+    ty: TypeDesc,
     mode: InterpolationMode,
 }
 
@@ -290,6 +291,7 @@ impl InterpolationNodeBuilder {
         self.vars.create(out.clone(), var.ty.clone(), Variability::Fragment);
         self.node.vars.push(InterpolatedVariable {
             in_: var.name.base.clone(),
+            ty: var.ty.clone(),
             out,
             mode,
         });
@@ -305,6 +307,12 @@ impl InterpolationNodeBuilder {
         })
     }
 }
+
+// bunch of Arc<str>
+// Binding
+// PipelineNode
+// InterpolatedVariable
+// Variable
 
 #[derive(Clone, Debug)]
 pub struct SsaName {
@@ -478,7 +486,7 @@ impl ProgramNodeBuilder {
             | Variability::Object
             | Variability::DrawInstance => self.pred.stage,
         };
-        eprintln!("min_variability={:?}, stage={:?}", min_variability, stage);
+        //eprintln!("min_variability={:?}, stage={:?}", min_variability, stage);
 
         // define output variables
         let mut vars = self.pred.vars.clone();
@@ -575,9 +583,38 @@ impl PipelineNode {
 
         let mut interpolations = Vec::new();
 
+        let mut vertex_input_location = 0;
+        let mut fragment_output_location = 0;
+
         for &node in nodes.iter() {
             match node.kind {
-                PipelineNodeKind::Input => {}
+                PipelineNodeKind::Input => {
+                    match node.stage {
+                        ShaderStage::Vertex => {
+                            for var in node.vars.vars.values() {
+                                if var.builtin.is_none() {
+                                    // SSA index of input should be zero (first instance of the var name)
+                                    assert_eq!(var.name.index, 0);
+                                    cgc_vert.add_input(var.name.base.clone(), var.ty.clone(), vertex_input_location);
+                                    vertex_input_location += 1;
+                                }
+                            }
+                        }
+                        ShaderStage::Fragment => {
+                            /*for var in node.vars.vars.values() {
+                                if var.builtin.is_none() {
+                                    // SSA index of input should be zero (first instance of the var name)
+                                    assert_eq!(var.name.index, 0);
+                                    cgc_frag.add_input(var.name.base.clone(), var.ty.clone(), fragment_input_location);
+                                    fragment_input_location += 1;
+                                }
+                            }*/
+                        }
+                        ShaderStage::Compute => {
+                            todo!()
+                        }
+                    }
+                }
                 PipelineNodeKind::Program(ProgramNode {
                     ref program,
                     ref input_bindings,
@@ -599,10 +636,10 @@ impl PipelineNode {
             }
         }
 
-        /*for (i, interp) in interpolations.iter().enumerate() {
-            cgc_vert.add_output(interp.in_, interp.);
-            cgc_frag.add_input(interp.out);
-        }*/
+        for (i, interp) in interpolations.iter().enumerate() {
+            cgc_vert.add_output(interp.in_.clone(), interp.ty.clone(), i as u32);
+            cgc_frag.add_input(interp.out.clone(), interp.ty.clone(), i as u32);
+        }
 
         let mut vertex = String::new();
         let mut fragment = String::new();
@@ -651,6 +688,11 @@ mod tests {
         TypeDesc, VariableCtx,
     };
     use artifice::eval::Variability;
+    use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
+    use std::alloc::System;
+
+    #[global_allocator]
+    static GLOBAL: &StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
 
     const PROG_1: &str = r#"
         in vec3 position;
@@ -670,6 +712,8 @@ mod tests {
         let mut preprocessor = program::Preprocessor::new_with_fs(vfs);
         let prog_1 = Program::new(PROG_1, "prog1", &mut preprocessor).unwrap();
         let prog_2 = Program::new(PROG_2, "prog2", &mut preprocessor).unwrap();
+
+        let reg = Region::new(&GLOBAL);
 
         let mut init_vars = VariableCtx::new();
         init_vars.create("position", TypeDesc::VEC3, Variability::Vertex);
@@ -699,9 +743,12 @@ mod tests {
             builder.finish().unwrap()
         };
 
-        let shader = prog_2_node.codegen_graphics();
-        eprintln!("====== Vertex: ====== \n {}", shader.vertex);
-        eprintln!("====== Fragment: ====== \n {}", shader.fragment);
+        //let shader = prog_2_node.codegen_graphics();
+
+        eprintln!("Stats: {:#?}", reg.change());
+        //eprintln!("====== Vertex: ====== \n {}", shader.vertex);
+        //eprintln!("====== Fragment: ====== \n {}", shader.fragment);
+        //drop(prog_2_node);
     }
 }
 

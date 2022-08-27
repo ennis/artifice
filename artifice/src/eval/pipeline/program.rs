@@ -959,10 +959,6 @@ pub struct Program {
     pub(crate) interface: HashMap<Arc<str>, ProgramInterface>,
 }
 
-struct ExternalDeclaration2<'a> {
-    ty: &'a ast::TypeSpecifier,
-}
-
 impl Program {
     /// Creates a new program from GLSL source code.
     ///
