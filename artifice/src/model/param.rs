@@ -2,7 +2,6 @@ use crate::model::{Atom, Metadata, Path, TypeDesc, Value};
 use imbl::HashMap;
 use kyute::Data;
 use lazy_static::lazy_static;
-use rusqlite::params;
 use std::{borrow::Cow, ops::Deref};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

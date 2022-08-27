@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="../../artifice.xsd">
+    <node id="src" op="read">
+        <string id="input:file">../../Pictures/__houraisan_kaguya_touhou_drawn_by_futoumeido__9c62ea6f8974428b3bf2b81ec8865494.png</string>
+        <texture2D id="output:image"/>
+    </node>
+    <node id="src" op="shader">
+        <string id="source">
+            <![CDATA[
+
+            ]]>
+        </string>
+    </node>
+    <node id="display" op="display">
+        <texture2D id="input:image" connect="/src"/>
+    </node>
+</document>
+

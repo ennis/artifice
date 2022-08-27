@@ -1,4 +1,5 @@
 use crate::model::{
+    metadata,
     param::{AttributeType, Param},
     Atom, Metadata, Path, Value,
 };
@@ -78,6 +79,11 @@ impl Node {
     pub fn metadata<T: TryFrom<Value>>(&self, metadata: Metadata<T>) -> Option<T> {
         let v = self.metadata.get(&Atom::from(metadata.name))?;
         T::try_from(v.clone()).ok()
+    }
+
+    /// Returns the operator name associated to this node.
+    pub fn operator(&self) -> Option<Atom> {
+        self.metadata(metadata::OPERATOR)
     }
 
     pub fn child(&self, name: &Atom) -> Option<&Node> {

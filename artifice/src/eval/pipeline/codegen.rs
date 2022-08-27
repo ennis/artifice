@@ -1,16 +1,16 @@
 use crate::{
-    eval::pipeline::{Program, TypeDesc},
+    eval::pipeline::{Binding, Program, TypeDesc, Variable},
     model::typedesc::{ImageDimension, PrimitiveType},
 };
 use glsl_lang::{
     ast,
     ast::{
         ArraySpecifier, ArraySpecifierDimension, ArrayedIdentifier, AssignmentOp, BinaryOp, Block, CaseLabel,
-        CompoundStatement, Condition, Declaration, Expr, ExprStatement, ExternalDeclaration, ForInitStatement,
-        ForRestStatement, FullySpecifiedType, FunIdentifier, FunctionDefinition, FunctionParameterDeclaration,
-        FunctionParameterDeclarator, FunctionPrototype, Identifier, InitDeclaratorList, Initializer,
-        InterpolationQualifier, IterationStatement, JumpStatement, LayoutQualifier, LayoutQualifierSpec, NodeContent,
-        NodeDisplay, NodeSpan, PrecisionQualifier, Preprocessor, PreprocessorDefine, PreprocessorElseIf,
+        CompoundStatement, Condition, Declaration, DeclarationData, Expr, ExprStatement, ExternalDeclaration,
+        ForInitStatement, ForRestStatement, FullySpecifiedType, FunIdentifier, FunctionDefinition,
+        FunctionParameterDeclaration, FunctionParameterDeclarator, FunctionPrototype, Identifier, InitDeclaratorList,
+        Initializer, InterpolationQualifier, IterationStatement, JumpStatement, LayoutQualifier, LayoutQualifierSpec,
+        NodeContent, NodeDisplay, NodeSpan, PrecisionQualifier, Preprocessor, PreprocessorDefine, PreprocessorElseIf,
         PreprocessorError, PreprocessorExtension, PreprocessorExtensionBehavior, PreprocessorExtensionName,
         PreprocessorIf, PreprocessorIfDef, PreprocessorIfNDef, PreprocessorInclude, PreprocessorLine,
         PreprocessorPragma, PreprocessorUndef, PreprocessorVersion, PreprocessorVersionProfile, SelectionRestStatement,
@@ -18,14 +18,18 @@ use glsl_lang::{
         StructFieldSpecifier, StructSpecifier, SwitchStatement, TranslationUnit, TypeName, TypeQualifier,
         TypeQualifierSpec, TypeSpecifier, TypeSpecifierNonArray, UnaryOp,
     },
-    visitor::{Visit, VisitorMut},
+    transpiler::glsl::{
+        show_block, show_function_definition, show_function_prototype, show_identifier, show_init_declarator_list,
+        show_initializer, show_preprocessor, show_translation_unit, FormattingState,
+    },
+    visitor::{HostMut, Visit, VisitorMut},
 };
 use kyute_common::Atom;
-use rusqlite::types::Type;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
-    ptr::write,
+    fmt::Write,
+    sync::Arc,
 };
 
 /// Sized uniform.
@@ -50,7 +54,7 @@ struct Buffer {
 struct InputOutput {
     location: u32,
     ty: TypeDesc,
-    name: Atom,
+    name: Arc<str>,
 }
 
 /// Texture descriptor.
@@ -134,6 +138,131 @@ fn generate_mangled_type_name(out: &mut dyn fmt::Write, ty: &TypeDesc) -> fmt::R
     Ok(())
 }
 
+/// GLSL AST rewriter.
+///
+/// It does the following:
+/// - adds a file ID suffix to all names (except locals and function parameters).
+/// - rewrites usages of buffer_references
+/// - replaces
+struct NameSubstitutionRewriter<'a> {
+    cg: &'a mut CodegenContext,
+    non_type_name_substitutions: HashMap<String, String>,
+    type_name_substitutions: HashMap<String, String>,
+    shadowed_names: HashSet<String>,
+}
+
+impl<'a> VisitorMut for NameSubstitutionRewriter<'a> {
+    fn visit_type_name(&mut self, type_name: &mut ast::TypeName) -> Visit {
+        if let Some(udt) = self.type_name_substitutions.get(type_name.as_str()) {
+            type_name.content.0 = udt.into();
+        }
+        Visit::Parent
+    }
+
+    fn visit_function_definition(&mut self, def: &mut ast::FunctionDefinition) -> Visit {
+        self.shadowed_names.clear();
+        for param in def.prototype.parameters.iter() {
+            if let ast::FunctionParameterDeclarationData::Named(_, ref param) = param.content {
+                self.shadowed_names.insert(param.ident.ident.to_string());
+            }
+        }
+        Visit::Children
+    }
+
+    fn visit_function_prototype(&mut self, fp: &mut ast::FunctionPrototype) -> Visit {
+        // rewrite `void function() { ... }` to `void function__<source_id>() { ... }`
+        let new_name = format!("{}__{}", fp.name.as_str(), fp.span.unwrap().source_id().number());
+        self.non_type_name_substitutions
+            .insert(fp.name.to_string(), new_name.clone());
+        fp.name.content.0 = new_name.into();
+        Visit::Parent
+    }
+
+    fn visit_single_declaration(&mut self, decl: &mut ast::SingleDeclaration) -> Visit {
+        if let Some(ref mut name) = decl.name {
+            // don't rename if there's already a substitution for the name
+            if !self.non_type_name_substitutions.contains_key(name.as_str()) {
+                let new_name = format!("{}__{}", name.as_str(), name.span.unwrap().source_id().number());
+                self.non_type_name_substitutions
+                    .insert(name.to_string(), new_name.clone());
+                name.0 = new_name.into();
+            }
+        }
+        Visit::Children
+    }
+
+    fn visit_single_declaration_no_type(&mut self, decl: &mut ast::SingleDeclarationNoType) -> Visit {
+        if !self.non_type_name_substitutions.contains_key(decl.ident.ident.as_str()) {
+            let new_name = format!(
+                "{}__{}",
+                decl.ident.ident.as_str(),
+                decl.span.unwrap().source_id().number()
+            );
+            self.non_type_name_substitutions
+                .insert(decl.ident.ident.to_string(), new_name.clone());
+            decl.ident.ident.0 = new_name.into();
+        }
+        Visit::Children
+    }
+
+    fn visit_struct_specifier(&mut self, s: &mut StructSpecifier) -> Visit {
+        if let Some(ref mut name) = s.name {
+            let new_name = format!("{}__{}", name.as_str(), name.span.unwrap().source_id().number());
+            self.type_name_substitutions.insert(name.to_string(), new_name.clone());
+            name.content.0 = new_name.into();
+        }
+        Visit::Children
+    }
+
+    fn visit_expr(&mut self, expr: &mut ast::Expr) -> Visit {
+        match expr.content {
+            ast::ExprData::Variable(ref mut ident) => {
+                if !self.shadowed_names.contains(ident.as_str()) {
+                    if let Some(ident2) = self.non_type_name_substitutions.get(ident.as_str()) {
+                        ident.content.0 = ident2.into();
+                    }
+                }
+                Visit::Parent
+            }
+            _ => Visit::Children,
+        }
+    }
+}
+
+/// AST rewriter adds another indirection to `buffer_reference` variables:
+/// ```glsl
+/// // Before:
+/// buffer float[] data;
+/// void main() {
+///     ...
+///     data.x
+///     ...
+/// }
+/// // After:
+/// void main() {
+///     ...
+///     data.__d.x
+///     ...
+/// }
+/// ```
+struct BufferReferenceRewriter {
+    pointer_vars: HashSet<String>,
+}
+
+impl VisitorMut for BufferReferenceRewriter {
+    fn visit_expr(&mut self, expr: &mut Expr) -> Visit {
+        match expr.content {
+            ast::ExprData::Variable(ref mut ident) => {
+                if self.pointer_vars.contains(ident.as_str()) {
+                    expr.content = ast::ExprData::Dot(Box::new(expr.clone()), "__d".into_node());
+                }
+                Visit::Parent
+            }
+            _ => Visit::Children,
+        }
+    }
+}
+
 /// GLSL shader code generation context.
 pub struct CodegenContext {
     glsl_version: u32,
@@ -144,6 +273,35 @@ pub struct CodegenContext {
     outputs: Vec<InputOutput>,
     names: HashSet<Atom>,
     mangled_type_names: HashMap<TypeDesc, Atom>,
+    decls: String,
+    body: String,
+}
+
+fn is_output_interface(decl: &ast::SingleDeclaration) -> bool {
+    if let Some(ref qualifiers) = decl.ty.qualifier {
+        qualifiers.qualifiers.iter().any(|qual| match qual.content {
+            ast::TypeQualifierSpecData::Storage(ref storage_qual) => {
+                storage_qual.content == ast::StorageQualifierData::Out
+            }
+            _ => false,
+        })
+    } else {
+        false
+    }
+}
+
+fn is_input_interface(decl: &ast::SingleDeclaration) -> bool {
+    if let Some(ref qualifiers) = decl.ty.qualifier {
+        qualifiers.qualifiers.iter().any(|qual| match qual.content {
+            ast::TypeQualifierSpecData::Storage(ref storage_qual) => {
+                storage_qual.content == ast::StorageQualifierData::In
+                    || storage_qual.content == ast::StorageQualifierData::Uniform
+            }
+            _ => false,
+        })
+    } else {
+        false
+    }
 }
 
 impl CodegenContext {
@@ -158,6 +316,8 @@ impl CodegenContext {
             outputs: vec![],
             names: Default::default(),
             mangled_type_names: Default::default(),
+            decls: "".to_string(),
+            body: "".to_string(),
         }
     }
 
@@ -205,14 +365,19 @@ impl CodegenContext {
         unique_name
     }
 
-    /*/// Adds an opaque uniform (texture or samplers).
-        pub fn add_opaque_uniform(&mut self, name: impl Into<Atom>, ty: TypeDesc) -> (u32, u32) {}
-    */
+    /// Declares the following name as the name of a declaration in the shader.
+    ///
+    /// This prevents codegen from choosing a conflicting name for automatically generated declarations.
+    /// Panics if the name is already in use.
+    pub fn declare(&mut self, name: impl Into<String>) {
+        let name = name.into();
+        self.names.insert(name.into());
+    }
 
     /// Adds a shader input (like `in vec3 position`).
     ///
     /// Returns the assigned location for the input (the `n` in `layout(location=n)`).
-    pub fn add_input(&mut self, name: impl Into<Atom>, ty: TypeDesc) -> u32 {
+    pub fn add_input(&mut self, name: impl Into<Arc<str>>, ty: TypeDesc) -> u32 {
         let location = self.inputs.len() as u32;
         let name = name.into();
         self.inputs.push(InputOutput { name, ty, location });
@@ -220,7 +385,7 @@ impl CodegenContext {
     }
 
     /// Adds a shader output (like `out vec4 color`).
-    pub fn add_output(&mut self, name: impl Into<Atom>, ty: TypeDesc, location: u32) {
+    pub fn add_output(&mut self, name: impl Into<Arc<str>>, ty: TypeDesc, location: u32) {
         assert!(
             self.outputs.iter().find(|output| output.location == location).is_none(),
             "the given location was already assigned to another output"
@@ -232,6 +397,106 @@ impl CodegenContext {
     /// Adds a buffer uniform (like `layout(buffer_reference) buffer MyBuffer_tag { float[] contents; };`).
     pub fn add_buffer(&mut self, name: impl Into<Atom>, ty: TypeDesc) {
         self.buffers.push(Buffer { name: name.into(), ty });
+    }
+
+    /// Adds a program.
+    pub fn add_program(&mut self, mut program: &Program, input_bindings: &[Binding], output_bindings: &[Binding]) {
+        // TODO: check that all input bindings refer to valid variables
+        // FIXME: the output variable names are not made unique, so they may conflict with a similarly named variable
+        // if we uniquify the output variable name in add_program, we need to communicate the result to the
+
+        let mut formatting_state = FormattingState::default();
+
+        /*let mut dbg = String::new();
+        show_translation_unit(&mut dbg, &program.translation_unit, FormattingState::default()).unwrap();
+        eprintln!("{:?}", dbg);*/
+
+        let mut non_type_name_substitutions = HashMap::new();
+        for i in input_bindings.iter() {
+            non_type_name_substitutions.insert(i.interface_name.to_string(), i.var_name.display().to_string());
+        }
+        for o in output_bindings.iter() {
+            non_type_name_substitutions.insert(o.interface_name.to_string(), o.var_name.display().to_string());
+        }
+
+        let substituted_program = {
+            let mut rewriter = NameSubstitutionRewriter {
+                cg: self,
+                non_type_name_substitutions,
+                type_name_substitutions: HashMap::new(),
+                shadowed_names: Default::default(),
+            };
+            // a bit expensive, but I don't want to write my own transpiler
+            let mut p = program.translation_unit.clone();
+            p.visit_mut(&mut rewriter);
+            p
+        };
+
+        let write_output_interface = |s: &mut String,
+                                      formatting_state: &mut FormattingState,
+                                      ty: &ast::FullySpecifiedType,
+                                      name: Option<&ast::Identifier>,
+                                      initializer: Option<&ast::Initializer>| {
+            if let Some(name) = name {
+                if let Some(initializer) = initializer {
+                    show_identifier(s, name, formatting_state).unwrap();
+                    write!(s, " = ").unwrap();
+                    show_initializer(s, initializer, formatting_state).unwrap();
+                    writeln!(s, ";").unwrap();
+                }
+            }
+        };
+
+        for decl in substituted_program.0.iter() {
+            match decl.content {
+                ast::ExternalDeclarationData::Declaration(ref decl) => match decl.content {
+                    ast::DeclarationData::InitDeclaratorList(ref declarator_list) => {
+                        if is_output_interface(&declarator_list.head) {
+                            write_output_interface(
+                                &mut self.body,
+                                &mut formatting_state,
+                                &declarator_list.head.ty,
+                                declarator_list.head.name.as_ref(),
+                                declarator_list.head.initializer.as_ref(),
+                            );
+                            for d in declarator_list.tail.iter() {
+                                write_output_interface(
+                                    &mut self.body,
+                                    &mut formatting_state,
+                                    &declarator_list.head.ty,
+                                    Some(&d.ident.ident),
+                                    d.initializer.as_ref(),
+                                )
+                            }
+                        } else if is_input_interface(&declarator_list.head) {
+                        } else {
+                            show_init_declarator_list(&mut self.decls, declarator_list, &mut formatting_state).unwrap();
+                            writeln!(&mut self.decls, ";").unwrap();
+                        }
+                    }
+                    ast::DeclarationData::FunctionPrototype(ref proto) => {
+                        show_function_prototype(&mut self.decls, proto, &mut formatting_state).unwrap();
+                        writeln!(&mut self.decls, ";").unwrap();
+                    }
+                    ast::DeclarationData::Precision(_, _) => {
+                        // ignored
+                    }
+                    ast::DeclarationData::Block(ref block) => {
+                        show_block(&mut self.decls, block, &mut formatting_state).unwrap();
+                        writeln!(&mut self.decls, ";").unwrap();
+                    }
+                    ast::DeclarationData::Invariant(ref ident) => {
+                        // ignored
+                    }
+                },
+                ast::ExternalDeclarationData::FunctionDefinition(ref func) => {
+                    show_function_definition(&mut self.decls, func, &mut formatting_state).unwrap();
+                }
+                ast::ExternalDeclarationData::Preprocessor(ref pp) => {
+                    show_preprocessor(&mut self.decls, pp, &mut formatting_state).unwrap();
+                }
+            }
+        }
     }
 
     /*/// Returns the writer for the declaration part of the shader.
@@ -304,6 +569,12 @@ impl CodegenContext {
             )?;
         }
 
+        writeln!(out, "\n\n// DECLARATIONS ----------\n")?;
+        writeln!(out, "{}", self.decls)?;
+        writeln!(out, "\n\n// BODY ----------")?;
+        writeln!(out, "void main() {{")?;
+        writeln!(out, "{}", self.body)?;
+        writeln!(out, "}}")?;
         Ok(())
     }
 }
@@ -312,142 +583,25 @@ impl CodegenContext {
 // Program codegen
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// Our GLSL AST rewriter.
-///
-/// It does the following:
-/// - adds a file ID suffix to all names (except locals and function parameters).
-/// - rewrites usages of buffer_references
-///   
-struct AppendFileIdRewriter<'a> {
-    cg: &'a mut CodegenContext,
-    /// First declaration sites of all symbols.
-    non_type_declarations: HashMap<String, String>,
-    type_declarations: HashMap<String, String>,
-    shadowed_names: HashSet<String>,
-}
+// make unique names for:
+// - non-interface variables
+// - functions
+// - UDTs
 
-impl<'a> AppendFileIdRewriter<'a> {
-    fn new(cg: &'a mut CodegenContext) -> AppendFileIdRewriter<'a> {
-        AppendFileIdRewriter {
-            cg,
-            non_type_declarations: Default::default(),
-            type_declarations: Default::default(),
-            shadowed_names: Default::default(),
-        }
-    }
-}
+// Pass 1: rewrite the whole program to make noninterface names & types unique
+// second pass: write output interface initializers, rewritten to substitute
 
-impl<'a> glsl_lang::visitor::VisitorMut for AppendFileIdRewriter<'a> {
-    fn visit_type_name(&mut self, type_name: &mut ast::TypeName) -> Visit {
-        if let Some(udt) = self.type_declarations.get(type_name.as_str()) {
-            type_name.content.0 = udt.into();
-        }
-        Visit::Parent
-    }
-
-    fn visit_function_definition(&mut self, def: &mut ast::FunctionDefinition) -> Visit {
-        self.shadowed_names.clear();
-        for param in def.prototype.parameters.iter() {
-            if let ast::FunctionParameterDeclarationData::Named(_, ref param) = param.content {
-                self.shadowed_names.insert(param.ident.ident.to_string());
-            }
-        }
-        Visit::Children
-    }
-
-    fn visit_function_prototype(&mut self, fp: &mut ast::FunctionPrototype) -> Visit {
-        let new_name = format!("{}__{}", fp.name.as_str(), fp.span.unwrap().source_id().number());
-        self.non_type_declarations.insert(fp.name.to_string(), new_name.clone());
-        fp.name.content.0 = new_name.into();
-        Visit::Parent
-    }
-
-    fn visit_single_declaration(&mut self, decl: &mut ast::SingleDeclaration) -> Visit {
-        if let Some(ref mut name) = decl.name {
-            let new_name = format!("{}__{}", name.as_str(), name.span.unwrap().source_id().number());
-            self.non_type_declarations.insert(name.to_string(), new_name.clone());
-            name.0 = new_name.into();
-        }
-        Visit::Children
-    }
-
-    fn visit_single_declaration_no_type(&mut self, decl: &mut ast::SingleDeclarationNoType) -> Visit {
-        let new_name = format!(
-            "{}_{}",
-            decl.ident.ident.as_str(),
-            decl.span.unwrap().source_id().number()
-        );
-        self.non_type_declarations
-            .insert(decl.ident.ident.to_string(), new_name.clone());
-        decl.ident.ident.0 = new_name.into();
-        Visit::Children
-    }
-
-    fn visit_struct_specifier(&mut self, s: &mut StructSpecifier) -> Visit {
-        if let Some(ref mut name) = s.name {
-            let new_name = format!("{}__{}", name.as_str(), name.span.unwrap().source_id().number());
-            self.type_declarations.insert(name.to_string(), new_name.clone());
-            name.content.0 = new_name.into();
-        }
-        Visit::Children
-    }
-
-    fn visit_expr(&mut self, expr: &mut ast::Expr) -> Visit {
-        match expr.content {
-            ast::ExprData::Variable(ref mut ident) => {
-                if !self.shadowed_names.contains(ident.as_str()) {
-                    if let Some(ident2) = self.non_type_declarations.get(ident.as_str()) {
-                        ident.content.0 = ident2.into();
-                    }
-                }
-                Visit::Parent
-            }
-            _ => Visit::Children,
-        }
-    }
-}
-
-/// AST rewriter adds another indirection to `buffer_reference` variables:
-/// ```glsl
-/// // Before:
-/// buffer float[] data;
-/// void main() {
-///     ...
-///     data.x
-///     ...
-/// }
-/// // After:
-/// void main() {
-///     ...
-///     data.__d.x
-///     ...
-/// }
-/// ```
-struct BufferReferenceRewriter {
-    pointer_vars: HashSet<String>,
-}
-
-impl VisitorMut for BufferReferenceRewriter {
-    fn visit_expr(&mut self, expr: &mut Expr) -> Visit {
-        match expr.content {
-            ast::ExprData::Variable(ref mut ident) => {
-                if self.pointer_vars.contains(ident.as_str()) {
-                    expr.content = ast::ExprData::Dot(Box::new(expr.clone()), "__d".into_node());
-                }
-                Visit::Parent
-            }
-            _ => Visit::Children,
-        }
-    }
-}
+// codegen process:
+// - insert shader inputs, parameters, etc.
+// -
 
 #[cfg(test)]
 mod tests {
     use crate::{
         eval::pipeline::{
-            codegen::{AppendFileIdRewriter, CodegenContext},
+            codegen::{CodegenContext, NameSubstitutionRewriter},
             program::{Preprocessor, Vfs},
-            Program, TypeDesc,
+            Binding, Program, SsaName, TypeDesc,
         },
         model::typedesc::{ImageDimension, PrimitiveType, SampledImageType, StructType},
     };
@@ -455,7 +609,7 @@ mod tests {
         transpiler::glsl::{show_translation_unit, FormattingState},
         visitor::{HostMut, VisitorMut},
     };
-    use std::sync::Arc;
+    use std::{collections::HashMap, sync::Arc};
 
     // language=glsl
     const COMMON: &str = r#"
@@ -503,11 +657,39 @@ mod tests {
         }
     "#;
 
+    /*
+
+    void program_fn_47(vec3 position, vec3 normals, vec3 param, vec3 param2[45], out vec4 normals) {
+        // only need to rewrite unbound uniforms
+        normals = f(position);
+        // issue: what prevents the function to access uniforms directly?
+        // nothing => the contents of functions should be rewritten
+    }
+
+    void main() {
+
+        // in exprs
+        // -> replace all references to bound variables by their bindings
+        // -> if not bound, then replace by the uniform name
+        //
+
+        // from /root/blur_0/src
+        vec4 normals_0 = f__0(position_0);
+        vec4 output_0 = normals_0;
+
+    }
+
+     */
+
     // language=glsl
     const INLINE_EXPR: &str = r#"
     in vec3 color;
     out vec3 o_color = color * vec3(1.0, 2.0, 3.0);
     "#;
+
+    /*
+       vec3 node_43_output = node_42_output * vec3(1.0, 2.0, 3.0);
+    */
 
     #[test]
     fn type_mangling() {
@@ -565,8 +747,13 @@ mod tests {
         let mut program = Program::new(SOURCE_A, "src_a", &mut pp).unwrap();
 
         let mut cg = CodegenContext::new(460);
-        let mut file_id_rewriter = AppendFileIdRewriter::new(&mut cg);
-        program.translation_unit.visit_mut(&mut file_id_rewriter);
+        let mut rewriter = NameSubstitutionRewriter {
+            cg: &mut cg,
+            non_type_name_substitutions: Default::default(),
+            type_name_substitutions: Default::default(),
+            shadowed_names: Default::default(),
+        };
+        program.translation_unit.visit_mut(&mut rewriter);
 
         let mut out = String::new();
         let formatting_state = FormattingState::default();
@@ -576,6 +763,35 @@ mod tests {
 
     #[test]
     fn test_codegen() {
+        let mut vfs = Vfs::new();
+        vfs.register_source("common.glsl", COMMON);
+        vfs.dump();
+        let mut pp = Preprocessor::new_with_fs(vfs);
+        let mut program = Program::new(INLINE_EXPR, "inline_expr", &mut pp).unwrap();
         let mut ctx = CodegenContext::new(460);
+        ctx.add_program(
+            &program,
+            &[Binding {
+                var_name: SsaName {
+                    base: "node_42_output".into(),
+                    index: 0,
+                },
+                interface_name: "color".into(),
+            }],
+            &[Binding {
+                var_name: SsaName {
+                    base: "node_43_output".into(),
+                    index: 0,
+                },
+                interface_name: "o_color".into(),
+            }],
+        );
+        let mut generated = String::new();
+        ctx.generate(&mut generated);
+        eprintln!("{generated}");
     }
 }
+
+// GlslCodegen(input VFS)
+// - add source
+// - add input var

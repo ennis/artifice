@@ -1,14 +1,19 @@
 use crate::{
     model,
     model::{
-        typedesc, Document, Node, Param, Path, PrimitiveType, SamplerParameters, SamplerWrapMode, TypeDesc, Value,
+        metadata, typedesc, typedesc::ImageDimension, Document, Node, Param, Path, PrimitiveType, SamplerParameters,
+        SamplerWrapMode, TypeDesc, Value,
     },
 };
 use anyhow::{anyhow, bail};
+use artifice::model::typedesc::{ImageType, SampledImageType};
 use imbl::OrdMap;
 use kyute_common::Atom;
+use roxmltree::Children;
 use std::{
-    fmt, io,
+    fmt,
+    fmt::Write,
+    io,
     io::BufRead,
     num::{ParseFloatError, ParseIntError},
     str::{FromStr, ParseBoolError},
@@ -46,52 +51,13 @@ pub enum ReadError {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-// Type registration
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Represents a factory object for reading and writing values of a specific type to an XML file.
-pub trait ValueIo {
-    /// The type of the values read.
-    fn type_desc(&self) -> TypeDesc;
-    /// Read a value from a sequence of XML nodes.
-    fn read(&self, nodes: roxmltree::Children) -> Result<Value, ReadError>;
-    fn write(&self, value: &Value, writer: &mut dyn fmt::Write);
-}
-
-///
-pub struct ValueIoRegistration {
-    name: &'static str,
-    methods: &'static (dyn ValueIo + Send + Sync),
-}
-
-impl ValueIoRegistration {
-    pub const fn new(name: &'static str, methods: &'static (dyn ValueIo + Send + Sync)) -> ValueIoRegistration {
-        ValueIoRegistration { name, methods }
-    }
-
-    /// Returns registered IO methods for the specified type name.
-    fn find(name: &str) -> Option<&'static ValueIoRegistration> {
-        for reg in inventory::iter::<ValueIoRegistration> {
-            if reg.name == name {
-                return Some(reg);
-            }
-        }
-        return None;
-    }
-}
-
-pub(crate) fn get_value_io_api(name: &str) -> Option<&'static (dyn ValueIo + Send + Sync)> {
-    ValueIoRegistration::find(name).map(|r| r.methods)
-}
-
-inventory::collect!(ValueIoRegistration);
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
 // Text value parsers
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-fn element_content_as_text<'a>(elem: roxmltree::Node<'a, '_>) -> &'a str {
-    // TODO errors
-    elem.first_child().unwrap().text().unwrap()
+fn text_content<'a>(node: roxmltree::Node<'a, '_>) -> Result<&'a str, ReadError> {
+    node.first_child()
+        .ok_or(ReadError::InvalidValueFormat)?
+        .text()
+        .ok_or(ReadError::InvalidValueFormat)
 }
 
 /*fn parse_primitive_value(text: &str, ty: PrimitiveType) -> Result<Value, ReadError> {
@@ -118,41 +84,6 @@ fn element_content_as_text<'a>(elem: roxmltree::Node<'a, '_>) -> &'a str {
         }
     }
 }*/
-
-/// Implementation of ValueIo for primitive types
-macro_rules! impl_simple_value_io {
-    ($base_ty:ty, $value_variant:ident, $tydesc:expr, $tyname:literal) => {
-        struct $value_variant;
-        impl ValueIo for $value_variant {
-            fn type_desc(&self) -> TypeDesc {
-                $tydesc.clone()
-            }
-
-            fn read(&self, mut nodes: roxmltree::Children) -> Result<Value, ReadError> {
-                let text = nodes
-                    .next()
-                    .ok_or(ReadError::InvalidValueFormat)?
-                    .text()
-                    .ok_or(ReadError::InvalidValueFormat)?;
-                let value: $base_ty = text.parse()?;
-                Ok(Value::$value_variant(value))
-            }
-
-            fn write(&self, _value: &Value, _writer: &mut dyn fmt::Write) {
-                todo!()
-            }
-        }
-        inventory::submit! {
-            ValueIoRegistration::new($tyname, &$value_variant)
-        }
-    };
-}
-
-impl_simple_value_io!(f32, Float, TypeDesc::FLOAT, "float");
-impl_simple_value_io!(f64, Double, TypeDesc::DOUBLE, "double");
-impl_simple_value_io!(i32, Int, TypeDesc::INT, "int");
-impl_simple_value_io!(u32, UnsignedInt, TypeDesc::UNSIGNED_INT, "uint");
-impl_simple_value_io!(bool, Bool, TypeDesc::BOOL, "bool");
 
 ///
 fn parse_array<T: FromStr>(text: &str, expected: Option<usize>) -> Result<Vec<T>, ReadError>
@@ -205,51 +136,6 @@ impl_parse_vector!(glam::UVec2, u32, 2, parse_uvec2);
 //impl_parse_vector!(glam::UVec3A, u32, 3, parse_uvec3);
 impl_parse_vector!(glam::UVec4, u32, 4, parse_uvec4);
 
-//impl_parse_vector!(glam::BVec2, bool, 2, parse_bvec2);
-//impl_parse_vector!(glam::BVec3A, bool, 3, parse_bvec3);
-//impl_parse_vector!(glam::BVec4, bool, 4, parse_bvec4);
-
-/// Implementation of ValueIo for vector types
-macro_rules! impl_vector_value_io {
-    ($base_ty:ty, $value_variant:ident, $tydesc:expr, $tyname:literal, $parsefn:ident) => {
-        struct $value_variant;
-        impl ValueIo for $value_variant {
-            fn type_desc(&self) -> TypeDesc {
-                $tydesc.clone()
-            }
-            fn read(&self, mut nodes: roxmltree::Children) -> Result<Value, ReadError> {
-                let text = nodes
-                    .next()
-                    .ok_or(ReadError::InvalidValueFormat)?
-                    .text()
-                    .ok_or(ReadError::InvalidValueFormat)?;
-                let value: $base_ty = $parsefn(text)?;
-                Ok(Value::$value_variant(value))
-            }
-
-            fn write(&self, value: &Value, writer: &mut dyn fmt::Write) {
-                todo!()
-            }
-        }
-        inventory::submit! {
-            ValueIoRegistration::new($tyname, &$value_variant)
-        }
-    };
-}
-
-impl_vector_value_io!(glam::Vec2, Vec2, TypeDesc::VEC2, "vec2", parse_vec2);
-impl_vector_value_io!(glam::Vec3A, Vec3, TypeDesc::VEC3, "vec3", parse_vec3);
-impl_vector_value_io!(glam::Vec4, Vec4, TypeDesc::VEC4, "vec4", parse_vec4);
-impl_vector_value_io!(glam::IVec2, IVec2, TypeDesc::IVEC2, "ivec2", parse_ivec2);
-//impl_vector_value_io!(glam::IVec3, IVec3, "ivec3", parse_ivec3);
-impl_vector_value_io!(glam::IVec4, IVec4, TypeDesc::IVEC4, "ivec4", parse_ivec4);
-impl_vector_value_io!(glam::UVec2, UVec2, TypeDesc::UVEC2, "uvec2", parse_uvec2);
-//impl_vector_value_io!(glam::UVec3, UVec3, "uvec3", parse_ivec3);
-impl_vector_value_io!(glam::UVec4, UVec4, TypeDesc::UVEC4, "uvec4", parse_uvec4);
-//impl_vector_value_io!(glam::BVec2, BVec2, "bvec2", parse_bvec2);
-//impl_vector_value_io!(glam::BVec3A, BVec3, "bvec3", parse_bvec3);
-//impl_vector_value_io!(glam::BVec4, BVec4, "bvec4", parse_bvec4);
-
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Samplers
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -263,43 +149,6 @@ fn parse_wrap_mode(text: &str) -> Result<SamplerWrapMode, ReadError> {
             Err(ReadError::InvalidValueFormat)
         }
     }
-}
-
-struct SamplerParameterIo;
-
-impl ValueIo for SamplerParameterIo {
-    fn type_desc(&self) -> TypeDesc {
-        TypeDesc::Sampler
-    }
-
-    fn read(&self, nodes: roxmltree::Children) -> Result<Value, ReadError> {
-        let mut sampler = SamplerParameters::default();
-
-        for node in nodes {
-            match node.tag_name().name() {
-                "wrapModeS" => {
-                    sampler.wrap_mode_s = parse_wrap_mode(element_content_as_text(node))?;
-                }
-                "wrapModeT" => {
-                    sampler.wrap_mode_t = parse_wrap_mode(element_content_as_text(node))?;
-                }
-                "wrapModeR" => {
-                    sampler.wrap_mode_r = parse_wrap_mode(element_content_as_text(node))?;
-                }
-                _ => {}
-            }
-        }
-
-        Ok(Value::Custom(Arc::new(sampler)))
-    }
-
-    fn write(&self, value: &Value, writer: &mut dyn fmt::Write) {
-        todo!()
-    }
-}
-
-inventory::submit! {
-    ValueIoRegistration::new("sampler", &SamplerParameterIo)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -365,18 +214,103 @@ impl Node {
                     }
 
                     // read the value if there's one
-                    let (ty, value) = if let Some(io) = get_value_io_api(ty_name) {
-                        let ty = io.type_desc();
-                        let value = if n.has_children() {
-                            Some(io.read(n.children())?)
-                        } else {
-                            None
-                        };
-                        (ty, value)
-                    } else {
-                        warn!("unknown value type: `<{ty_name}>`");
-                        (TypeDesc::Unknown, None)
-                    };
+
+                    let ty;
+                    let value;
+
+                    match ty_name {
+                        "float" => {
+                            let text = text_content(n)?;
+                            value = Value::Float(text.parse()?);
+                            ty = TypeDesc::FLOAT;
+                        }
+                        "double" => {
+                            let text = text_content(n)?;
+                            value = Value::Double(text.parse()?);
+                            ty = TypeDesc::DOUBLE;
+                        }
+                        "vec2" | "float2" => {
+                            let text = text_content(n)?;
+                            value = Value::Vec2(parse_vec2(text)?);
+                            ty = TypeDesc::VEC2;
+                        }
+                        "vec3" | "float3" => {
+                            let text = text_content(n)?;
+                            value = Value::Vec3(parse_vec3(text)?);
+                            ty = TypeDesc::VEC3;
+                        }
+                        "vec4" | "float4" => {
+                            let text = text_content(n)?;
+                            value = Value::Vec4(parse_vec4(text)?);
+                            ty = TypeDesc::VEC4;
+                        }
+                        "string" => {
+                            value = Value::String(text_content(n)?.into());
+                            ty = TypeDesc::String;
+                        }
+                        "int" => {
+                            let text = text_content(n)?;
+                            value = Value::Int(text.parse()?);
+                            ty = TypeDesc::INT;
+                        }
+                        "uint" => {
+                            let text = text_content(n)?;
+                            value = Value::UnsignedInt(text.parse()?);
+                            ty = TypeDesc::UNSIGNED_INT;
+                        }
+                        "bool" => {
+                            let text = text_content(n)?;
+                            value = Value::Bool(text.parse()?);
+                            ty = TypeDesc::BOOL;
+                        }
+                        "sampler" => {
+                            let mut sampler = SamplerParameters::default();
+
+                            for child in n.children() {
+                                if !child.is_element() {
+                                    warn!("unexpected data in `<sampler>` element");
+                                    continue;
+                                }
+                                match child.tag_name().name() {
+                                    "wrapModeS" => {
+                                        sampler.wrap_mode_s = parse_wrap_mode(text_content(child)?)?;
+                                    }
+                                    "wrapModeT" => {
+                                        sampler.wrap_mode_t = parse_wrap_mode(text_content(child)?)?;
+                                    }
+                                    "wrapModeR" => {
+                                        sampler.wrap_mode_r = parse_wrap_mode(text_content(child)?)?;
+                                    }
+                                    other => {
+                                        warn!("unexpected element `<{other}>`");
+                                    }
+                                }
+                            }
+
+                            value = Value::Custom(Arc::new(sampler));
+                            ty = TypeDesc::SAMPLER;
+                        }
+                        "texture1D" | "texture2D" | "texture3D" => {
+                            // Textures are not serializable, so they don't have values in the XML document.
+                            // They usually are outputs of nodes.
+                            value = Value::Null;
+                            ty = TypeDesc::SampledImage(Arc::new(SampledImageType {
+                                sampled_ty: PrimitiveType::Float,
+                                dim: match ty_name {
+                                    "texture1D" => ImageDimension::Dim1D,
+                                    "texture2D" => ImageDimension::Dim2D,
+                                    "texture3D" => ImageDimension::Dim3D,
+                                    _ => unreachable!(),
+                                },
+                                ms: false,
+                            }));
+                        }
+                        _ => {
+                            warn!("unknown value type: `<{ty_name}>`");
+                            value = Value::Null;
+                            ty = TypeDesc::Unknown;
+                        }
+                    }
 
                     params.insert(
                         param_name.clone(),
@@ -385,7 +319,7 @@ impl Node {
                             id: 0,
                             path: node_path.join_attribute(param_name),
                             ty,
-                            value,
+                            value: Some(value),
                             connection,
                             metadata: Default::default(),
                         },
@@ -394,12 +328,17 @@ impl Node {
             }
         }
 
+        let mut metadata = OrdMap::new();
+        if !op.is_empty() {
+            metadata.insert(Atom::from(metadata::OPERATOR.name), Value::from(op));
+        }
+
         Ok(Node {
             rev: 0,
             id: 0,
             path: node_path,
             attributes: params,
-            metadata: Default::default(),
+            metadata,
             children,
         })
     }
@@ -430,7 +369,6 @@ impl Document {
                         match node.tag_name().name() {
                             "node" => {
                                 let n = Node::read(root.path.clone(), node)?;
-                                println!("{:?}", n);
                                 root.children.insert(n.name(), n);
                             }
                             other => {

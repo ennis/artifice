@@ -777,7 +777,7 @@ fn get_storage_qualifiers(ty: &ast::FullySpecifiedTypeData) -> StorageQualifiers
 #[derive(Clone, Debug)]
 pub struct ProgramInterface {
     /// Input name
-    pub name: Atom,
+    pub name: Arc<str>,
     /// Input type
     pub ty: TypeDesc,
     /// Source ID.
@@ -956,7 +956,11 @@ pub struct Program {
     /// Parsed GLSL translation unit.
     pub(crate) translation_unit: ast::TranslationUnit,
     /// Inputs & outputs of the program.
-    interface: HashMap<Atom, ProgramInterface>,
+    pub(crate) interface: HashMap<Arc<str>, ProgramInterface>,
+}
+
+struct ExternalDeclaration2<'a> {
+    ty: &'a ast::TypeSpecifier,
 }
 
 impl Program {
@@ -1017,15 +1021,14 @@ impl Program {
                             let name = name.content.as_str();
                             if storage_qualifiers.intersects(StorageQualifiers::INTERFACE_MASK) {
                                 // this is an interface variable
-                                let name = Atom::from(name);
                                 let interface_var = ProgramInterface {
-                                    name: name.clone(),
+                                    name: name.into(),
                                     ty: ty.clone(),
                                     source_id: span.source_id().number(),
                                     variability: None,
                                     output: storage_qualifiers.contains(StorageQualifiers::OUT),
                                 };
-                                interface.insert(name.clone(), interface_var);
+                                interface.insert(interface_var.name.clone(), interface_var);
                             }
                             // not an interface variable, it is subject to renaming
                             decl_map.insert(name.to_string(), span);
@@ -1063,6 +1066,32 @@ impl Program {
         })
     }
 
+    /*/// Returns the initializer node for the specified output.
+    pub(crate) fn interface_initializer_mut(&mut self, interface_name: &str) -> Option<&mut ast::Initializer> {
+        for decl in self.translation_unit.0.iter_mut() {
+            match decl.content {
+                ast::ExternalDeclarationData::Declaration(ref mut decl) => match decl.content {
+                    ast::DeclarationData::InitDeclaratorList(ref mut declarator_list) => {
+                        let decl = &declarator_list.content.head;
+
+                        if let Some(ref name) = decl.name {
+                            if name.as_str() == interface_name {
+                                return decl.initializer.as_mut();
+                            }
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+        return None;
+    }*/
+
+    /// Returns an iterator over all external declarations.
+    pub(crate) fn external_declarations(&self) -> impl Iterator<Item = &ExternalDeclaration> {
+        self.translation_unit.0.iter()
+    }
+
     /// Generates the declaration-level code for this shader (function declarations & global variables).
     fn codegen_decl(&self, out: &mut dyn fmt::Write) {
         let mut formatting_state = FormattingState::default();
@@ -1076,8 +1105,8 @@ impl Program {
     }
 
     /// Returns a reference to the named interface variable.
-    pub fn interface(&self, name: impl Into<Atom>) -> Option<&ProgramInterface> {
-        self.interface.get(&name.into())
+    pub fn interface(&self, name: &str) -> Option<&ProgramInterface> {
+        self.interface.get(name)
     }
 
     pub fn inputs(&self) -> impl Iterator<Item = &ProgramInterface> {

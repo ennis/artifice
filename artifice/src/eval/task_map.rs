@@ -61,7 +61,7 @@ where
     K: Eq + Hash,
     V: Clone + Send + 'static,
 {
-    /// Returns the value with the key, or spawns
+    /// Returns the value with the key, or spawns a task to evaluate it.
     pub async fn fetch_or_spawn<F>(&self, key: K, fut: F) -> Result<V, TaskError>
     where
         F: Future<Output = V> + Send + 'static,

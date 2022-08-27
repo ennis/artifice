@@ -1,11 +1,12 @@
 //! Imaging evaluation context
 use crate::{
-    eval::{registry::operator_registry, EvalError, EvalKey, GeneralEvalState, OpCtx, TaskMap},
+    eval::{EvalError, EvalKey, GeneralEvalState, OpCtx, TaskMap},
     model::{metadata, Document, Node, Path},
 };
 use anyhow::anyhow;
 use async_trait::async_trait;
 use futures::{future::Shared, FutureExt};
+use kyute::{graal, graal::vk};
 use kyute_common::{Atom, Rect, SizeI, Transform};
 use lazy_static::lazy_static;
 use parking_lot::{Mutex, RwLock};
@@ -24,29 +25,28 @@ use tokio::task;
 // Imaging operators registration
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-operator_registry!(IMAGING_OPERATORS<OpImaging>);
-
-/*lazy_static! {
-    static ref IMAGING_OPERATORS: Mutex<HashMap<Atom, &'static (dyn OpImaging + Sync)>> = Mutex::new(HashMap::new());
+pub struct ImagingOperatorRegistration {
+    pub name: &'static str,
+    pub op: &'static (dyn OpImaging + Sync),
 }
 
-/// Registers an imaging operator by name.
-pub fn register_imaging_operator(name: &Atom, op: &'static (dyn OpImaging + Sync)) -> Result<(), EvalError> {
-    let mut map = IMAGING_OPERATORS.lock();
-    if map.contains_key(name) {
-        return Err(EvalError::Other(anyhow!(
-            "an operator with the same name has already been registered"
-        )));
+inventory::collect!(ImagingOperatorRegistration);
+
+/// Finds an imaging operator with the given name.
+pub(crate) fn find_imaging_operator(name: &str) -> Result<&'static (dyn OpImaging + Sync), EvalError> {
+    for op in inventory::iter::<ImagingOperatorRegistration> {
+        if op.name == name {
+            return Ok(op.op);
+        }
     }
-    map.insert(name.clone(), op);
-    Ok(())
+    Err(EvalError::UnknownOperator)
 }
 
-/// Returns a reference to a previously registered imaging operator.
-pub fn get_imaging_operator(name: &Atom) -> Option<&'static (dyn OpImaging + Sync)> {
-    let map = IMAGING_OPERATORS.lock();
-    map.get(name).cloned()
-}*/
+/// Returns the associated imaging operator on the given node.
+pub(crate) fn get_imaging_operator(node: &Node) -> Result<&'static (dyn OpImaging + Sync), EvalError> {
+    let op_name = node.operator().ok_or(EvalError::NoOperator)?;
+    find_imaging_operator(op_name.as_ref())
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Units
@@ -77,6 +77,7 @@ pub type PxRectI = euclid::Rect<i32, Px>;
 pub type PxPointI = euclid::Point2D<i32, Px>;
 pub type PxSizeI = euclid::Size2D<i32, Px>;
 pub type PxOffsetI = euclid::Vector2D<i32, Px>;
+pub type PxSize3DI = euclid::Size3D<i32, Px>;
 
 pub type PxRect = euclid::Rect<f32, Px>;
 pub type PxPoint = euclid::Point2D<f32, Px>;
@@ -170,6 +171,48 @@ pub struct InputRequestsArgs {
     pub roi: RequestWindow,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct DeviceImagePlane {
+    pub size: PxSizeI,
+    pub format: vk::Format,
+    pub id: graal::ImageId,
+    pub handle: vk::Image,
+}
+
+/// The result of `OpImaging::device_compute_image`.
+pub struct DeviceComputeImageResult {
+    /// The region that was calculated.
+    pub(crate) region: TiRect,
+    /// Output images ("planes").
+    pub(crate) planes: Vec<(Atom, DeviceImagePlane)>,
+}
+
+impl DeviceComputeImageResult {
+    pub fn new(region: TiRect) -> DeviceComputeImageResult {
+        DeviceComputeImageResult { region, planes: vec![] }
+    }
+
+    pub fn plane(
+        mut self,
+        name: impl Into<Atom>,
+        size: PxSizeI,
+        format: vk::Format,
+        id: graal::ImageId,
+        handle: vk::Image,
+    ) -> Self {
+        self.planes.push((
+            name.into(),
+            DeviceImagePlane {
+                size,
+                format,
+                id,
+                handle,
+            },
+        ));
+        self
+    }
+}
+
 /// Imaging operators.
 #[async_trait]
 pub trait OpImaging {
@@ -182,6 +225,13 @@ pub trait OpImaging {
 
     /// Computes the region of definition of the operator.
     async fn compute_region_of_definition(&self, ctx: &OpImagingCtx) -> Result<RegionOfDefinition, EvalError>;
+
+    /// Computes the operator on a GPU device.
+    async fn device_compute_image(
+        &self,
+        ctx: &OpImagingCtx,
+        request: &RequestWindow,
+    ) -> Result<DeviceComputeImageResult, EvalError>;
 }
 
 /// Arguments for evaluating an image.
@@ -192,7 +242,7 @@ pub struct ImagingEvalArgs {
 
 /// Context passed to `OpImaging` operators.
 pub struct OpImagingCtx {
-    op_ctx: OpCtx,
+    pub(crate) op_ctx: OpCtx,
     /// Current image transform (local coords to target).
     pub transform: Transform,
 }
@@ -237,10 +287,10 @@ impl OpImagingCtx {
 // Image requests
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-slotmap::new_key_type! {
+/*slotmap::new_key_type! {
     /// ID of an image request.
     pub struct ImageRequestId;
-}
+}*/
 
 /*/// Requested regions of an image during evaluation.
 pub struct ImageRequest {
@@ -318,17 +368,8 @@ impl OpCtx {
             .rod_tasks
             .fetch_or_spawn(key, async move {
                 // get the imaging operator for the target path
-                let node = eval
-                    .document
-                    .node(&path)
-                    .ok_or(EvalError::PathNotFound(path.clone()))?
-                    .clone();
-                let op_name = node
-                    .metadata(metadata::OPERATOR)
-                    .ok_or_else(|| EvalError::general("target has no operator"))?;
-                let op = IMAGING_OPERATORS
-                    .get(&op_name)
-                    .ok_or(EvalError::UnknownOperator(op_name))?;
+                let node = eval.document.node(&path).ok_or(EvalError::PathNotFound)?.clone();
+                let op = get_imaging_operator(&node)?;
 
                 // issue: can't borrow self from another task
                 let mut op_ctx = OpImagingCtx {

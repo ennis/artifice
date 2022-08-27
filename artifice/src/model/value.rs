@@ -305,6 +305,12 @@ impl From<String> for Value {
     }
 }
 
+impl From<Atom> for Value {
+    fn from(v: Atom) -> Self {
+        Value::Token(v.into())
+    }
+}
+
 impl<'a> From<&'a str> for Value {
     fn from(v: &'a str) -> Self {
         Value::String(v.into())

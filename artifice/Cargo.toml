@@ -9,21 +9,21 @@ edition = "2018"
 [dependencies]
 # private macros
 artifice-macros = { path = "macros" }
-slotmap = "1.0.6"
+# slotmap = "1.0.6"
 lazy_static = "1.4.0"
-tracing = "0.1.34"
+tracing = "0.1.36"
 anyhow = "1.0.40"
 thiserror = "1.0.25"
-anymap = "1.0.0-beta.2"
+# anymap = "1.0.0-beta.2"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 kyute = { path="../../kyute/kyute", features = ["imbl"] }
 kyute-common = { path="../../kyute/kyute-common" }
 dashmap = "5.0.0"
-imbl = "1.0.1"
+imbl = "2.0.0"
 openimageio = { path = "../../openimageio-rs" }
-rusqlite = { version = "0.26.3", features = ["bundled", "serde_json"] }
-parking_lot = "0.11.2"
+#rusqlite = { version = "0.26.3", features = ["bundled", "serde_json"] }
+parking_lot = "0.12.1"
 euclid = "0.22"
 async-trait = "0.1"
 futures = "0.3.21"
@@ -33,6 +33,10 @@ glsl-lang-pp = { version = "*" }
 graal-spirv = { path = "../../graal/graal-spirv" }
 bitflags = "1.3.2"
 once_cell = "1.12.0"
-roxmltree = "0.14.1"
+roxmltree = "0.15.0"
 glam = "0.21"
 inventory = "0.3.0"
+
+[dev-dependencies]
+tracing-tree = "0.2.1"
+tracing-subscriber = {version = "0.3.15", features=["env-filter"]}
