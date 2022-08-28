@@ -2,7 +2,7 @@
 use kyute::graal::ash::extensions::experimental::amd::GpaSqShaderStageFlags;
 use kyute_common::{Atom, Data};
 use std::{
-    cmp::Ordering,
+    cmp::{min, Ordering},
     collections::{HashMap, HashSet},
     fmt,
     fmt::{Display, Formatter},
@@ -54,19 +54,47 @@ impl PipelineError {
     }
 }
 
-/*/// Pipeline value type.
-#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash, Data)]
-pub enum ValueType {
-    Float,
-    Vec2,
-    Vec3,
-    Vec4,
-    IVec2,
-    IVec3,
-    IVec4,
-    Mat3,
-    Mat4,
-}*/
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum ShaderStage {
+    Vertex,
+    Fragment,
+    Compute,
+}
+
+fn check_ordered_variabilities(vs: &[Variability]) -> Result<Variability, PipelineError> {
+    let n = vs.len();
+    let mut min_variability = Variability::Constant;
+    for i in 0..n {
+        for j in i + 1..n {
+            match vs[i].partial_cmp(&vs[j]) {
+                None => {
+                    return Err(PipelineError::other(format!(
+                        "program inputs have incompatible variability: {:?} and {:?}",
+                        vs[i], vs[j]
+                    )));
+                }
+                _ => {}
+            }
+        }
+
+        if vs[i] > min_variability {
+            min_variability = vs[i];
+        }
+    }
+    Ok(min_variability)
+}
+
+fn shader_stage_from_variability(v: Variability) -> Option<ShaderStage> {
+    match v {
+        Variability::Vertex => Some(ShaderStage::Vertex),
+        Variability::Fragment => Some(ShaderStage::Fragment),
+        Variability::Constant
+        | Variability::TimeVarying
+        | Variability::Material
+        | Variability::Object
+        | Variability::DrawInstance => None,
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum BuiltinProgramInput {
@@ -76,6 +104,12 @@ pub enum BuiltinProgramInput {
     // --- Fragment ---
     FragCoord,
     FrontFacing,
+    // --- Compute ---
+    NumWorkGroups,
+    WorkGroupID,
+    LocalInvocationID,
+    GlobalInvocationID,
+    LocalInvocationIndex,
 }
 
 /// Represents a variable in a shader pipeline.
@@ -117,66 +151,6 @@ impl VariableCtx {
         }
     }
 
-    /// Creates a new environment initialized with the OpenGL vertex stage built-in variables.
-    pub fn gl_vertex_builtins() -> VariableCtx {
-        let mut vars = imbl::HashMap::new();
-        {
-            let name: Arc<str> = "gl_VertexID".into();
-            vars.insert(
-                name.clone(),
-                Variable {
-                    name: SsaName::new(name, 0),
-                    builtin: Some(BuiltinProgramInput::VertexID),
-                    variability: Variability::Vertex,
-                    ty: TypeDesc::INT,
-                },
-            );
-        }
-        {
-            let name: Arc<str> = "gl_InstanceID".into();
-            vars.insert(
-                name.clone(),
-                Variable {
-                    name: SsaName::new(name, 0),
-                    builtin: Some(BuiltinProgramInput::InstanceID),
-                    variability: Variability::Vertex,
-                    ty: TypeDesc::INT,
-                },
-            );
-        }
-        VariableCtx { vars }
-    }
-
-    /// Creates a new environment initialized with the OpenGL fragment stage built-in variables.
-    pub fn gl_fragment_builtins() -> VariableCtx {
-        let mut vars = imbl::HashMap::new();
-        {
-            let name: Arc<str> = "gl_FragCoord".into();
-            vars.insert(
-                name.clone(),
-                Variable {
-                    name: SsaName::new(name, 0),
-                    builtin: Some(BuiltinProgramInput::FragCoord),
-                    variability: Variability::Fragment,
-                    ty: TypeDesc::VEC2,
-                },
-            );
-        }
-        {
-            let name: Arc<str> = "gl_FrontFacing".into();
-            vars.insert(
-                name.clone(),
-                Variable {
-                    name: SsaName::new(name, 0),
-                    builtin: Some(BuiltinProgramInput::FrontFacing),
-                    variability: Variability::Fragment,
-                    ty: TypeDesc::BOOL,
-                },
-            );
-        }
-        VariableCtx { vars }
-    }
-
     /// Creates a new variable with the given name, possibly shadowing an existing variable.
     pub fn create(&mut self, name: impl Into<Arc<str>>, ty: TypeDesc, variability: Variability) -> Variable {
         let name = name.into();
@@ -206,7 +180,7 @@ pub struct PipelineNode {
     parents: Vec<Arc<PipelineNode>>,
     vars: VariableCtx,
     kind: PipelineNodeKind,
-    stage: ShaderStage,
+    stage: Option<ShaderStage>,
 }
 
 impl PipelineNode {
@@ -216,20 +190,111 @@ impl PipelineNode {
         self.vars.get(&name).ok_or(PipelineError::VariableNotFound)
     }
 
-    pub fn input(stage: ShaderStage, vars: VariableCtx) -> Arc<PipelineNode> {
+    /*pub fn input(stage: ShaderStage, vars: VariableCtx) -> Arc<PipelineNode> {
         Arc::new(PipelineNode {
             parents: Vec::new(),
             vars,
             kind: PipelineNodeKind::Input,
             stage,
         })
-    }
+    }*/
 }
 
 pub enum PipelineNodeKind {
-    Input,
+    Entry,
     Program(ProgramNode),
     Interpolation(InterpolationNode),
+}
+
+pub struct PipelineEntryNodeBuilder {
+    variabilities: HashSet<Variability>,
+    vars: imbl::HashMap<Arc<str>, Variable>,
+}
+
+impl PipelineEntryNodeBuilder {
+    pub fn new() -> PipelineEntryNodeBuilder {
+        PipelineEntryNodeBuilder {
+            variabilities: HashSet::new(),
+            vars: Default::default(),
+        }
+    }
+
+    /// Creates a new environment initialized with the OpenGL vertex stage built-in variables.
+    pub fn gl_vertex_builtins(&mut self) {
+        self.builtin_variable(
+            "gl_VertexID",
+            TypeDesc::INT,
+            Variability::Vertex,
+            BuiltinProgramInput::VertexID,
+        );
+        self.builtin_variable(
+            "gl_InstanceID",
+            TypeDesc::INT,
+            Variability::Vertex,
+            BuiltinProgramInput::InstanceID,
+        );
+    }
+
+    /// Creates a new environment initialized with the OpenGL fragment stage built-in variables.
+    pub fn gl_fragment_builtins(&mut self) {
+        self.builtin_variable(
+            "gl_FragCoord",
+            TypeDesc::VEC2,
+            Variability::Fragment,
+            BuiltinProgramInput::FragCoord,
+        );
+        self.builtin_variable(
+            "gl_FrontFacing",
+            TypeDesc::BOOL,
+            Variability::Fragment,
+            BuiltinProgramInput::FrontFacing,
+        );
+    }
+
+    fn builtin_variable(
+        &mut self,
+        name: impl Into<Arc<str>>,
+        ty: TypeDesc,
+        variability: Variability,
+        builtin: BuiltinProgramInput,
+    ) {
+        let name = name.into();
+        self.vars.insert(
+            name.clone(),
+            Variable {
+                name: SsaName::new(name, 0),
+                ty,
+                variability,
+                builtin: Some(builtin),
+            },
+        );
+    }
+
+    pub fn variable(&mut self, name: impl Into<Arc<str>>, ty: TypeDesc, variability: Variability) {
+        let name = name.into();
+        self.vars.insert(
+            name.clone(),
+            Variable {
+                name: SsaName::new(name, 0),
+                ty,
+                variability,
+                builtin: None,
+            },
+        );
+    }
+
+    pub fn finish(self) -> Result<Arc<PipelineNode>, PipelineError> {
+        let vs: Vec<_> = self.variabilities.into_iter().collect();
+        let min_variability = check_ordered_variabilities(&vs)?;
+        let stage = shader_stage_from_variability(min_variability);
+
+        Ok(Arc::new(PipelineNode {
+            parents: vec![],
+            vars: VariableCtx { vars: self.vars },
+            kind: PipelineNodeKind::Entry,
+            stage,
+        }))
+    }
 }
 
 #[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq, Hash, Data)]
@@ -277,7 +342,6 @@ impl InterpolationNodeBuilder {
         mode: InterpolationMode,
     ) -> Result<(), PipelineError> {
         // verify that the input variable exists, that it has the correct variability, and is of the correct type for the given interpolation mode.
-
         let var = self.parent.variable(in_.clone())?;
         // can only interpolate vertex-varying values (TODO tess shader support)
         if var.variability != Variability::Vertex {
@@ -288,7 +352,21 @@ impl InterpolationNodeBuilder {
         }
 
         let out = out.into();
-        self.vars.create(out.clone(), var.ty.clone(), Variability::Fragment);
+
+        let old = self.vars.vars.insert(
+            out.clone(),
+            Variable {
+                name: SsaName::new(out.clone(), 0),
+                ty: var.ty.clone(),
+                variability: Variability::Fragment,
+                builtin: None,
+            },
+        );
+        if old.is_some() {
+            // shadowing not allowed here.
+            return Err(PipelineError::other("shadowing not allowed"));
+        }
+
         self.node.vars.push(InterpolatedVariable {
             in_: var.name.base.clone(),
             ty: var.ty.clone(),
@@ -303,7 +381,7 @@ impl InterpolationNodeBuilder {
             parents: vec![self.parent],
             vars: self.vars,
             kind: PipelineNodeKind::Interpolation(self.node),
-            stage: ShaderStage::Fragment,
+            stage: Some(ShaderStage::Fragment),
         })
     }
 }
@@ -351,12 +429,19 @@ pub struct Binding {
     //pub ty: TypeDesc,
 }
 
+#[derive(Clone, Debug)]
+pub struct Uniform {
+    pub interface_name: Arc<str>,
+    pub uniform_name: Arc<str>,
+}
+
 /// A program node in a shader pipeline.
 #[derive(Clone)]
 pub struct ProgramNode {
     program: Program,
     input_bindings: Vec<Binding>,
     output_bindings: Vec<Binding>,
+    uniforms: Vec<Uniform>,
 }
 
 impl ProgramNode {
@@ -370,6 +455,7 @@ pub struct ProgramNodeBuilder {
     pred: Arc<PipelineNode>,
     program: Program,
     variabilities: HashSet<Variability>,
+    uniforms: Vec<Uniform>,
     input_bindings: Vec<Binding>,
     output_bindings: Vec<(Arc<str>, Arc<str>)>,
 }
@@ -379,10 +465,46 @@ impl ProgramNodeBuilder {
         Self {
             pred,
             program,
+            uniforms: Default::default(),
             variabilities: Default::default(),
             input_bindings: Default::default(),
             output_bindings: Default::default(),
         }
+    }
+
+    /// Exposes a program interface as a pipeline uniform.
+    pub fn uniform(
+        &mut self,
+        interface_name: impl Into<Arc<str>>,
+        uniform_name: impl Into<Arc<str>>,
+    ) -> Result<(), PipelineError> {
+        let interface_name = interface_name.into();
+
+        let interface_var = self
+            .program
+            .interface(&*interface_name)
+            .ok_or(PipelineError::InterfaceNotFound)?;
+
+        // check that the variability is at least uniform
+        if let Some(variability) = interface_var.variability {
+            if variability > Variability::TimeVarying {
+                return Err(PipelineError::other("invalid variability for uniform"));
+            }
+        }
+
+        // check that the interface is not already bound
+        for binding in self.input_bindings.iter() {
+            if binding.interface_name == interface_name {
+                return Err(PipelineError::other("interface already bound"));
+            }
+        }
+
+        self.uniforms.push(Uniform {
+            interface_name,
+            uniform_name: uniform_name.into(),
+        });
+
+        Ok(())
     }
 
     /// Binds a pipeline variable to a program input interface.
@@ -451,41 +573,10 @@ impl ProgramNodeBuilder {
     }
 
     pub fn finish(mut self) -> Result<Arc<PipelineNode>, PipelineError> {
-        // check for incompatible variabilities among input bindings
         let vs: Vec<_> = self.variabilities.into_iter().collect();
-        let n = vs.len();
-        for i in 0..n {
-            for j in i + 1..n {
-                match vs[i].partial_cmp(&vs[j]) {
-                    None => {
-                        return Err(PipelineError::other(format!(
-                            "program inputs have incompatible variability: {:?} and {:?}",
-                            vs[i], vs[j]
-                        )));
-                    }
-                    _ => {}
-                }
-            }
-        }
+        let min_variability = check_ordered_variabilities(&vs)?;
+        let stage = shader_stage_from_variability(min_variability);
 
-        // compute minimum variability of the inputs, which defines the variability of the outputs,
-        // and also the pipeline stage
-        let mut min_variability = Variability::Constant;
-        for v in vs {
-            if v > min_variability {
-                min_variability = v;
-            }
-        }
-
-        let stage = match min_variability {
-            Variability::Vertex => ShaderStage::Vertex,
-            Variability::Fragment => ShaderStage::Fragment,
-            Variability::Constant
-            | Variability::TimeVarying
-            | Variability::Material
-            | Variability::Object
-            | Variability::DrawInstance => self.pred.stage,
-        };
         //eprintln!("min_variability={:?}, stage={:?}", min_variability, stage);
 
         // define output variables
@@ -493,10 +584,30 @@ impl ProgramNodeBuilder {
         let mut output_bindings = Vec::new();
         for (interface_name, binding_name) in self.output_bindings {
             let interface = self.program.interface(&interface_name).unwrap();
-            let var = vars.create(binding_name, interface.ty.clone(), min_variability);
+
+            // create new variable, possibly shadowing another with the same name
+            let var_name = vars
+                .vars
+                .entry(binding_name.clone())
+                .and_modify(|var| {
+                    // shadowing, increase SSA index
+                    var.name.index += 1;
+                    var.ty = interface.ty.clone();
+                    var.variability = min_variability;
+                })
+                .or_insert(Variable {
+                    // new variable
+                    name: SsaName::new(binding_name.clone(), 0),
+                    ty: interface.ty.clone(),
+                    variability: min_variability,
+                    builtin: None,
+                })
+                .name
+                .clone();
+
             output_bindings.push(Binding {
                 interface_name,
-                var_name: var.name,
+                var_name,
             })
         }
 
@@ -507,17 +618,11 @@ impl ProgramNodeBuilder {
                 program: self.program,
                 input_bindings: self.input_bindings,
                 output_bindings,
+                uniforms: self.uniforms,
             }),
             stage,
         }))
     }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub enum ShaderStage {
-    Vertex,
-    Fragment,
-    Compute,
 }
 
 // Problem: once a pipeline variable is made available, it is visible in all downstream nodes
@@ -588,9 +693,9 @@ impl PipelineNode {
 
         for &node in nodes.iter() {
             match node.kind {
-                PipelineNodeKind::Input => {
+                PipelineNodeKind::Entry => {
                     match node.stage {
-                        ShaderStage::Vertex => {
+                        Some(ShaderStage::Vertex) => {
                             for var in node.vars.vars.values() {
                                 if var.builtin.is_none() {
                                     // SSA index of input should be zero (first instance of the var name)
@@ -600,7 +705,7 @@ impl PipelineNode {
                                 }
                             }
                         }
-                        ShaderStage::Fragment => {
+                        Some(ShaderStage::Fragment) => {
                             /*for var in node.vars.vars.values() {
                                 if var.builtin.is_none() {
                                     // SSA index of input should be zero (first instance of the var name)
@@ -610,7 +715,10 @@ impl PipelineNode {
                                 }
                             }*/
                         }
-                        ShaderStage::Compute => {
+                        Some(ShaderStage::Compute) => {
+                            todo!()
+                        }
+                        _ => {
                             todo!()
                         }
                     }
@@ -619,12 +727,22 @@ impl PipelineNode {
                     ref program,
                     ref input_bindings,
                     ref output_bindings,
+                    ref uniforms,
                 }) => match node.stage {
-                    ShaderStage::Vertex => {
+                    Some(ShaderStage::Vertex) => {
                         cgc_vert.add_program(program, input_bindings, output_bindings);
+                        //cgc_vert.add_input()
                     }
-                    ShaderStage::Fragment => {
+                    Some(ShaderStage::Fragment) => {
                         cgc_frag.add_program(program, input_bindings, output_bindings);
+                    }
+
+                    None => {
+                        // value will be visible to all stages
+                        // TODO ideally the program would be compiled and executed on the CPU,
+                        // and the result passed as uniforms.
+
+                        todo!()
                     }
                     _ => {
                         panic!("unexpected stage")
@@ -687,7 +805,7 @@ mod tests {
         program, InterpolationMode, InterpolationNodeBuilder, PipelineNode, Program, ProgramNode, ShaderStage,
         TypeDesc, VariableCtx,
     };
-    use artifice::eval::Variability;
+    use artifice::eval::{pipeline::PipelineEntryNodeBuilder, Variability};
     use stats_alloc::{Region, StatsAlloc, INSTRUMENTED_SYSTEM};
     use std::alloc::System;
 
@@ -715,13 +833,16 @@ mod tests {
 
         let reg = Region::new(&GLOBAL);
 
-        let mut init_vars = VariableCtx::new();
-        init_vars.create("position", TypeDesc::VEC3, Variability::Vertex);
-        init_vars.create("screenSize", TypeDesc::VEC2, Variability::TimeVarying);
-        let init = PipelineNode::input(ShaderStage::Vertex, init_vars);
+        let entry = {
+            let mut builder = PipelineEntryNodeBuilder::new();
+            builder.gl_vertex_builtins();
+            builder.variable("position", TypeDesc::VEC3, Variability::Vertex);
+            builder.variable("screenSize", TypeDesc::VEC2, Variability::TimeVarying);
+            builder.finish().unwrap()
+        };
 
         let prog_1_node = {
-            let mut builder = ProgramNode::build(init, prog_1);
+            let mut builder = ProgramNode::build(entry, prog_1);
             builder.input("position", "position").unwrap();
             builder.output("viewPosition", "viewPosition").unwrap();
             builder.finish().unwrap()
@@ -743,11 +864,11 @@ mod tests {
             builder.finish().unwrap()
         };
 
-        //let shader = prog_2_node.codegen_graphics();
+        let shader = prog_2_node.codegen_graphics();
 
         eprintln!("Stats: {:#?}", reg.change());
-        //eprintln!("====== Vertex: ====== \n {}", shader.vertex);
-        //eprintln!("====== Fragment: ====== \n {}", shader.fragment);
+        eprintln!("====== Vertex: ====== \n {}", shader.vertex);
+        eprintln!("====== Fragment: ====== \n {}", shader.fragment);
         //drop(prog_2_node);
     }
 }
@@ -756,3 +877,32 @@ mod tests {
 // - program interfaces can be bound to builtin vars (gl_FragCoord, etc => add builtin vars in VariableCtx)
 // - allocate stuff in arenas? most of this stuff is immutable anyway
 //      - PROBLEM: TypeDesc can't be stored in arenas, maybe use a simpler typedesc
+// - add unique (string) IDs to PipelineNode
+
+// Will have:
+// Pipeline operators:
+// * get_pipeline_node(&self) -> PipelineNode
+//      build a ProgramNode
+//      merge all input variable streams
+//
+//      for each param
+//          if bound to variable, then to ProgramNodeBuilder::input
+//          if bound to value: register the input uniform
+//          if unbound: try automatic bind in variable context (by semantic, or, if no semantic is available, by name)
+//
+//
+// PROBLEM: the uniforms of this node become visible to others
+
+//      if bound -> builder.input(..., ...)
+//
+//
+// * setup_uniforms(&self, uniforms: &mut UniformInterface)
+//      -> UniformInterface can set uniform values by name & variability
+//      -> internally, it's a map from unique name to offset in some uniform buffer
+//      -> built once
+//      -> insert_vecXX(interface_name, value)
+
+// (U)camera, (V)position
+// (U)camera, (V)position, (V)normals
+// (U)camera, (V)position, (V)normals, (V)bitangents
+//
