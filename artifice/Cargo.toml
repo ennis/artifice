@@ -38,6 +38,7 @@ glam = "0.21"
 inventory = "0.3.0"
 bumpalo = "3.11.0"
 stats_alloc = "0.1.10"
+typed-arena = "2.0.1"
 
 [dev-dependencies]
 tracing-tree = "0.2.1"

@@ -1,5 +1,8 @@
 use crate::{
-    eval::pipeline::{Binding, Program, TypeDesc, Variable},
+    eval::{
+        pipeline::{Binding, CodegenResult, Program, ShaderResourceIndex, SsaName, TypeDesc, Variable},
+        Variability,
+    },
     model::typedesc::{ImageDimension, PrimitiveType},
 };
 use glsl_lang::{
@@ -32,29 +35,38 @@ use std::{
     sync::Arc,
 };
 
-/// Sized uniform.
-struct Uniform {
-    ty: TypeDesc,
-    name: Atom,
+////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Program with name substitutions.
+pub(crate) struct BoundProgram<'a> {
+    pub(crate) program: &'a Program,
+    pub(crate) substitutions: HashMap<Arc<str>, Arc<str>>,
 }
 
-/// Opaque uniform types (textures, samplers, buffers).
-struct OpaqueUniform {
-    ty: TypeDesc,
-    name: Atom,
-    set: u32,
-    binding: u32,
-}
-
-struct Buffer {
-    ty: TypeDesc,
-    name: Atom,
-}
-
-struct InputOutput {
-    location: u32,
-    ty: TypeDesc,
-    name: Arc<str>,
+pub(crate) enum GlslVariable {
+    UniformBlock {
+        set: u32,
+        binding: u32,
+        block_name: Arc<str>,
+        fields: Vec<(Arc<str>, TypeDesc)>,
+    },
+    Uniform {
+        ty: TypeDesc,
+        name: Arc<str>,
+        set: u32,
+        binding: u32,
+    },
+    Input {
+        location: u32,
+        ty: TypeDesc,
+        name: Arc<str>,
+    },
+    Output {
+        location: u32,
+        ty: TypeDesc,
+        name: Arc<str>,
+    },
 }
 
 /// Texture descriptor.
@@ -138,6 +150,9 @@ fn generate_mangled_type_name(out: &mut dyn fmt::Write, ty: &TypeDesc) -> fmt::R
     Ok(())
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /// GLSL AST rewriter.
 ///
 /// It does the following:
@@ -146,8 +161,8 @@ fn generate_mangled_type_name(out: &mut dyn fmt::Write, ty: &TypeDesc) -> fmt::R
 /// - replaces
 struct NameSubstitutionRewriter<'a> {
     cg: &'a mut CodegenContext,
-    non_type_name_substitutions: HashMap<String, String>,
-    type_name_substitutions: HashMap<String, String>,
+    non_type_name_substitutions: HashMap<Arc<str>, Arc<str>>,
+    type_name_substitutions: HashMap<Arc<str>, Arc<str>>,
     shadowed_names: HashSet<String>,
 }
 
@@ -173,7 +188,7 @@ impl<'a> VisitorMut for NameSubstitutionRewriter<'a> {
         // rewrite `void function() { ... }` to `void function__<source_id>() { ... }`
         let new_name = format!("{}__{}", fp.name.as_str(), fp.span.unwrap().source_id().number());
         self.non_type_name_substitutions
-            .insert(fp.name.to_string(), new_name.clone());
+            .insert(fp.name.to_string().into(), new_name.clone().into());
         fp.name.content.0 = new_name.into();
         Visit::Parent
     }
@@ -184,7 +199,7 @@ impl<'a> VisitorMut for NameSubstitutionRewriter<'a> {
             if !self.non_type_name_substitutions.contains_key(name.as_str()) {
                 let new_name = format!("{}__{}", name.as_str(), name.span.unwrap().source_id().number());
                 self.non_type_name_substitutions
-                    .insert(name.to_string(), new_name.clone());
+                    .insert(name.to_string().into(), new_name.clone().into());
                 name.0 = new_name.into();
             }
         }
@@ -199,7 +214,7 @@ impl<'a> VisitorMut for NameSubstitutionRewriter<'a> {
                 decl.span.unwrap().source_id().number()
             );
             self.non_type_name_substitutions
-                .insert(decl.ident.ident.to_string(), new_name.clone());
+                .insert(decl.ident.ident.to_string().into(), new_name.clone().into());
             decl.ident.ident.0 = new_name.into();
         }
         Visit::Children
@@ -208,7 +223,8 @@ impl<'a> VisitorMut for NameSubstitutionRewriter<'a> {
     fn visit_struct_specifier(&mut self, s: &mut StructSpecifier) -> Visit {
         if let Some(ref mut name) = s.name {
             let new_name = format!("{}__{}", name.as_str(), name.span.unwrap().source_id().number());
-            self.type_name_substitutions.insert(name.to_string(), new_name.clone());
+            self.type_name_substitutions
+                .insert(name.to_string().into(), new_name.clone().into());
             name.content.0 = new_name.into();
         }
         Visit::Children
@@ -228,6 +244,9 @@ impl<'a> VisitorMut for NameSubstitutionRewriter<'a> {
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /// AST rewriter adds another indirection to `buffer_reference` variables:
 /// ```glsl
@@ -263,18 +282,20 @@ impl VisitorMut for BufferReferenceRewriter {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Codegen
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Maximum supported number of descriptor sets.
+const MAX_SETS: usize = 8;
+
 /// GLSL shader code generation context.
-pub struct CodegenContext {
-    glsl_version: u32,
-    sized_uniforms: Vec<Uniform>,
-    opaque_uniforms: Vec<OpaqueUniform>,
-    buffers: Vec<Buffer>,
-    inputs: Vec<InputOutput>,
-    outputs: Vec<InputOutput>,
-    names: HashSet<Atom>,
-    mangled_type_names: HashMap<TypeDesc, Atom>,
-    decls: String,
-    body: String,
+pub(crate) struct CodegenContext {
+    pub(crate) names: HashSet<Atom>,
+    pub(crate) mangled_type_names: HashMap<TypeDesc, Atom>,
+    pub(crate) declarations: String,
+    pub(crate) function_definitions: String,
+    pub(crate) body: String,
 }
 
 fn is_output_interface(decl: &ast::SingleDeclaration) -> bool {
@@ -306,17 +327,12 @@ fn is_input_interface(decl: &ast::SingleDeclaration) -> bool {
 
 impl CodegenContext {
     /// Creates a new code generation context.
-    pub fn new(glsl_version: u32) -> CodegenContext {
+    pub(crate) fn new() -> CodegenContext {
         CodegenContext {
-            glsl_version,
-            sized_uniforms: vec![],
-            opaque_uniforms: vec![],
-            buffers: vec![],
-            inputs: vec![],
-            outputs: vec![],
             names: Default::default(),
             mangled_type_names: Default::default(),
-            decls: "".to_string(),
+            declarations: "".to_string(),
+            function_definitions: "".to_string(),
             body: "".to_string(),
         }
     }
@@ -365,60 +381,22 @@ impl CodegenContext {
         unique_name
     }
 
-    /// Declares the following name as the name of a declaration in the shader.
-    ///
-    /// This prevents codegen from choosing a conflicting name for automatically generated declarations.
-    /// Panics if the name is already in use.
-    pub fn declare(&mut self, name: impl Into<String>) {
-        let name = name.into();
-        self.names.insert(name.into());
-    }
-
-    /// Adds a shader input (like `in vec3 position`).
-    pub fn add_input(&mut self, name: impl Into<Arc<str>>, ty: TypeDesc, location: u32) {
-        assert!(
-            self.inputs.iter().find(|input| input.location == location).is_none(),
-            "the given location was already assigned to another input"
-        );
-        let name = name.into();
-        self.inputs.push(InputOutput { name, ty, location });
-    }
-
-    /// Adds a shader output (like `out vec4 color`).
-    pub fn add_output(&mut self, name: impl Into<Arc<str>>, ty: TypeDesc, location: u32) {
-        assert!(
-            self.outputs.iter().find(|output| output.location == location).is_none(),
-            "the given location was already assigned to another output"
-        );
-        let name = name.into();
-        self.outputs.push(InputOutput { name, ty, location });
-    }
-
-    //pub fn add_uniform(&mut self, name: impl Into<Arc<str>>)
-
-    /// Adds a buffer uniform (like `layout(buffer_reference) buffer MyBuffer_tag { float[] contents; };`).
-    pub fn add_buffer(&mut self, name: impl Into<Atom>, ty: TypeDesc) {
-        self.buffers.push(Buffer { name: name.into(), ty });
-    }
-
     /// Adds a program.
-    pub fn add_program(&mut self, mut program: &Program, input_bindings: &[Binding], output_bindings: &[Binding]) {
-        // TODO: check that all input bindings refer to valid variables
-        // FIXME: the output variable names are not made unique, so they may conflict with a similarly named variable
-        // if we uniquify the output variable name in add_program, we need to communicate the result to the
-
+    pub(crate) fn write_program(&mut self, program: &Program, interface_bindings: &[Binding]) {
         let mut formatting_state = FormattingState::default();
 
-        /*let mut dbg = String::new();
-        show_translation_unit(&mut dbg, &program.translation_unit, FormattingState::default()).unwrap();
-        eprintln!("{:?}", dbg);*/
-
         let mut non_type_name_substitutions = HashMap::new();
-        for i in input_bindings.iter() {
-            non_type_name_substitutions.insert(i.interface_name.to_string(), i.var_name.display().to_string());
-        }
-        for o in output_bindings.iter() {
-            non_type_name_substitutions.insert(o.interface_name.to_string(), o.var_name.display().to_string());
+
+        for (b, i) in interface_bindings.iter().zip(program.interface.iter()) {
+            match b {
+                Binding::Default => {}
+                Binding::Variable { name, ssa_index } => {
+                    non_type_name_substitutions.insert(i.name.clone(), format!("{name}_{ssa_index}").into());
+                }
+                Binding::Uniform { name } => {
+                    non_type_name_substitutions.insert(i.name.clone(), name.clone());
+                }
+            }
         }
 
         let substituted_program = {
@@ -473,110 +451,35 @@ impl CodegenContext {
                             }
                         } else if is_input_interface(&declarator_list.head) {
                         } else {
-                            show_init_declarator_list(&mut self.decls, declarator_list, &mut formatting_state).unwrap();
-                            writeln!(&mut self.decls, ";").unwrap();
+                            // must be a constant or some global variable
+                            show_init_declarator_list(&mut self.declarations, declarator_list, &mut formatting_state)
+                                .unwrap();
+                            writeln!(&mut self.declarations, ";").unwrap();
                         }
                     }
                     ast::DeclarationData::FunctionPrototype(ref proto) => {
-                        show_function_prototype(&mut self.decls, proto, &mut formatting_state).unwrap();
-                        writeln!(&mut self.decls, ";").unwrap();
+                        show_function_prototype(&mut self.declarations, proto, &mut formatting_state).unwrap();
+                        writeln!(&mut self.declarations, ";").unwrap();
                     }
                     ast::DeclarationData::Precision(_, _) => {
                         // ignored
                     }
                     ast::DeclarationData::Block(ref block) => {
-                        show_block(&mut self.decls, block, &mut formatting_state).unwrap();
-                        writeln!(&mut self.decls, ";").unwrap();
+                        show_block(&mut self.declarations, block, &mut formatting_state).unwrap();
+                        writeln!(&mut self.declarations, ";").unwrap();
                     }
                     ast::DeclarationData::Invariant(ref ident) => {
                         // ignored
                     }
                 },
                 ast::ExternalDeclarationData::FunctionDefinition(ref func) => {
-                    show_function_definition(&mut self.decls, func, &mut formatting_state).unwrap();
+                    show_function_definition(&mut self.function_definitions, func, &mut formatting_state).unwrap();
                 }
                 ast::ExternalDeclarationData::Preprocessor(ref pp) => {
-                    show_preprocessor(&mut self.decls, pp, &mut formatting_state).unwrap();
+                    show_preprocessor(&mut self.declarations, pp, &mut formatting_state).unwrap();
                 }
             }
         }
-    }
-
-    /*/// Returns the writer for the declaration part of the shader.
-    pub fn declaration_writer(&mut self) -> impl fmt::Write + '_ {
-        todo!()
-    }
-
-    /// Returns the writer for the statements in the main function.
-    pub fn main_function_writer(&mut self) -> impl fmt::Write + '_ {
-        todo!()
-    }*/
-
-    /// Generates the source code of the shader.
-    pub fn generate(&self, out: &mut dyn fmt::Write) -> fmt::Result {
-        let mut current_set = 0;
-        let mut current_binding = 0;
-
-        // --- Uniforms ---
-        // TODO multiple uniform buffers, per variability
-        // TODO extract the layout of the uniform block
-        if !self.sized_uniforms.is_empty() {
-            writeln!(
-                out,
-                "layout(set = {}, binding = {}, std140) uniform TimeVaryings {{",
-                current_set, current_binding
-            )?;
-            // write variables
-            for uniform in &self.sized_uniforms {
-                writeln!(out, "    {} {};", uniform.ty.display_glsl(), uniform.name)?;
-            }
-
-            // also write pointers to buffers
-
-            writeln!(out, "}};")?;
-        }
-        current_binding += 1;
-
-        // --- opaque uniforms ---
-        // Opaque uniforms each get their own binding number
-        for opaque_uniform in &self.opaque_uniforms {
-            writeln!(
-                out,
-                "layout(set = {}, binding = {}) uniform {} {};",
-                current_set,
-                current_binding,
-                opaque_uniform.ty.display_glsl(),
-                opaque_uniform.name,
-            )?;
-            current_binding += 1;
-        }
-
-        // --- I/O interface ---
-        for input in self.inputs.iter() {
-            writeln!(
-                out,
-                "layout(location={}) in {} {};",
-                input.location,
-                input.ty.display_glsl(),
-                input.name
-            )?;
-        }
-
-        for output in self.outputs.iter() {
-            writeln!(
-                out,
-                "layout(location={}) out {} {};",
-                output.location,
-                output.ty.display_glsl(),
-                output.name
-            )?;
-        }
-
-        writeln!(out, "{}", self.decls)?;
-        writeln!(out, "void main() {{")?;
-        writeln!(out, "{}", self.body)?;
-        writeln!(out, "}}")?;
-        Ok(())
     }
 }
 
@@ -694,7 +597,7 @@ mod tests {
 
     #[test]
     fn type_mangling() {
-        let mut cg = CodegenContext::new(460);
+        let mut cg = CodegenContext::new();
 
         let mangled = cg.mangle_type(&TypeDesc::RuntimeArray(Arc::new(TypeDesc::Primitive(
             PrimitiveType::Int,
@@ -747,7 +650,7 @@ mod tests {
         let mut pp = Preprocessor::new_with_fs(vfs);
         let mut program = Program::new(SOURCE_A, "src_a", &mut pp).unwrap();
 
-        let mut cg = CodegenContext::new(460);
+        let mut cg = CodegenContext::new();
         let mut rewriter = NameSubstitutionRewriter {
             cg: &mut cg,
             non_type_name_substitutions: Default::default(),
@@ -762,7 +665,7 @@ mod tests {
         eprintln!("{}", out);
     }
 
-    #[test]
+    /*#[test]
     fn test_codegen() {
         let mut vfs = Vfs::new();
         vfs.register_source("common.glsl", COMMON);
@@ -790,7 +693,7 @@ mod tests {
         let mut generated = String::new();
         ctx.generate(&mut generated);
         eprintln!("{generated}");
-    }
+    }*/
 }
 
 // GlslCodegen(input VFS)

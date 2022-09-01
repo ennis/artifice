@@ -788,166 +788,6 @@ pub struct ProgramInterface {
     pub output: bool,
 }
 
-/*impl ProgramInterface {
-    /// Returns the identifier to use for this program interface item during code generation.
-    pub fn cg_ident(&self) -> impl Display {
-        struct NameWithFileId<'a>(&'a ProgramInterface);
-        impl<'a> fmt::Display for NameWithFileId<'a> {
-            fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "{}_{}", self.0.name, self.0.source_id)
-            }
-        }
-    }
-}*/
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Codegen functions
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-/// Generates code for this program interface.
-fn cgheader_translation_unit(
-    out: &mut dyn fmt::Write,
-    fmt: &mut FormattingState,
-    tu: &ast::TranslationUnit,
-) -> fmt::Result {
-    for decl in tu.0.iter() {
-        match decl.content {
-            ast::ExternalDeclarationData::Declaration(ref decl) => {
-                cgheader_decl(out, fmt, &decl.content)?;
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
-}
-
-fn cgheader_decl(out: &mut dyn fmt::Write, fmt: &mut FormattingState, decl: &ast::DeclarationData) -> fmt::Result {
-    match decl {
-        DeclarationData::FunctionPrototype(proto) => {
-            show_function_prototype(out, proto, fmt)?;
-        }
-        DeclarationData::InitDeclaratorList(decl) => {
-            cgheader_init_decl_list(out, fmt, &decl.content)?;
-        }
-        DeclarationData::Precision(_, _) => {}
-        DeclarationData::Block(_) => {}
-        DeclarationData::Invariant(_) => {}
-    }
-
-    Ok(())
-}
-
-fn cgheader_init_decl_list(
-    out: &mut dyn fmt::Write,
-    fmt: &mut FormattingState,
-    decl: &ast::InitDeclaratorListData,
-) -> fmt::Result {
-    if let Some(ref name) = decl.head.name {
-        let storage_qualifiers = get_storage_qualifiers(&decl.head.ty.content);
-
-        // keep const
-        if storage_qualifiers.contains(StorageQualifiers::CONST) {
-            show_storage_qualifier(out, &ast::StorageQualifierData::Const.into(), fmt)?;
-        }
-
-        show_type_specifier(out, &decl.head.ty.ty, fmt)?;
-        write!(out, " {}", name)?;
-        if let Some(ref a) = decl.head.array_specifier {
-            show_array_spec(out, a, fmt)?;
-        }
-
-        if storage_qualifiers.contains(StorageQualifiers::CONST) {
-            if let Some(ref initializer) = decl.head.initializer {
-                write!(out, " = ")?;
-                show_initializer(out, initializer, fmt)?;
-            }
-        }
-
-        for decl in decl.tail.iter() {
-            write!(out, ", ")?;
-            show_arrayed_identifier(out, &decl.ident, fmt)?;
-            if storage_qualifiers.contains(StorageQualifiers::CONST) {
-                if let Some(ref initializer) = decl.initializer {
-                    write!(out, " = ")?;
-                    show_initializer(out, initializer, fmt)?;
-                }
-            }
-        }
-        writeln!(out, ";")?;
-    }
-    Ok(())
-}
-
-fn cgmain_single_decl(
-    out: &mut dyn fmt::Write,
-    fmt: &mut FormattingState,
-    storage_qualifiers: StorageQualifiers,
-    ident: &ast::Identifier,
-    ty: &ast::TypeSpecifier,
-    array: Option<&ast::ArraySpecifier>,
-    initializer: Option<&ast::Initializer>,
-    //bindings: &HashMap<String, String>,
-) -> fmt::Result {
-    write!(out, "{}", ident.as_str())?;
-    if storage_qualifiers.intersects(StorageQualifiers::IN | StorageQualifiers::UNIFORM | StorageQualifiers::OUT) {
-        //if let Some(binding) = bindings.get(ident.as_str()) {
-        //    writeln!(out, " = {}", binding.as_str())?;
-        //} else {
-        if let Some(initializer) = initializer {
-            write!(out, " = ")?;
-            show_initializer(out, initializer, fmt)?;
-        }
-        //}
-    }
-    writeln!(out, ";")?;
-    Ok(())
-}
-
-fn cgmain_translation_unit(
-    out: &mut dyn fmt::Write,
-    fmt: &mut FormattingState,
-    tu: &ast::TranslationUnit,
-    //bindings: &HashMap<String, String>,
-) -> fmt::Result {
-    for decl in tu.0.iter() {
-        match decl.content {
-            ast::ExternalDeclarationData::Declaration(ref decl) => match decl.content {
-                DeclarationData::InitDeclaratorList(ref decl) => {
-                    if let Some(ref name) = decl.head.name {
-                        let storage_qualifiers = get_storage_qualifiers(&decl.head.ty.content);
-                        cgmain_single_decl(
-                            out,
-                            fmt,
-                            storage_qualifiers,
-                            name,
-                            &decl.head.ty.ty,
-                            decl.head.array_specifier.as_ref(),
-                            decl.head.initializer.as_ref(),
-                            //bindings,
-                        )?;
-                        for rest in decl.tail.iter() {
-                            cgmain_single_decl(
-                                out,
-                                fmt,
-                                storage_qualifiers,
-                                &rest.ident.ident,
-                                &decl.head.ty.ty,
-                                rest.ident.array_spec.as_ref(),
-                                rest.initializer.as_ref(),
-                                //bindings,
-                            )?;
-                        }
-                    }
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-    Ok(())
-}
-
 /// A program, taking a set of values as input and producing others as a result.
 ///
 /// These are composed to create GPU pipelines.
@@ -956,7 +796,7 @@ pub struct Program {
     /// Parsed GLSL translation unit.
     pub(crate) translation_unit: ast::TranslationUnit,
     /// Inputs & outputs of the program.
-    pub(crate) interface: HashMap<Arc<str>, ProgramInterface>,
+    pub(crate) interface: Vec<ProgramInterface>,
 }
 
 impl Program {
@@ -996,9 +836,9 @@ impl Program {
         // map from type name to declaration site & typedesc
         let mut type_ctx = TypeCtx::new();
         // map from decl name to declaration site
-        let mut decl_map: HashMap<String, NodeSpan> = HashMap::new();
+        //let mut decl_map: HashMap<String, NodeSpan> = HashMap::new();
 
-        let mut interface = HashMap::new();
+        let mut interface = Vec::new();
 
         // process external declarations
         for decl in translation_unit.0.iter() {
@@ -1024,20 +864,20 @@ impl Program {
                                     variability: None,
                                     output: storage_qualifiers.contains(StorageQualifiers::OUT),
                                 };
-                                interface.insert(interface_var.name.clone(), interface_var);
+                                interface.push(interface_var);
                             }
                             // not an interface variable, it is subject to renaming
-                            decl_map.insert(name.to_string(), span);
+                            //decl_map.insert(name.to_string(), span);
                         } else {
                         }
                     }
                     ast::DeclarationData::FunctionPrototype(ref proto) => {
-                        decl_map.insert(proto.content.name.to_string(), proto.span.unwrap());
+                        //decl_map.insert(proto.content.name.to_string(), proto.span.unwrap());
                     }
                     _ => {}
                 },
                 ast::ExternalDeclarationData::FunctionDefinition(ref def) => {
-                    decl_map.insert(def.prototype.name.to_string(), def.span.unwrap());
+                    //decl_map.insert(def.prototype.name.to_string(), def.span.unwrap());
                 }
                 _ => {}
             }
@@ -1088,30 +928,28 @@ impl Program {
         self.translation_unit.0.iter()
     }
 
-    /// Generates the declaration-level code for this shader (function declarations & global variables).
-    fn codegen_decl(&self, out: &mut dyn fmt::Write) {
-        let mut formatting_state = FormattingState::default();
-        cgheader_translation_unit(out, &mut formatting_state, &self.translation_unit);
-    }
-
-    /// Generates pipeline-level code for this shader (statements in the shader `main` function).
-    fn codegen_main(&self, out: &mut dyn fmt::Write) {
-        let mut formatting_state = FormattingState::default();
-        cgmain_translation_unit(out, &mut formatting_state, &self.translation_unit);
+    /// Returns the interface of the program, i.e. all inputs and outputs.
+    pub fn interface(&self) -> &[ProgramInterface] {
+        &self.interface
     }
 
     /// Returns a reference to the named interface variable.
-    pub fn interface(&self, name: &str) -> Option<&ProgramInterface> {
-        self.interface.get(name)
+    pub fn interface_variable_by_name(&self, name: &str) -> Option<&ProgramInterface> {
+        self.interface.iter().find(|var| &*var.name == name)
     }
 
-    pub fn inputs(&self) -> impl Iterator<Item = &ProgramInterface> {
+    /// Returns the index of the named interface variable.
+    pub fn interface_index(&self, name: &str) -> Option<usize> {
+        self.interface.iter().position(|var| &*var.name == name)
+    }
+
+    /*pub fn inputs(&self) -> impl Iterator<Item = &ProgramInterface> {
         self.interface.values().filter(|x| !x.output)
     }
 
     pub fn outputs(&self) -> impl Iterator<Item = &ProgramInterface> {
         self.interface.values().filter(|x| x.output)
-    }
+    }*/
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1254,7 +1092,7 @@ mod tests {
         make_program();
     }
 
-    #[test]
+    /*#[test]
     fn test_codegen() {
         let prog = make_program();
         let mut cg_shader = String::new();
@@ -1264,14 +1102,5 @@ mod tests {
         writeln!(&mut cg_shader, "}}");
 
         eprintln!("{}", cg_shader);
-    }
+    }*/
 }
-
-// codegen is done in three phases:
-// - collect uniforms, add them to the buffer corresponding to the variability
-// -
-
-// program codegen:
-// - codegen state:
-//      -
-// - collect external interface variables: those that cannot be

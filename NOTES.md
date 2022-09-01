@@ -2720,3 +2720,45 @@ trait ValueType {
     fn write_value(&self, value: Value, writer: &mut XmlWriter); 
 }
 ```
+
+# Mixing GPU and CPU ops
+
+Right now CPU ops are run in tasks scheduled by tokio: tasks are spawned to evaluate values & recursively by ops
+to evaluate their inputs.
+However, this doesn't work with GPU work: GPU work needs to be collected in a "frame" **in advance** (in order for resource aliasing & autosync to work)
+i.e. we can't schedule GPU work within a tokio task on-the-fly.
+
+Key points:
+* tasks can't schedule new GPU work after the task has started
+
+## Is it possible to dynamically schedule GPU work?
+Example: a CPU op needs to schedule some GPU work. It retrieves the current frame object, and adds some work. Then it awaits the result (waits for availability on the CPU).
+Problem: the GPU work needs to be kicked off to the GPU device at some point.
+Idea: give CPU tasks more priority and evaluate everything on the CPU at first; then, once all CPU work is blocked or running, kick off the GPU work ("flush the frame").
+
+Problem: graal frames borrow the context mutably: may be difficult to weave that into async tasks.
+Problem: async tasks spawned on the tokio runtime must be 'static, so absolutely no borrowing possible.
+
+Workaround: within a single task, it's possible to borrow the GPU context:
+So:
+* spawn a "GPU frame" task, with a mpsc channel
+* GPU work is sent over that channel (work items are 'static)
+* when the GPU frame task wakes up:
+    * fetch work items from the channel and add them to the list
+    * if no work:
+        * create frame, add work items, push it to the GPU
+* Actually, no need for the channel, just push GPU work items to the shared state
+
+Alternatively, we could make `graal::Frame` a standalone type that doesn't borrow the context, and submit the whole frame at once.
+
+# What's the API for GPU image evaluation?
+
+Q: What does eval return?
+A: Most likely, a handle to a GPU image (the access to which should be synchronized)
+Q: a `graal::ImageId`?
+A: maybe a RAII wrapper over that, because otherwise the ownership is not clear.
+Q: should this wrapper also handle CPU-stored images?
+A: let's try that
+
+Q: value or reference semantics?
+A: have to remember how graal does resource aliasing: the resources have to be destroyed as soon as possible, *in the frame being built*

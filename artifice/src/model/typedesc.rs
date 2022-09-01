@@ -325,6 +325,24 @@ impl TypeDesc {
             _ => true,
         }
     }
+
+    /// Returns whether instances of the described type can't be stored in a buffer.
+    pub fn is_opaque(&self) -> bool {
+        match self {
+            TypeDesc::Void => true,
+            TypeDesc::Primitive(_) | TypeDesc::Vector { .. } | TypeDesc::Matrix { .. } => false,
+            TypeDesc::Array { elem_ty, .. } => elem_ty.is_opaque(),
+            TypeDesc::RuntimeArray(_) => true,
+            TypeDesc::Struct(_) => false,
+            TypeDesc::SampledImage(_) => true,
+            TypeDesc::Image(_) => true,
+            TypeDesc::Pointer(_) => true, // ??
+            TypeDesc::Sampler => true,
+            TypeDesc::ShadowSampler => true,
+            TypeDesc::String => true,
+            TypeDesc::Unknown => true,
+        }
+    }
 }
 
 struct TypeDescGlslDisplay<'a>(&'a TypeDesc);

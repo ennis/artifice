@@ -169,6 +169,14 @@ fn std140_vector_layout(prim_ty: PrimitiveType, len: u8) -> Layout {
     }
 }
 
+pub(crate) fn std140_align_member(ty: &TypeDesc, current_offset: &mut u32) -> Result<u32, LayoutError> {
+    let layout = Layout::std140(ty)?;
+    *current_offset = round_up(*current_offset, layout.align);
+    let offset = *current_offset;
+    *current_offset += layout.size;
+    Ok(offset)
+}
+
 /// Computes the layout of a TypeDesc, using std140 rules.
 fn std140_layout(ty: &TypeDesc) -> Result<Layout, LayoutError> {
     match *ty {
