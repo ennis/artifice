@@ -3,6 +3,7 @@ members = [
     "artifice",              # Node, Ops and evaluator
     "artifice-main",         # executable
     "artifice/macros",       # macros
+    "ashley",
     "mlr",                   # the mid-level renderer
     "mlr/macros",            # the mid-level renderer - proc macros
 ]

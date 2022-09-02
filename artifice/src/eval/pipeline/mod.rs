@@ -904,7 +904,8 @@ impl PipelineNode {
                 PipelineNodeKind::Interpolation { ref vars } => {
                     for v in vars.iter() {
                         let ty_glsl = v.ty.display_glsl();
-                        let name = &v.in_;
+                        let vertex_output_name = &v.in_;
+                        let frag_input_name = &v.out;
                         let mode = match v.mode {
                             InterpolationMode::Flat => "flat",
                             InterpolationMode::NoPerspective => "noperspective",
@@ -912,12 +913,12 @@ impl PipelineNode {
                         };
                         writeln!(
                             vertex_outputs,
-                            " layout(location={vertex_output_location}) {mode} out {ty_glsl} {name};"
+                            " layout(location={vertex_output_location}) {mode} out {ty_glsl} {vertex_output_name};"
                         )
                         .unwrap();
                         writeln!(
                             fragment_inputs,
-                            " layout(location={vertex_output_location}) {mode} in {ty_glsl} {name};"
+                            " layout(location={vertex_output_location}) {mode} in {ty_glsl} {frag_input_name};"
                         )
                         .unwrap();
                         vertex_output_location += 1;
@@ -1034,20 +1035,22 @@ mod tests {
         out vec2 uv = fragCoord / screenSize;
         "#;
 
+    const COLOR_FROM_FRAG_COORD: &str = r#"
+        in vec2 fragCoord;
+        out vec4 color = vec4(fragCoord.xy, 0.0, 1.0);
+        "#;
+
     const DITHERING: &str = r#"
-    uniform sampler2D blueNoiseTex;
+    uniform texture2D blueNoiseTex;
     in vec4 color;
     in vec2 fragCoord;
     uniform vec2 screenSize;
-    out vec4 o_color;
     
     vec4 bluenoise(vec2 fc) {
         return texture(blueNoiseTex, fc / textureSize(blueNoiseTex));
     }
     
-    void main() {
-        o_color = bluenoise(fragCoord);
-    }    
+    out vec4 o_color = color + bluenoise(fragCoord);
     "#;
 
     /*
@@ -1072,6 +1075,8 @@ mod tests {
         let prog_1 = Program::new(PROG_1, "prog1", &mut preprocessor).unwrap();
         let prog_2 = Program::new(PROG_2, "prog2", &mut preprocessor).unwrap();
         let dithering = Program::new(DITHERING, "dithering", &mut preprocessor).unwrap();
+        let color_from_frag_coord =
+            Program::new(COLOR_FROM_FRAG_COORD, "color_from_frag_coord", &mut preprocessor).unwrap();
 
         let reg = Region::new(&GLOBAL);
 
@@ -1086,6 +1091,7 @@ mod tests {
         let prog_1_node = {
             let mut builder = ProgramNodeBuilder::new(entry, prog_1);
             builder.bind("position", "position").unwrap();
+            builder.bind_uniform("viewMatrix", "viewMatrix").unwrap();
             builder.bind_output("viewPosition", "viewPosition").unwrap();
             builder.finish().unwrap()
         };
@@ -1106,16 +1112,23 @@ mod tests {
             builder.finish().unwrap()
         };
 
-        let dithering_node = {
-            let mut builder = ProgramNodeBuilder::new(prog_2_node, dithering);
-            builder.bind_uniform("blueNoiseTex", "blueNoiseTex").unwrap();
-            builder.bind("screenSize", "screenSize").unwrap();
-            builder.bind("color", "screenSize").unwrap();
-            builder.bind_output("uv", "uv").unwrap();
+        let color_from_frag_coord_node = {
+            let mut builder = ProgramNodeBuilder::new(prog_2_node, color_from_frag_coord);
+            builder.bind("fragCoord", "fragCoord").unwrap();
+            builder.bind_output("color", "color").unwrap();
             builder.finish().unwrap()
         };
 
-        let shader = prog_2_node.codegen_graphics();
+        let dithering_node = {
+            let mut builder = ProgramNodeBuilder::new(color_from_frag_coord_node, dithering);
+            builder.bind_uniform("blueNoiseTex", "blueNoiseTex").unwrap();
+            builder.bind("screenSize", "screenSize").unwrap();
+            builder.bind("color", "color").unwrap();
+            builder.bind_output("o_color", "color").unwrap();
+            builder.finish().unwrap()
+        };
+
+        let shader = dithering_node.codegen_graphics();
 
         eprintln!("Stats: {:#?}", reg.change());
         eprintln!("====== Vertex: ====== \n {}", shader.vertex_shader);

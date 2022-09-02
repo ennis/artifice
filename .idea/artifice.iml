@@ -21,8 +21,8 @@
       <sourceFolder url="file://$MODULE_DIR$/kyute-iml/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal-spirv/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/graal/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal/examples" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/graal/examples" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal/macros/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal-fx/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/graal-fx/tests" isTestSource="true" />
@@ -84,6 +84,9 @@
       <sourceFolder url="file://$MODULE_DIR$/kyute-text/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kyute-common/macros/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/mlr/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/ashley/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ashley/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ashley/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/pointer-and-bits/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
       <excludeFolder url="file://$MODULE_DIR$/ext/piet/target" />

@@ -206,6 +206,9 @@ Goals:
 * syntax: GLSL inspired
   * could probably translate straight GLSL to our language
 
+* Would a rowan-based parser be useful?
+  * In the long term, why not?
+
 ```
 type FragColor = closure (
         fragment vec2 fragCoord,
@@ -231,5 +234,34 @@ void mix_dither(
     outColor = inColor(fragCoord) * noise; 
     
     mix_dither(fragCoord, blueNoiseTex, out outColor);
+}
+```
+
+
+Q: Rowan or LALRPOP?
+A: The most important thing is the AST (in-memory representation), which is independent of the language. Can think of it as bytecode.
+Must be compact, easy to compose, with utilities to extract shader interfaces from it.
+
+Does something like that already exists?
+
+
+## Alternative: supercharge "program" representations
+* rename Program -> Function
+* compose and create programs
+ 
+```
+fn test()
+{
+    let t_frag_coord = Term::new("fragCoord");
+    
+    // program: fn(params, vec2 fragCoord) -> vec4
+    // expr: vec4
+    let mut expr = program
+        .bind(Term::constant(4.0))
+        .bind(
+    
+    let mut program = Program::new(vec![t_frag_coord]);
+    
+    
 }
 ```
