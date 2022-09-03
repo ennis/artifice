@@ -1,0 +1,26 @@
+[package]
+name = "ashley"
+version = "0.1.0"
+authors = ["Alexandre Bléron <alex.bleron@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+lalrpop-util = "0.19.8"
+regex = "1"
+logos = "0.12.1"
+bumpalo = "3.11.0"
+thiserror = "1.0.32"
+strum = { version = "0.24", features = ["derive"] }
+smol_str = "0.1.23"
+glsl-lang = { version = "*", features = ["lexer-v2-full"] }
+lang-util = { version = "*" }
+glsl-lang-pp = { version = "*" }
+indexmap = "1.9.1"
+smallvec = "1.9.0"
+rspirv = "0.11.0"
+codespan-reporting = "0.11.1"
+
+[dev-dependencies]
+notify = "5.0.0-pre.6"
+anyhow = "1.0.38"
+

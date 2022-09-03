@@ -128,13 +128,21 @@ impl<T> Arena<T> {
         Arena { items: vec![] }
     }
 
-    pub fn add(&mut self, item: T) -> Id<T> {
+    pub fn push(&mut self, item: T) -> Id<T> {
         self.items.push(item);
         unsafe { Id(NonZeroU32::new_unchecked(self.items.len() as u32), PhantomData) }
     }
 
     pub fn last(&self) -> Option<&T> {
         self.items.last()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
+        self.items.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
     }
 }
 
@@ -390,6 +398,11 @@ pub enum TypeDesc {
     ShadowSampler,
     /// Strings.
     String,
+    /// Function
+    Function {
+        return_type: Id<TypeDesc>,
+        arguments: Vec<Id<TypeDesc>>,
+    },
     Unknown,
 }
 
@@ -516,6 +529,13 @@ impl TypeDesc {
         }
     }
 
+    pub fn function_return_type(&self) -> Id<TypeDesc> {
+        match *self {
+            TypeDesc::Function { return_type, .. } => return_type,
+            _ => panic!("not a function type"),
+        }
+    }
+
     /*/// Returns whether instances of the described type can't be stored in a buffer.
     pub fn is_opaque(&self) -> bool {
         match self {
@@ -610,7 +630,8 @@ impl TypeDesc {
 
 #[derive(Debug)]
 pub struct Function {
-    pub return_type: Id<TypeDesc>,
+    //pub return_type: Id<TypeDesc>,
+    pub function_type: Id<TypeDesc>,
     pub exprs: Arena<Expr>,
     pub types: Vec<Option<Id<TypeDesc>>>,
 }
@@ -672,19 +693,35 @@ pub enum Expr {
     Not {
         expr: Id<Expr>,
     },
-    Add {
+    FAdd {
         left: Id<Expr>,
         right: Id<Expr>,
     },
-    Sub {
+    FSub {
         left: Id<Expr>,
         right: Id<Expr>,
     },
-    Mul {
+    FMul {
         left: Id<Expr>,
         right: Id<Expr>,
     },
-    Div {
+    FDiv {
+        left: Id<Expr>,
+        right: Id<Expr>,
+    },
+    IAdd {
+        left: Id<Expr>,
+        right: Id<Expr>,
+    },
+    ISub {
+        left: Id<Expr>,
+        right: Id<Expr>,
+    },
+    IMul {
+        left: Id<Expr>,
+        right: Id<Expr>,
+    },
+    IDiv {
         left: Id<Expr>,
         right: Id<Expr>,
     },
@@ -775,6 +812,7 @@ pub enum Expr {
     Noop,
     Return(Option<Id<Expr>>),
     Discard,
+    EndFunction,
 }
 
 #[derive(Debug)]
@@ -866,6 +904,21 @@ impl Module {
             sampler_type,
             shadow_sampler_type,
         }
+    }
+
+    pub fn is_pointer_type(&self, ty: Id<TypeDesc>) -> Option<Id<TypeDesc>> {
+        match self.types[ty] {
+            TypeDesc::Pointer(elem_ty) => Some(elem_ty),
+            _ => None,
+        }
+    }
+
+    pub fn is_float_scalar_or_vector(&self, ty: Id<TypeDesc>) -> bool {
+        ty == self.f32_type || ty == self.f32x2_type || ty == self.f32x3_type || ty == self.f32x4_type
+    }
+
+    pub fn is_integer_scalar_or_vector(&self, ty: Id<TypeDesc>) -> bool {
+        ty == self.i32_type || ty == self.i32x2_type || ty == self.i32x3_type || ty == self.i32x4_type
     }
 
     pub fn build_function(&mut self, name: impl Into<SmolStr>) -> FunctionBuilder {
@@ -989,12 +1042,34 @@ pub struct FunctionBuilder<'module> {
 // *
 
 impl<'module> FunctionBuilder<'module> {
-    pub fn finish(self) -> Id<Function> {
+    pub fn finish(mut self) -> Id<Function> {
+        self.emit(Expr::EndFunction);
         let module = self.module;
-        module.functions.add(Function {
+        let arg_count = self
+            .exprs
+            .items
+            .iter()
+            .position(|expr| !matches!(expr, Expr::Argument { .. }))
+            .unwrap();
+
+        // build function type
+        let function_type = TypeDesc::Function {
+            return_type: self.return_type,
+            arguments: self.exprs.items[0..arg_count]
+                .iter()
+                .map(|arg| match *arg {
+                    Expr::Argument { ty, .. } => ty,
+                    _ => unreachable!(),
+                })
+                .collect(),
+        };
+
+        let function_type = module.types.add(function_type);
+
+        module.functions.push(Function {
+            function_type,
             exprs: self.exprs,
             types: self.types,
-            return_type: self.return_type,
         })
     }
 
@@ -1005,7 +1080,7 @@ impl<'module> FunctionBuilder<'module> {
             }
         }
 
-        self.exprs.add(Expr::Argument {
+        self.exprs.push(Expr::Argument {
             output: false,
             name: name.into(),
             ty,
@@ -1019,7 +1094,7 @@ impl<'module> FunctionBuilder<'module> {
             }
         }
 
-        self.exprs.add(Expr::Argument {
+        self.exprs.push(Expr::Argument {
             output: true,
             name: name.into(),
             // FIXME should be a pointer type
@@ -1028,7 +1103,7 @@ impl<'module> FunctionBuilder<'module> {
     }
 
     pub fn emit(&mut self, expr: Expr) -> Id<Expr> {
-        self.exprs.add(expr)
+        self.exprs.push(expr)
     }
 
     pub fn const_one(&mut self, ty: Id<TypeDesc>) -> Id<Expr> {
@@ -1041,91 +1116,111 @@ impl<'module> FunctionBuilder<'module> {
         }
     }
 
-    pub fn add(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Add { left, right })
+    pub fn error(&mut self) -> Id<Expr> {
+        self.exprs.push(Expr::Error)
     }
 
-    pub fn sub(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Sub { left, right })
+    pub fn fadd(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::FAdd { left, right })
     }
 
-    pub fn mul(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Mul { left, right })
+    pub fn fsub(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::FSub { left, right })
     }
 
-    pub fn div(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Div { left, right })
+    pub fn fmul(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::FMul { left, right })
+    }
+
+    pub fn fdiv(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::FDiv { left, right })
+    }
+
+    pub fn iadd(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::IAdd { left, right })
+    }
+
+    pub fn isub(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::ISub { left, right })
+    }
+
+    pub fn imul(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::IMul { left, right })
+    }
+
+    pub fn idiv(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::IDiv { left, right })
     }
 
     pub fn mod_(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Mod { left, right })
+        self.exprs.push(Expr::Mod { left, right })
     }
 
     pub fn eq(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Eq { left, right })
+        self.exprs.push(Expr::Eq { left, right })
     }
 
     pub fn ne(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Ne { left, right })
+        self.exprs.push(Expr::Ne { left, right })
     }
 
     pub fn gt(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Gt { left, right })
+        self.exprs.push(Expr::Gt { left, right })
     }
 
     pub fn ge(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Ge { left, right })
+        self.exprs.push(Expr::Ge { left, right })
     }
 
     pub fn lt(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Lt { left, right })
+        self.exprs.push(Expr::Lt { left, right })
     }
 
     pub fn le(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Le { left, right })
+        self.exprs.push(Expr::Le { left, right })
     }
 
     pub fn or(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Or { left, right })
+        self.exprs.push(Expr::Or { left, right })
     }
 
     pub fn and(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::And { left, right })
+        self.exprs.push(Expr::And { left, right })
     }
 
     pub fn bit_or(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::BitOr { left, right })
+        self.exprs.push(Expr::BitOr { left, right })
     }
 
     pub fn bit_and(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::BitAnd { left, right })
+        self.exprs.push(Expr::BitAnd { left, right })
     }
 
     pub fn bit_xor(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::BitXor { left, right })
+        self.exprs.push(Expr::BitXor { left, right })
     }
 
     pub fn shl(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Shl { left, right })
+        self.exprs.push(Expr::Shl { left, right })
     }
 
     pub fn shr(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Shr { left, right })
+        self.exprs.push(Expr::Shr { left, right })
     }
 
     pub fn not(&mut self, expr: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::Not { expr })
+        self.exprs.push(Expr::Not { expr })
     }
 
     pub fn return_(&mut self, expr: Option<Id<Expr>>) -> Id<Expr> {
-        self.exprs.add(Expr::Return(expr))
+        self.exprs.push(Expr::Return(expr))
     }
 
     pub fn discard(&mut self) -> Id<Expr> {
-        self.exprs.add(Expr::Discard)
+        self.exprs.push(Expr::Discard)
     }
 
-    pub fn increment(&mut self, place: Id<Expr>) -> Id<Expr> {
+    /*pub fn f_increment(&mut self, place: Id<Expr>) -> Id<Expr> {
         let loaded = self.load(place);
         let ty = self.resolve_type(loaded);
         let one = self.const_one(ty);
@@ -1134,7 +1229,7 @@ impl<'module> FunctionBuilder<'module> {
         v
     }
 
-    pub fn decrement(&mut self, place: Id<Expr>) -> Id<Expr> {
+    pub fn f_decrement(&mut self, place: Id<Expr>) -> Id<Expr> {
         let loaded = self.load(place);
         let ty = self.resolve_type(loaded);
         let one = self.const_one(ty);
@@ -1143,55 +1238,55 @@ impl<'module> FunctionBuilder<'module> {
         v
     }
 
-    pub fn post_increment(&mut self, place: Id<Expr>) -> Id<Expr> {
+    pub fn f_post_increment(&mut self, place: Id<Expr>) -> Id<Expr> {
         let loaded = self.load(place);
         let ty = self.resolve_type(loaded);
         let one = self.const_one(ty);
-        let v = self.add(loaded, one);
+        let v = self.fadd(loaded, one);
         self.store(place, v);
         loaded
     }
 
-    pub fn post_decrement(&mut self, place: Id<Expr>) -> Id<Expr> {
+    pub fn f_post_decrement(&mut self, place: Id<Expr>) -> Id<Expr> {
         let loaded = self.load(place);
         let ty = self.resolve_type(loaded);
         let one = self.const_one(ty);
         let v = self.sub(loaded, one);
         self.store(place, v);
         loaded
-    }
+    }*/
 
     //
     pub fn assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
         self.store(place, expr)
     }
 
-    pub fn add_assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
+    /*pub fn fadd_assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
         let a = self.load(place);
         let b = self.add(a, expr);
         self.store(place, b)
     }
 
-    pub fn sub_assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
+    pub fn fsub_assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
         let a = self.load(place);
         let b = self.sub(a, expr);
         self.store(place, b)
     }
 
-    pub fn mul_assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
+    pub fn fmul_assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
         let a = self.load(place);
         let b = self.mul(a, expr);
         self.store(place, b)
     }
 
-    pub fn div_assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
+    pub fn fdiv_assign(&mut self, place: Id<Expr>, expr: Id<Expr>) -> Id<Expr> {
         let a = self.load(place);
         let b = self.div(a, expr);
         self.store(place, b)
-    }
+    }*/
 
     pub fn local_variable(&mut self, name: impl Into<SmolStr>, ty: Id<TypeDesc>, init: Option<Id<Expr>>) -> Id<Expr> {
-        self.exprs.add(Expr::LocalVariable {
+        self.exprs.push(Expr::LocalVariable {
             name: Some(name.into()),
             ty,
             init,
@@ -1199,11 +1294,11 @@ impl<'module> FunctionBuilder<'module> {
     }
 
     pub fn array_index(&mut self, array: Id<Expr>, index: Id<Expr>) -> Id<Expr> {
-        self.exprs.add(Expr::ArrayIndex { index, array })
+        self.exprs.push(Expr::ArrayIndex { index, array })
     }
 
     pub fn construct(&mut self, ty: Id<TypeDesc>, components: &[Id<Expr>]) -> Id<Expr> {
-        self.exprs.add(Expr::CompositeConstruct {
+        self.exprs.push(Expr::CompositeConstruct {
             ty,
             components: components.into(),
         })
@@ -1259,8 +1354,8 @@ impl<'module> FunctionBuilder<'module> {
 
     pub fn loop_(&mut self) -> Id<Expr> {
         // stream sees this, emits a while(true)
-        let id = self.exprs.add(Expr::Noop);
-        let continue_block = self.exprs.add(Expr::Label);
+        let id = self.exprs.push(Expr::Noop);
+        let continue_block = self.exprs.push(Expr::Label);
         self.control_flow_stack.push(ControlFlow::Loop { id, continue_block });
         id
     }
@@ -1269,7 +1364,7 @@ impl<'module> FunctionBuilder<'module> {
         for control_flow in self.control_flow_stack.iter().rev() {
             match *control_flow {
                 ControlFlow::Loop { id, .. } => {
-                    return self.exprs.add(Expr::Continue(id));
+                    return self.exprs.push(Expr::Continue(id));
                 }
                 _ => {}
             }
@@ -1281,7 +1376,7 @@ impl<'module> FunctionBuilder<'module> {
         for control_flow in self.control_flow_stack.iter().rev() {
             match *control_flow {
                 ControlFlow::Loop { id, .. } => {
-                    return self.exprs.add(Expr::Merge(id));
+                    return self.exprs.push(Expr::Merge(id));
                 }
                 _ => {}
             }
@@ -1293,8 +1388,8 @@ impl<'module> FunctionBuilder<'module> {
         let control_flow = self.control_flow_stack.pop().unwrap();
         match control_flow {
             ControlFlow::Loop { id, continue_block } => {
-                self.exprs.add(Expr::Continue(id));
-                let merge_label = self.exprs.add(Expr::Label);
+                self.exprs.push(Expr::Continue(id));
+                let merge_label = self.exprs.push(Expr::Label);
                 self.exprs[id] = Expr::Loop {
                     merge: merge_label,
                     body: continue_block,
@@ -1307,8 +1402,8 @@ impl<'module> FunctionBuilder<'module> {
     }
 
     pub fn if_(&mut self, condition: Id<Expr>) -> Id<Expr> {
-        let id = self.exprs.add(Expr::Noop);
-        let true_branch = self.exprs.add(Expr::Label);
+        let id = self.exprs.push(Expr::Noop);
+        let true_branch = self.exprs.push(Expr::Label);
         self.control_flow_stack.push(ControlFlow::Selection {
             id,
             true_branch,
@@ -1325,8 +1420,8 @@ impl<'module> FunctionBuilder<'module> {
                 ref mut false_branch,
                 ..
             } => {
-                self.exprs.add(Expr::Merge(id));
-                let false_label = self.exprs.add(Expr::Label);
+                self.exprs.push(Expr::Merge(id));
+                let false_label = self.exprs.push(Expr::Label);
                 *false_branch = Some(false_label);
             }
             _ => {
@@ -1344,8 +1439,8 @@ impl<'module> FunctionBuilder<'module> {
                 true_branch,
                 false_branch,
             } => {
-                self.exprs.add(Expr::Merge(id));
-                let merge_label = self.exprs.add(Expr::Label);
+                self.exprs.push(Expr::Merge(id));
+                let merge_label = self.exprs.push(Expr::Label);
                 self.exprs[id] = Expr::Selection {
                     condition,
                     true_branch,
@@ -1387,6 +1482,10 @@ impl<'module> FunctionBuilder<'module> {
         self.emit(Expr::BoolConst(value))
     }
 
+    pub fn set_type(&mut self, expr: Id<Expr>, ty: Id<TypeDesc>) {
+        self.types[expr.index()] = Some(ty);
+    }
+
     pub fn resolve_type(&mut self, expr: Id<Expr>) -> Id<TypeDesc> {
         if self.exprs.items.len() > self.types.len() {
             self.types.resize(self.exprs.items.len(), None);
@@ -1419,21 +1518,20 @@ impl<'module> FunctionBuilder<'module> {
                 }
                 Expr::LocalVariable { ty, .. } => ty,
                 Expr::Store { .. } => self.module.void_type,
-                Expr::Apply { func, .. } => self.module.functions[func].return_type,
+                Expr::Apply { func, .. } => {
+                    self.module.types[self.module.functions[func].function_type].function_return_type()
+                }
                 Expr::Minus { expr } => self.resolve_type(expr),
                 Expr::Not { expr } => self.resolve_type(expr),
-                Expr::Add { left, right } => {
-                    todo!()
-                }
-                Expr::Sub { left, right } => {
-                    todo!()
-                }
-                Expr::Mul { left, right } => {
-                    todo!()
-                }
-                Expr::Div { left, right } => {
-                    todo!()
-                }
+                // TODO
+                Expr::FAdd { left, right } => self.resolve_type(left),
+                Expr::FSub { left, right } => self.resolve_type(left),
+                Expr::FMul { left, right } => self.resolve_type(left),
+                Expr::FDiv { left, right } => self.resolve_type(left),
+                Expr::IAdd { left, right } => self.resolve_type(left),
+                Expr::ISub { left, right } => self.resolve_type(left),
+                Expr::IMul { left, right } => self.resolve_type(left),
+                Expr::IDiv { left, right } => self.resolve_type(left),
                 Expr::ArrayIndex { array, .. } => {
                     let ty_array = self.resolve_type(array);
                     match self.module.types[ty_array] {
@@ -1503,6 +1601,7 @@ impl<'module> FunctionBuilder<'module> {
                 Expr::CompositeConstruct { .. } => {
                     todo!()
                 }
+                Expr::EndFunction => self.module.error_type,
             };
             self.types[expr.index()] = Some(result);
             result

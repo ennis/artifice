@@ -265,3 +265,24 @@ fn test()
     
 }
 ```
+
+## Is it even worth to emit GLSL anymore?
+We can probably emit SPIR-V directly.
+
+The workflow becomes:
+- parse GLSL (or anything else, really) into ashley AST
+- combine ashley AST from different sources
+- dump SPIR-V + shader resource interface from the AST
+
+Possible unknowns:
+* emitting SPIR-V headers
+  * types: OK (we already know how to parse them, so dumping them from a TypeDesc should be straightforward)
+  * control flow: dunno
+  * phi nodes? don't generate them, maybe use spirv-opt (see Local Store/Load Elimination - Multiple Store) 
+* closure types
+  * not a priority?
+  * not supported directly in GLSL
+
+Advantages:
+* can combine programs from multiple sources, in any language
+* 

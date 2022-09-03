@@ -4,14 +4,20 @@ use crate::{
     ast,
     ast::{Id, TypeDesc},
 };
+use codespan_reporting::{
+    diagnostic::{Diagnostic, Label, LabelStyle, Severity},
+    files::Error,
+    term,
+    term::termcolor::{ColorChoice, StandardStream, WriteColor},
+};
 use glsl_lang as glsl;
 use glsl_lang::{
     ast::{
         ArraySpecifierData, ArraySpecifierDimensionData, AssignmentOpData, BinaryOpData, CompoundStatement,
         ConditionData, DeclarationData, Expr, ExprData, ExternalDeclarationData, ForInitStatementData,
         FunIdentifierData, FunctionDefinition, FunctionParameterDeclarationData, InitDeclaratorList, Initializer,
-        InitializerData, IterationStatementData, JumpStatementData, NodeSpan, SelectionRestStatementData, Statement,
-        StatementData, StorageQualifierData, TranslationUnit, TypeQualifierSpecData, TypeSpecifierData,
+        InitializerData, IterationStatementData, JumpStatementData, Node, NodeSpan, SelectionRestStatementData,
+        Statement, StatementData, StorageQualifierData, TranslationUnit, TypeQualifierSpecData, TypeSpecifierData,
         TypeSpecifierNonArrayData, UnaryOpData,
     },
     lexer::v2_full::fs::{FileSystem, Lexer, PreprocessorExt},
@@ -26,6 +32,8 @@ use glsl_lang_pp::{
     ext_name,
     processor::{fs::Processor, nodes::ExtensionBehavior, ProcessorState},
 };
+use indexmap::IndexMap;
+use lang_util::located::FileIdResolver;
 use smallvec::smallvec;
 use smol_str::SmolStr;
 use std::{
@@ -34,6 +42,7 @@ use std::{
     collections::HashMap,
     fmt,
     fmt::Display,
+    ops::Range,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -73,35 +82,46 @@ static mut FILE_ID_MAP: Lazy<FileIdMap> = Lazy::new(|| FileIdMap::new());*/
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
-pub struct Vfs {
-    files: Arc<HashMap<String, String>>,
+struct SourceFile {
+    name: SmolStr,
+    text: String,
+    line_starts: Vec<usize>,
 }
 
-impl Vfs {
+impl SourceFile {
+    fn new(name: SmolStr, text: String) -> SourceFile {
+        let line_starts: Vec<_> = codespan_reporting::files::line_starts(&text).collect();
+        SourceFile {
+            name,
+            text,
+            line_starts,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SourceFiles {
+    files: Arc<IndexMap<SmolStr, SourceFile>>,
+}
+
+impl SourceFiles {
     /// Creates a new instance.
-    pub fn new() -> Vfs {
-        Vfs {
-            files: Arc::new(HashMap::new()),
+    pub fn new() -> SourceFiles {
+        SourceFiles {
+            files: Arc::new(IndexMap::new()),
         }
     }
 
     /// Registers a file.
-    pub fn register_source(&mut self, id: impl Into<String>, src: impl Into<String>) {
+    pub fn register_source(&mut self, name: impl Into<SmolStr>, src: impl Into<String>) -> usize {
+        let name = name.into();
         Arc::make_mut(&mut self.files)
-            .entry(id.into())
-            .or_insert_with(|| src.into());
-    }
-
-    pub fn dump(&self) {
-        eprintln!("Registered source files: ");
-        for file in self.files.iter() {
-            eprintln!(" - {}", file.0);
-        }
-        eprintln!();
+            .insert_full(name.clone(), SourceFile::new(name.clone(), src.into()))
+            .0
     }
 }
 
-impl FileSystem for Vfs {
+impl<'a> FileSystem for &'a SourceFiles {
     type Error = std::io::Error;
 
     fn canonicalize(&self, path: &Path) -> Result<PathBuf, Self::Error> {
@@ -115,14 +135,196 @@ impl FileSystem for Vfs {
 
     fn read(&self, path: &Path) -> Result<Cow<'_, str>, Self::Error> {
         if let Some(src) = self.files.get(&*path.to_string_lossy()) {
-            Ok(Cow::Borrowed(&*src))
+            Ok(Cow::Borrowed(&src.text))
         } else {
             Err(std::io::Error::new(std::io::ErrorKind::NotFound, "File not found"))
         }
     }
 }
 
-pub type Preprocessor = Processor<Vfs>;
+pub type Preprocessor<'a> = Processor<&'a SourceFiles>;
+
+impl<'a> codespan_reporting::files::Files<'a> for &'a SourceFiles {
+    type FileId = usize;
+    type Name = SmolStr;
+    type Source = &'a str;
+
+    fn name(&'a self, id: usize) -> Result<Self::Name, codespan_reporting::files::Error> {
+        if id < self.files.len() {
+            Ok(self.files[id].name.clone())
+        } else {
+            Err(codespan_reporting::files::Error::FileMissing)
+        }
+    }
+
+    fn source(&'a self, id: usize) -> Result<&'a str, codespan_reporting::files::Error> {
+        if id < self.files.len() {
+            Ok(&self.files[id].text)
+        } else {
+            Err(codespan_reporting::files::Error::FileMissing)
+        }
+    }
+
+    fn line_index(&'a self, id: usize, byte_index: usize) -> Result<usize, codespan_reporting::files::Error> {
+        if id < self.files.len() {
+            let source: &SourceFile = &self.files[id];
+            let line = match source.line_starts.binary_search(&byte_index) {
+                Ok(line) => line,
+                Err(next_line) => next_line - 1,
+            };
+            Ok(line)
+        } else {
+            Err(codespan_reporting::files::Error::FileMissing)
+        }
+    }
+
+    fn line_range(&'a self, id: usize, line_index: usize) -> Result<Range<usize>, codespan_reporting::files::Error> {
+        if id < self.files.len() {
+            let source: &SourceFile = &self.files[id];
+            let line_start = source.line_starts[line_index];
+            let next_line_start = source
+                .line_starts
+                .get(line_index + 1)
+                .cloned()
+                .unwrap_or(source.text.len());
+            Ok(line_start..next_line_start)
+        } else {
+            Err(codespan_reporting::files::Error::FileMissing)
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+struct DiagnosticBuilder<'a, 'b> {
+    sink: &'a mut DiagnosticSink<'b>,
+    diag: Diagnostic<usize>,
+}
+
+fn span_to_range_and_file_index(pp: &Preprocessor, sources: &SourceFiles, span: NodeSpan) -> (Range<usize>, usize) {
+    let start: usize = span.range().start().into();
+    let end: usize = span.range().end().into();
+    // roundabout way of getting our file index
+    // we're doing FileId(glsl_lang) -> file path (name?) -> FileID (ours)
+    // PP's API not super practical here, would prefer to assign file IDs ourselves via the FileSystem trait.
+    let path = pp.resolve(span.source_id());
+    let file_index = if let Some(path) = path {
+        // hmpf...
+        if let Some((index, _, _)) = sources.files.get_full(&*path.to_string_lossy()) {
+            index
+        } else {
+            eprintln!("unknown source file: `{}`", path.display());
+            // generate invalid index
+            sources.files.len() + span.source_id().number() as usize
+        }
+    } else {
+        eprintln!("unknown source ID {}", span.source_id());
+        // generate invalid index
+        sources.files.len() + span.source_id().number() as usize
+    };
+    (start..end, file_index)
+}
+
+impl<'a, 'b> DiagnosticBuilder<'a, 'b> {
+    fn label(
+        mut self,
+        span: Option<NodeSpan>,
+        style: LabelStyle,
+        message: impl Into<String>,
+    ) -> DiagnosticBuilder<'a, 'b> {
+        if let Some(span) = span {
+            let (range, file_id) = span_to_range_and_file_index(self.sink.pp, self.sink.files, span);
+            self.diag.labels.push(Label {
+                style,
+                file_id,
+                range,
+                message: message.into(),
+            });
+        } else {
+            self.diag.notes.push(message.into());
+        }
+        self
+    }
+
+    pub fn primary_label(self, span: Option<NodeSpan>, message: impl Into<String>) -> DiagnosticBuilder<'a, 'b> {
+        self.label(span, LabelStyle::Primary, message)
+    }
+
+    pub fn secondary_label(self, span: Option<NodeSpan>, message: impl Into<String>) -> DiagnosticBuilder<'a, 'b> {
+        self.label(span, LabelStyle::Secondary, message)
+    }
+
+    pub fn note(mut self, message: impl Into<String>) -> DiagnosticBuilder<'a, 'b> {
+        self.diag.notes.push(message.into());
+        self
+    }
+
+    pub fn emit(mut self) {
+        match self.diag.severity {
+            Severity::Bug => {
+                self.sink.bug_count += 1;
+            }
+            Severity::Error => {
+                self.sink.error_count += 1;
+            }
+            Severity::Warning => {
+                self.sink.warning_count += 1;
+            }
+            _ => {}
+        }
+        term::emit(self.sink.writer, &self.sink.config, &self.sink.files, &self.diag).expect("diagnostic output failed")
+    }
+}
+
+pub struct DiagnosticSink<'a> {
+    writer: &'a mut dyn WriteColor,
+    config: codespan_reporting::term::Config,
+    files: &'a SourceFiles,
+    pp: &'a Preprocessor<'a>,
+    bug_count: usize,
+    error_count: usize,
+    warning_count: usize,
+}
+
+impl<'a> DiagnosticSink<'a> {
+    pub fn new(
+        writer: &'a mut dyn WriteColor,
+        config: codespan_reporting::term::Config,
+        files: &'a SourceFiles,
+        pp: &'a Preprocessor<'a>,
+    ) -> DiagnosticSink {
+        DiagnosticSink {
+            writer,
+            config,
+            files,
+            pp,
+            bug_count: 0,
+            error_count: 0,
+            warning_count: 0,
+        }
+    }
+
+    pub fn error<'b>(&'b mut self, message: impl Into<String>) -> DiagnosticBuilder<'b, 'a> {
+        DiagnosticBuilder {
+            sink: self,
+            diag: Diagnostic::new(Severity::Error).with_message(message.into()),
+        }
+    }
+
+    pub fn error_count(&self) -> usize {
+        self.error_count
+    }
+
+    pub fn warning_count(&self) -> usize {
+        self.warning_count
+    }
+
+    pub fn bug_count(&self) -> usize {
+        self.bug_count
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // TypeMap
@@ -608,637 +810,721 @@ fn get_storage_qualifiers(ty: &FullySpecifiedTypeData) -> StorageQualifiers {
 
 type Scope = HashMap<SmolStr, Id<ast::Expr>>;
 
-/// Converter state for a function
-struct FunctionBodyTranslator<'module> {
-    builder: ast::FunctionBuilder<'module>,
-    errors: &'module mut Vec<String>,
-    scopes: Vec<Scope>,
+struct ScopeStack(Vec<Scope>);
+
+impl ScopeStack {
+    fn new(root_scope: Scope) -> ScopeStack {
+        ScopeStack(vec![root_scope])
+    }
+
+    fn enter(&mut self) {
+        let new_scope = self.0.last().unwrap().clone();
+        self.0.push(new_scope);
+    }
+
+    fn exit(&mut self) {
+        self.0.pop().expect("unbalanced scopes");
+    }
+
+    fn find_variable(&self, name: &str) -> Option<Id<ast::Expr>> {
+        self.0.last().unwrap().get(name).cloned()
+    }
 }
 
-impl<'module> FunctionBodyTranslator<'module> {
-    /// Makes a variable visible in the current lexical scope.
-    fn define_variable(&mut self, name: impl Into<SmolStr>, expr: Id<ast::Expr>) {
-        self.scopes.last_mut().unwrap().insert(name.into(), expr);
-    }
-
-    fn find_variable_in_scope(&self, name: &str) -> Option<Id<ast::Expr>> {
-        self.scopes.last().unwrap().get(name).cloned()
-    }
-
-    fn enter_scope(&mut self) {
-        let new_scope = self.scopes.last().unwrap().clone();
-        self.scopes.push(new_scope);
-    }
-
-    fn exit_scope(&mut self) {
-        self.scopes.pop().expect("unbalanced scopes");
-    }
-
-    fn emit_error(&mut self) -> Id<ast::Expr> {
-        self.builder.exprs.add(ast::Expr::Error)
-    }
-
-    //fn translate_function_call()
-
-    fn translate_place(&mut self, expr: &Expr) -> Id<ast::Expr> {
-        match expr.content {
-            ExprData::Variable(ref var) => {
-                let var = self.find_variable_in_scope(var.as_str());
-                if let Some(var) = var {
-                    var
-                } else {
-                    self.emit_error()
-                }
+fn translate_place(
+    b: &mut ast::FunctionBuilder,
+    s: &mut ScopeStack,
+    diag: &mut DiagnosticSink,
+    expr: &Expr,
+) -> Id<ast::Expr> {
+    match expr.content {
+        ExprData::Variable(ref var) => {
+            let span = var.span;
+            let var = s.find_variable(var.as_str());
+            if let Some(var) = var {
+                var
+            } else {
+                //Report::build(ReportKind::Error, self.source_id, glsl_var.span.unwrap().)
+                b.error()
             }
-            ExprData::Bracket(ref array, ref index) => {
-                let array = self.translate_place(array);
-                let index = self.translate_expr(index);
-                self.builder.emit(ast::Expr::AccessIndex { place: array, index })
-            }
-            ExprData::Dot(ref expr, ref ident) => {
-                let base = self.translate_expr(&expr);
-                let ty = self.builder.resolve_type(base);
-                match self.builder.module.types[ty] {
-                    ast::TypeDesc::Struct(ref struct_type) => {
-                        // field access
-                        let field_index = struct_type
-                            .fields
-                            .iter()
-                            .position(|field| field.name.as_str() == ident.as_str());
-                        if let Some(field_index) = field_index {
-                            self.builder.emit(ast::Expr::AccessField {
-                                place: base,
-                                index: field_index as u32,
-                            })
-                        } else {
-                            self.emit_error()
-                        }
-                    }
-                    ast::TypeDesc::Vector { .. } => {
-                        // TODO: swizzle place
-                        todo!("swizzle")
-                    }
-                    _ => self.emit_error(),
-                }
-            }
-            _ => self.emit_error(),
         }
-    }
-
-    // what's easier for GLSL output?
-    // * expressions have no side effects
-    // * all side effects are in statements
-
-    fn translate_expr(&mut self, expr: &Expr) -> Id<ast::Expr> {
-        match expr.content {
-            ExprData::Variable(ref var) => {
-                let var = self.find_variable_in_scope(var.as_str());
-                if let Some(var) = var {
-                    self.builder.load(var)
-                } else {
-                    self.emit_error()
-                }
-            }
-            ExprData::IntConst(v) => self.builder.i32_const(v),
-            ExprData::UIntConst(v) => self.builder.u32_const(v),
-            ExprData::BoolConst(v) => self.builder.bool_const(v),
-            ExprData::FloatConst(v) => self.builder.f32_const(v),
-            ExprData::DoubleConst(v) => self.builder.f64_const(v),
-            ExprData::Unary(ref op, ref expr) => match op.content {
-                UnaryOpData::Inc => {
-                    let place = self.translate_place(expr);
-                    self.builder.increment(place)
-                }
-                UnaryOpData::Dec => {
-                    let place = self.translate_place(expr);
-                    self.builder.decrement(place)
-                }
-                UnaryOpData::Add => todo!(),
-                UnaryOpData::Minus => todo!(),
-                UnaryOpData::Not => todo!(),
-                UnaryOpData::Complement => todo!(),
-            },
-            ExprData::Binary(ref op, ref left, ref right) => {
-                let left = self.translate_expr(left);
-                let right = self.translate_expr(right);
-                match op.content {
-                    BinaryOpData::Or => self.builder.or(left, right),
-                    BinaryOpData::Xor => {
-                        todo!()
+        ExprData::Bracket(ref array, ref index) => {
+            let array = translate_place(b, s, diag, array);
+            let index = translate_expr(b, s, diag, index);
+            b.emit(ast::Expr::AccessIndex { place: array, index })
+        }
+        ExprData::Dot(ref expr, ref ident) => {
+            let base = translate_expr(b, s, diag, expr);
+            let ty = b.resolve_type(base);
+            match b.module.types[ty] {
+                ast::TypeDesc::Struct(ref struct_type) => {
+                    // field access
+                    let field_index = struct_type
+                        .fields
+                        .iter()
+                        .position(|field| field.name.as_str() == ident.as_str());
+                    if let Some(field_index) = field_index {
+                        b.emit(ast::Expr::AccessField {
+                            place: base,
+                            index: field_index as u32,
+                        })
+                    } else {
+                        b.error()
                     }
-                    BinaryOpData::And => self.builder.and(left, right),
-                    BinaryOpData::BitOr => self.builder.bit_or(left, right),
-                    BinaryOpData::BitXor => self.builder.bit_xor(left, right),
-                    BinaryOpData::BitAnd => self.builder.bit_and(left, right),
-                    BinaryOpData::Equal => self.builder.eq(left, right),
-                    BinaryOpData::NonEqual => self.builder.ne(left, right),
-                    BinaryOpData::Lt => self.builder.lt(left, right),
-                    BinaryOpData::Gt => self.builder.gt(left, right),
-                    BinaryOpData::Lte => self.builder.le(left, right),
-                    BinaryOpData::Gte => self.builder.ge(left, right),
-                    BinaryOpData::LShift => self.builder.shl(left, right),
-                    BinaryOpData::RShift => self.builder.shr(left, right),
-                    BinaryOpData::Add => self.builder.add(left, right),
-                    BinaryOpData::Sub => self.builder.sub(left, right),
-                    BinaryOpData::Mult => self.builder.mul(left, right),
-                    BinaryOpData::Div => self.builder.div(left, right),
-                    BinaryOpData::Mod => self.builder.mod_(left, right),
                 }
+                ast::TypeDesc::Vector { .. } => {
+                    // TODO: swizzle place
+                    todo!("swizzle")
+                }
+                _ => b.error(),
             }
-            ExprData::Ternary(_, _, _) => {
+        }
+        _ => b.error(),
+    }
+}
+
+// what's easier for GLSL output?
+// * expressions have no side effects
+// * all side effects are in statements
+
+fn translate_expr(
+    b: &mut ast::FunctionBuilder,
+    s: &mut ScopeStack,
+    diag: &mut DiagnosticSink,
+    expr: &Expr,
+) -> Id<ast::Expr> {
+    let span = expr.span;
+    match expr.content {
+        ExprData::Variable(ref var) => {
+            let var = s.find_variable(var.as_str());
+            if let Some(var) = var {
+                b.load(var)
+            } else {
+                b.error()
+            }
+        }
+        ExprData::IntConst(v) => b.i32_const(v),
+        ExprData::UIntConst(v) => b.u32_const(v),
+        ExprData::BoolConst(v) => b.bool_const(v),
+        ExprData::FloatConst(v) => b.f32_const(v),
+        ExprData::DoubleConst(v) => b.f64_const(v),
+        ExprData::Unary(ref op, ref expr) => match op.content {
+            UnaryOpData::Inc => {
                 todo!()
             }
-            ExprData::Assignment(ref place, ref op, ref expr) => {
-                let place = self.translate_place(place);
-                let expr = self.translate_expr(expr);
-                match op.content {
-                    AssignmentOpData::Equal => self.builder.assign(place, expr),
-                    AssignmentOpData::Mult => self.builder.mul_assign(place, expr),
-                    AssignmentOpData::Div => self.builder.div_assign(place, expr),
-                    AssignmentOpData::Mod => {
-                        todo!()
+            UnaryOpData::Dec => {
+                todo!()
+            }
+            UnaryOpData::Add => todo!(),
+            UnaryOpData::Minus => todo!(),
+            UnaryOpData::Not => todo!(),
+            UnaryOpData::Complement => todo!(),
+        },
+        ExprData::Binary(ref op, ref left, ref right) => {
+            let t_left = translate_expr(b, s, diag, left);
+            let t_right = translate_expr(b, s, diag, right);
+
+            match op.content {
+                BinaryOpData::Add | BinaryOpData::Sub | BinaryOpData::Mult | BinaryOpData::Div => {
+                    let left_type = b.resolve_type(t_left);
+                    let right_type = b.resolve_type(t_right);
+                    if left_type != right_type {
+                        diag.error("type mismatch")
+                            .primary_label(left.span, format!("this is of type {:?}", b.module.types[left_type]))
+                            .primary_label(right.span, format!("this is of type {:?}", b.module.types[right_type]))
+                            .emit();
+                        return b.error();
                     }
-                    AssignmentOpData::Add => self.builder.add_assign(place, expr),
-                    AssignmentOpData::Sub => self.builder.sub_assign(place, expr),
-                    AssignmentOpData::LShift => {
-                        todo!()
-                    }
-                    AssignmentOpData::RShift => {
-                        todo!()
-                    }
-                    AssignmentOpData::And => {
-                        todo!()
-                    }
-                    AssignmentOpData::Xor => {
-                        todo!()
-                    }
-                    AssignmentOpData::Or => {
-                        todo!()
+                    if b.module.is_float_scalar_or_vector(left_type) {
+                        match op.content {
+                            BinaryOpData::Add => b.fadd(t_left, t_right),
+                            BinaryOpData::Sub => b.fsub(t_left, t_right),
+                            BinaryOpData::Mult => b.fmul(t_left, t_right),
+                            BinaryOpData::Div => b.fdiv(t_left, t_right),
+                            _ => unreachable!(),
+                        }
+                    } else if b.module.is_integer_scalar_or_vector(left_type) {
+                        match op.content {
+                            BinaryOpData::Add => b.iadd(t_left, t_right),
+                            BinaryOpData::Sub => b.isub(t_left, t_right),
+                            BinaryOpData::Mult => b.imul(t_left, t_right),
+                            BinaryOpData::Div => b.idiv(t_left, t_right),
+                            _ => unreachable!(),
+                        }
+                    } else {
+                        diag.error("invalid types for arithmetic operation")
+                            .primary_label(left.span, format!("this is of type {:?}", b.module.types[left_type]))
+                            .primary_label(right.span, format!("this is of type {:?}", b.module.types[right_type]))
+                            .emit();
+                        b.error()
                     }
                 }
-            }
-            ExprData::Bracket(ref array, ref index) => {
-                let index = self.translate_expr(index);
-                let array = self.translate_expr(array);
-                self.builder.array_index(array, index)
-            }
-            ExprData::FunCall(ref ident, ref args) => match ident.content {
-                FunIdentifierData::TypeSpecifier(ref type_spec) => {
-                    let ty = type_specifier_to_type_desc(self.builder.module, type_spec, None);
-                    let mut components = vec![];
-                    for expr in args {
-                        let component = self.translate_expr(expr);
-                        components.push(component);
-                    }
-                    self.builder.construct(ty, &components)
-                }
-                FunIdentifierData::Expr(_) => {
+                BinaryOpData::Or => b.or(t_left, t_right),
+                BinaryOpData::Xor => {
                     todo!()
                 }
-            },
-            ExprData::Dot(_, _) => {
-                todo!()
-            }
-            ExprData::PostInc(ref expr) => {
-                let place = self.translate_place(expr);
-                self.builder.post_increment(place)
-            }
-            ExprData::PostDec(ref expr) => {
-                let place = self.translate_place(expr);
-                self.builder.post_increment(place)
-            }
-            ExprData::Comma(_, _) => {
-                todo!()
-            }
-        }
-    }
-
-    fn translate_initializer(&mut self, initializer: &Initializer) -> Id<ast::Expr> {
-        match initializer.content {
-            InitializerData::Simple(ref expr) => self.translate_expr(expr),
-            InitializerData::List(_) => {
-                todo!()
+                BinaryOpData::And => b.and(t_left, t_right),
+                BinaryOpData::BitOr => b.bit_or(t_left, t_right),
+                BinaryOpData::BitXor => b.bit_xor(t_left, t_right),
+                BinaryOpData::BitAnd => b.bit_and(t_left, t_right),
+                BinaryOpData::Equal => b.eq(t_left, t_right),
+                BinaryOpData::NonEqual => b.ne(t_left, t_right),
+                BinaryOpData::Lt => b.lt(t_left, t_right),
+                BinaryOpData::Gt => b.gt(t_left, t_right),
+                BinaryOpData::Lte => b.le(t_left, t_right),
+                BinaryOpData::Gte => b.ge(t_left, t_right),
+                BinaryOpData::LShift => b.shl(t_left, t_right),
+                BinaryOpData::RShift => b.shr(t_left, t_right),
+                BinaryOpData::Mod => b.mod_(t_left, t_right),
             }
         }
-    }
-
-    fn translate_init_declarator_list(&mut self, init_declarator_list: &InitDeclaratorList) {
-        let head = &init_declarator_list.head;
-        let mut constant = false;
-        if let Some(ref qualifier) = head.ty.qualifier {
-            for qual in qualifier.qualifiers.iter() {
-                match qual.content {
-                    TypeQualifierSpecData::Storage(ref storage_qualifier) => match storage_qualifier.content {
-                        StorageQualifierData::Const => {
-                            constant = true;
-                        }
-                        StorageQualifierData::InOut => {}
-                        StorageQualifierData::In => {}
-                        StorageQualifierData::Out => {}
-                        StorageQualifierData::Centroid => {}
-                        StorageQualifierData::Patch => {}
-                        StorageQualifierData::Sample => {}
-                        StorageQualifierData::Uniform => {}
-                        StorageQualifierData::Buffer => {}
-                        StorageQualifierData::Shared => {}
-                        StorageQualifierData::Coherent => {}
-                        StorageQualifierData::Volatile => {}
-                        StorageQualifierData::Restrict => {}
-                        StorageQualifierData::ReadOnly => {}
-                        StorageQualifierData::WriteOnly => {}
-                        StorageQualifierData::Attribute => {}
-                        StorageQualifierData::Varying => {}
-                        StorageQualifierData::Subroutine(_) => {}
-                    },
-                    TypeQualifierSpecData::Layout(_) => {}
-                    TypeQualifierSpecData::Precision(_) => {}
-                    TypeQualifierSpecData::Interpolation(_) => {}
-                    TypeQualifierSpecData::Invariant => {}
-                    TypeQualifierSpecData::Precise => {}
+        ExprData::Ternary(_, _, _) => {
+            todo!()
+        }
+        ExprData::Assignment(ref place, ref op, ref expr) => {
+            let t_place = translate_place(b, s, diag, place);
+            let t_expr = translate_expr(b, s, diag, expr);
+            match op.content {
+                AssignmentOpData::Mult | AssignmentOpData::Div | AssignmentOpData::Add | AssignmentOpData::Sub => {
+                    let place_type = b.resolve_type(t_place);
+                    let left_type = if let Some(elem_type) = b.module.is_pointer_type(place_type) {
+                        elem_type
+                    } else {
+                        b.module.error_type
+                    };
+                    let right_type = b.resolve_type(t_expr);
+                    if left_type != right_type {
+                        diag.error("type mismatch")
+                            .primary_label(place.span, format!("this is of type {:?}", b.module.types[left_type]))
+                            .primary_label(expr.span, format!("this is of type {:?}", b.module.types[right_type]))
+                            .emit();
+                        return b.error();
+                    }
+                    if b.module.is_float_scalar_or_vector(left_type) {
+                        let val = b.load(t_place);
+                        let result = match op.content {
+                            AssignmentOpData::Add => b.fadd(val, t_expr),
+                            AssignmentOpData::Sub => b.fsub(val, t_expr),
+                            AssignmentOpData::Mult => b.fmul(val, t_expr),
+                            AssignmentOpData::Div => b.fdiv(val, t_expr),
+                            _ => unreachable!(),
+                        };
+                        b.store(t_place, result);
+                        result
+                    } else if b.module.is_integer_scalar_or_vector(left_type) {
+                        let val = b.load(t_place);
+                        let result = match op.content {
+                            AssignmentOpData::Add => b.iadd(val, t_expr),
+                            AssignmentOpData::Sub => b.isub(val, t_expr),
+                            AssignmentOpData::Mult => b.imul(val, t_expr),
+                            AssignmentOpData::Div => b.idiv(val, t_expr),
+                            _ => unreachable!(),
+                        };
+                        b.store(t_place, result);
+                        result
+                    } else {
+                        diag.error("invalid types for arithmetic operation")
+                            .primary_label(place.span, format!("this is of type {:?}", b.module.types[left_type]))
+                            .primary_label(expr.span, format!("this is of type {:?}", b.module.types[right_type]))
+                            .emit();
+                        b.error()
+                    }
+                }
+                AssignmentOpData::Equal => b.assign(t_place, t_expr),
+                AssignmentOpData::Mod => {
+                    todo!()
+                }
+                AssignmentOpData::LShift => {
+                    todo!()
+                }
+                AssignmentOpData::RShift => {
+                    todo!()
+                }
+                AssignmentOpData::And => {
+                    todo!()
+                }
+                AssignmentOpData::Xor => {
+                    todo!()
+                }
+                AssignmentOpData::Or => {
+                    todo!()
                 }
             }
         }
+        ExprData::Bracket(ref array, ref index) => {
+            let index = translate_expr(b, s, diag, index);
+            let array = translate_expr(b, s, diag, array);
+            b.array_index(array, index)
+        }
+        ExprData::FunCall(ref ident, ref args) => match ident.content {
+            FunIdentifierData::TypeSpecifier(ref type_spec) => {
+                let ty = type_specifier_to_type_desc(b.module, type_spec, None);
+                let mut components = vec![];
+                for expr in args {
+                    let component = translate_expr(b, s, diag, expr);
+                    components.push(component);
+                }
+                b.construct(ty, &components)
+            }
+            FunIdentifierData::Expr(_) => {
+                todo!()
+            }
+        },
+        ExprData::Dot(_, _) => {
+            todo!()
+        }
+        ExprData::PostInc(ref expr) => {
+            todo!()
+            /*let place = translate_place(expr);
+            let place_type = builder.resolve_type(place);
+            let left_type = if let Some(elem_type) = builder.module.is_pointer_type(place_type) {
+                elem_type
+            } else {
+                builder.module.error_type
+            };
 
-        let ty = type_specifier_to_type_desc(
-            &mut self.builder.module,
-            &head.ty.ty.content,
-            head.array_specifier.as_deref(),
-        );
+            builder.post_increment(place)*/
+        }
+        ExprData::PostDec(ref expr) => {
+            todo!()
+            //let place = translate_place(expr);
+            //builder.post_increment(place)
+        }
+        ExprData::Comma(_, _) => {
+            todo!()
+        }
+    }
+}
 
-        if let Some(ref name) = head.name {
-            let init = if let Some(ref initializer) = head.initializer {
-                Some(self.translate_initializer(initializer))
+fn translate_initializer(
+    b: &mut ast::FunctionBuilder,
+    s: &mut ScopeStack,
+    diag: &mut DiagnosticSink,
+    initializer: &Initializer,
+) -> Id<ast::Expr> {
+    match initializer.content {
+        InitializerData::Simple(ref expr) => translate_expr(b, s, diag, expr),
+        InitializerData::List(_) => {
+            todo!()
+        }
+    }
+}
+
+fn translate_init_declarator_list(
+    b: &mut ast::FunctionBuilder,
+    s: &mut ScopeStack,
+    diag: &mut DiagnosticSink,
+    init_declarator_list: &InitDeclaratorList,
+) {
+    let head = &init_declarator_list.head;
+    let mut constant = false;
+    if let Some(ref qualifier) = head.ty.qualifier {
+        for qual in qualifier.qualifiers.iter() {
+            match qual.content {
+                TypeQualifierSpecData::Storage(ref storage_qualifier) => match storage_qualifier.content {
+                    StorageQualifierData::Const => {
+                        constant = true;
+                    }
+                    StorageQualifierData::InOut => {}
+                    StorageQualifierData::In => {}
+                    StorageQualifierData::Out => {}
+                    StorageQualifierData::Centroid => {}
+                    StorageQualifierData::Patch => {}
+                    StorageQualifierData::Sample => {}
+                    StorageQualifierData::Uniform => {}
+                    StorageQualifierData::Buffer => {}
+                    StorageQualifierData::Shared => {}
+                    StorageQualifierData::Coherent => {}
+                    StorageQualifierData::Volatile => {}
+                    StorageQualifierData::Restrict => {}
+                    StorageQualifierData::ReadOnly => {}
+                    StorageQualifierData::WriteOnly => {}
+                    StorageQualifierData::Attribute => {}
+                    StorageQualifierData::Varying => {}
+                    StorageQualifierData::Subroutine(_) => {}
+                },
+                TypeQualifierSpecData::Layout(_) => {}
+                TypeQualifierSpecData::Precision(_) => {}
+                TypeQualifierSpecData::Interpolation(_) => {}
+                TypeQualifierSpecData::Invariant => {}
+                TypeQualifierSpecData::Precise => {}
+            }
+        }
+    }
+
+    let ty = type_specifier_to_type_desc(&mut b.module, &head.ty.ty.content, head.array_specifier.as_deref());
+
+    if let Some(ref name) = head.name {
+        let init = if let Some(ref initializer) = head.initializer {
+            Some(translate_initializer(b, s, diag, initializer))
+        } else {
+            None
+        };
+        b.emit(ast::Expr::LocalVariable {
+            name: Some(name.as_str().into()),
+            ty,
+            init,
+        });
+
+        for tail_decl in init_declarator_list.tail.iter() {
+            let init = if let Some(ref initializer) = tail_decl.initializer {
+                Some(translate_initializer(b, s, diag, initializer))
             } else {
                 None
             };
-            self.builder.emit(ast::Expr::LocalVariable {
-                name: Some(name.as_str().into()),
+            b.emit(ast::Expr::LocalVariable {
+                name: Some(tail_decl.ident.ident.as_str().into()),
                 ty,
                 init,
             });
-
-            for tail_decl in init_declarator_list.tail.iter() {
-                let init = if let Some(ref initializer) = tail_decl.initializer {
-                    Some(self.translate_initializer(initializer))
-                } else {
-                    None
-                };
-                self.builder.emit(ast::Expr::LocalVariable {
-                    name: Some(tail_decl.ident.ident.as_str().into()),
-                    ty,
-                    init,
-                });
-            }
         }
     }
+}
 
-    fn translate_statement(&mut self, statement: &Statement) {
-        match statement.content {
-            StatementData::Declaration(ref declaration) => match declaration.content {
-                DeclarationData::FunctionPrototype(_) => {
-                    todo!()
+fn translate_statement(
+    b: &mut ast::FunctionBuilder,
+    s: &mut ScopeStack,
+    diag: &mut DiagnosticSink,
+    statement: &Statement,
+) {
+    match statement.content {
+        StatementData::Declaration(ref declaration) => match declaration.content {
+            DeclarationData::FunctionPrototype(_) => {
+                todo!()
+            }
+            DeclarationData::InitDeclaratorList(ref decl_list) => {
+                translate_init_declarator_list(b, s, diag, decl_list);
+            }
+            DeclarationData::Precision(_, _) => {
+                todo!()
+            }
+            DeclarationData::Block(_) => {
+                todo!()
+            }
+            DeclarationData::Invariant(_) => {
+                todo!()
+            }
+        },
+        StatementData::Expression(ref expr) => {
+            if let Some(ref expr) = expr.0 {
+                translate_expr(b, s, diag, expr);
+            }
+        }
+        StatementData::Selection(ref selection) => {
+            let condition = translate_expr(b, s, diag, &selection.cond);
+            b.if_(condition);
+            match selection.rest.content {
+                SelectionRestStatementData::Statement(ref statement) => {
+                    translate_statement(b, s, diag, statement);
                 }
-                DeclarationData::InitDeclaratorList(ref decl_list) => {
-                    self.translate_init_declarator_list(decl_list);
-                }
-                DeclarationData::Precision(_, _) => {
-                    todo!()
-                }
-                DeclarationData::Block(_) => {
-                    todo!()
-                }
-                DeclarationData::Invariant(_) => {
-                    todo!()
-                }
-            },
-            StatementData::Expression(ref expr) => {
-                if let Some(ref expr) = expr.0 {
-                    self.translate_expr(expr);
+                SelectionRestStatementData::Else(ref then_branch, ref else_branch) => {
+                    translate_statement(b, s, diag, then_branch);
+                    b.else_();
+                    translate_statement(b, s, diag, else_branch);
                 }
             }
-            StatementData::Selection(ref selection) => {
-                let condition = self.translate_expr(&selection.cond);
-                self.builder.if_(condition);
-                match selection.rest.content {
-                    SelectionRestStatementData::Statement(ref statement) => {
-                        self.translate_statement(statement);
+            b.end_if();
+        }
+        StatementData::Switch(_) => {}
+        StatementData::CaseLabel(_) => {}
+        StatementData::Iteration(ref iteration) => match iteration.content {
+            IterationStatementData::While(ref condition, ref body) => {
+                b.loop_();
+                let condition = match condition.content {
+                    ConditionData::Expr(ref expr) => translate_expr(b, s, diag, expr),
+                    ConditionData::Assignment(_, _, _) => {
+                        todo!()
                     }
-                    SelectionRestStatementData::Else(ref then_branch, ref else_branch) => {
-                        self.translate_statement(then_branch);
-                        self.builder.else_();
-                        self.translate_statement(else_branch);
-                    }
-                }
-                self.builder.end_if();
+                };
+                let not_condition = b.not(condition);
+                b.if_(not_condition);
+                b.break_();
+                b.end_if();
+                translate_statement(b, s, diag, body);
+                b.end_loop();
             }
-            StatementData::Switch(_) => {}
-            StatementData::CaseLabel(_) => {}
-            StatementData::Iteration(ref iteration) => match iteration.content {
-                IterationStatementData::While(ref condition, ref body) => {
-                    self.builder.loop_();
+            IterationStatementData::DoWhile(ref body, ref condition) => {
+                b.loop_();
+                translate_statement(b, s, diag, body);
+                let condition = translate_expr(b, s, diag, condition);
+                let not_condition = b.not(condition);
+                b.if_(not_condition);
+                b.break_();
+                b.end_if();
+                b.end_loop();
+            }
+            IterationStatementData::For(ref init, ref rest, ref body) => {
+                match init.content {
+                    ForInitStatementData::Expression(ref expr) => {
+                        if let Some(expr) = expr {
+                            translate_expr(b, s, diag, expr);
+                        }
+                    }
+                    ForInitStatementData::Declaration(ref decl) => match decl.content {
+                        DeclarationData::InitDeclaratorList(ref init_decl_list) => {
+                            translate_init_declarator_list(b, s, diag, init_decl_list);
+                        }
+                        _ => {
+                            panic!("invalid declaration")
+                        }
+                    },
+                };
+
+                b.loop_();
+                if let Some(ref condition) = rest.condition {
                     let condition = match condition.content {
-                        ConditionData::Expr(ref expr) => self.translate_expr(expr),
+                        ConditionData::Expr(ref expr) => translate_expr(b, s, diag, expr),
                         ConditionData::Assignment(_, _, _) => {
                             todo!()
                         }
                     };
-                    let not_condition = self.builder.not(condition);
-                    self.builder.if_(not_condition);
-                    self.builder.break_();
-                    self.builder.end_if();
-                    self.translate_statement(body);
-                    self.builder.end_loop();
+                    let not_condition = b.not(condition);
+                    b.if_(not_condition);
+                    b.break_();
+                    b.end_if();
                 }
-                IterationStatementData::DoWhile(ref body, ref condition) => {
-                    self.builder.loop_();
-                    self.translate_statement(body);
-                    let condition = self.translate_expr(condition);
-                    let not_condition = self.builder.not(condition);
-                    self.builder.if_(not_condition);
-                    self.builder.break_();
-                    self.builder.end_if();
-                    self.builder.end_loop();
+                translate_statement(b, s, diag, body);
+                if let Some(ref post_expr) = rest.post_expr {
+                    translate_expr(b, s, diag, post_expr);
                 }
-                IterationStatementData::For(ref init, ref rest, ref body) => {
-                    match init.content {
-                        ForInitStatementData::Expression(ref expr) => {
-                            if let Some(expr) = expr {
-                                self.translate_expr(expr);
-                            }
-                        }
-                        ForInitStatementData::Declaration(ref decl) => match decl.content {
-                            DeclarationData::InitDeclaratorList(ref init_decl_list) => {
-                                self.translate_init_declarator_list(init_decl_list);
-                            }
+                b.end_loop();
+            }
+        },
+        StatementData::Jump(ref jump) => match jump.content {
+            JumpStatementData::Continue => {
+                b.continue_();
+            }
+            JumpStatementData::Break => {
+                b.break_();
+            }
+            JumpStatementData::Return(ref result) => {
+                let value = if let Some(ref result) = result {
+                    let value = translate_expr(b, s, diag, result);
+                    Some(value)
+                } else {
+                    None
+                };
+                b.return_(value);
+            }
+            JumpStatementData::Discard => {
+                b.discard();
+            }
+        },
+        StatementData::Compound(ref compound_statement) => translate_compound_statement(b, s, diag, compound_statement),
+    }
+}
+
+fn translate_compound_statement(
+    builder: &mut ast::FunctionBuilder,
+    scope: &mut ScopeStack,
+    diag: &mut DiagnosticSink,
+    compound_statement: &CompoundStatement,
+) {
+    for stmt in compound_statement.statement_list.iter() {
+        translate_statement(builder, scope, diag, stmt);
+    }
+}
+
+fn translate_function_definition(
+    m: &mut ast::Module,
+    diag: &mut DiagnosticSink,
+    function_definition: &FunctionDefinition,
+) {
+    let name = function_definition.prototype.name.as_str();
+    let mut function_builder = m.build_function(name);
+    let mut root_scope = Scope::new();
+
+    for param in function_definition.prototype.parameters.iter() {
+        match param.content {
+            FunctionParameterDeclarationData::Named(ref type_qualifier, ref declarator) => {
+                let mut input = false;
+                let mut output = false;
+                if let Some(qual) = type_qualifier {
+                    for qual in qual.qualifiers.iter() {
+                        match qual.content {
+                            TypeQualifierSpecData::Storage(ref storage_qualifier) => match storage_qualifier.content {
+                                StorageQualifierData::InOut => {
+                                    input = true;
+                                    output = true;
+                                }
+                                StorageQualifierData::In => {
+                                    input = true;
+                                }
+                                StorageQualifierData::Out => {
+                                    output = true;
+                                }
+                                _ => {}
+                            },
                             _ => {
-                                panic!("invalid declaration")
-                            }
-                        },
-                    };
-
-                    self.builder.loop_();
-                    if let Some(ref condition) = rest.condition {
-                        let condition = match condition.content {
-                            ConditionData::Expr(ref expr) => self.translate_expr(expr),
-                            ConditionData::Assignment(_, _, _) => {
-                                todo!()
-                            }
-                        };
-                        let not_condition = self.builder.not(condition);
-                        self.builder.if_(not_condition);
-                        self.builder.break_();
-                        self.builder.end_if();
-                    }
-                    self.translate_statement(body);
-                    if let Some(ref post_expr) = rest.post_expr {
-                        self.translate_expr(post_expr);
-                    }
-                    self.builder.end_loop();
-                }
-            },
-            StatementData::Jump(ref jump) => match jump.content {
-                JumpStatementData::Continue => {
-                    self.builder.continue_();
-                }
-                JumpStatementData::Break => {
-                    self.builder.break_();
-                }
-                JumpStatementData::Return(ref result) => {
-                    let value = if let Some(ref result) = result {
-                        let value = self.translate_expr(result);
-                        Some(value)
-                    } else {
-                        None
-                    };
-                    self.builder.return_(value);
-                }
-                JumpStatementData::Discard => {
-                    self.builder.discard();
-                }
-            },
-            StatementData::Compound(ref compound_statement) => self.translate_compound_statement(compound_statement),
-        }
-    }
-
-    fn translate_compound_statement(&mut self, compound_statement: &CompoundStatement) {
-        for stmt in compound_statement.statement_list.iter() {
-            self.translate_statement(stmt);
-        }
-    }
-}
-
-struct GlslTranslator<'a> {
-    errors: Vec<String>,
-    module: &'a mut ast::Module,
-}
-
-impl<'a> GlslTranslator<'a> {
-    fn translate_function_definition(&mut self, function_definition: &FunctionDefinition) {
-        let name = function_definition.prototype.name.as_str();
-        let mut function_builder = self.module.build_function(name);
-        let mut root_scope = Scope::new();
-
-        for param in function_definition.prototype.parameters.iter() {
-            match param.content {
-                FunctionParameterDeclarationData::Named(ref type_qualifier, ref declarator) => {
-                    let mut input = false;
-                    let mut output = false;
-                    if let Some(qual) = type_qualifier {
-                        for qual in qual.qualifiers.iter() {
-                            match qual.content {
-                                TypeQualifierSpecData::Storage(ref storage_qualifier) => {
-                                    match storage_qualifier.content {
-                                        StorageQualifierData::InOut => {
-                                            input = true;
-                                            output = true;
-                                        }
-                                        StorageQualifierData::In => {
-                                            input = true;
-                                        }
-                                        StorageQualifierData::Out => {
-                                            output = true;
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                _ => {
-                                    panic!("unexpected type qualifier")
-                                }
+                                panic!("unexpected type qualifier")
                             }
                         }
                     }
-                    let ty = type_specifier_to_type_desc(
-                        &mut function_builder.module,
-                        &declarator.ty.content,
-                        declarator.ident.array_spec.as_deref(),
-                    );
+                }
+                let ty = type_specifier_to_type_desc(
+                    &mut function_builder.module,
+                    &declarator.ty.content,
+                    declarator.ident.array_spec.as_deref(),
+                );
 
-                    let name = SmolStr::from(declarator.ident.ident.as_str());
-                    let arg = function_builder.argument(name.clone(), ty);
-                    root_scope.insert(name.clone(), arg);
-                }
-                FunctionParameterDeclarationData::Unnamed(_, _) => {
-                    todo!("unnamed function parameters")
-                }
+                let name = SmolStr::from(declarator.ident.ident.as_str());
+                let arg = function_builder.argument(name.clone(), ty);
+                root_scope.insert(name.clone(), arg);
+            }
+            FunctionParameterDeclarationData::Unnamed(_, _) => {
+                todo!("unnamed function parameters")
             }
         }
-
-        let mut translator = FunctionBodyTranslator {
-            builder: function_builder,
-            errors: &mut self.errors,
-            scopes: vec![root_scope],
-        };
-        translator.translate_compound_statement(&function_definition.statement);
-        translator.builder.finish();
     }
 
-    fn translate_translation_unit(&mut self, translation_unit: &TranslationUnit) {
-        // external declarations are converted to shader inputs and outputs
+    let mut scope_stack = ScopeStack::new(root_scope);
+    translate_compound_statement(
+        &mut function_builder,
+        &mut scope_stack,
+        diag,
+        &function_definition.statement,
+    );
+    function_builder.finish();
+}
 
-        //let mut inputs = Vec::new();
-        //let mut outputs = Vec::new();
+fn translate_translation_unit(m: &mut ast::Module, diag: &mut DiagnosticSink, translation_unit: &TranslationUnit) {
+    // external declarations are converted to shader inputs and outputs
 
-        // process external declarations
-        for decl in translation_unit.0.iter() {
-            match decl.content {
-                ExternalDeclarationData::Declaration(ref decl) => {
-                    match decl.content {
-                        DeclarationData::InitDeclaratorList(ref declarator_list) => {
-                            let decl = &declarator_list.content.head;
-                            let span = decl.span.unwrap();
+    //let mut inputs = Vec::new();
+    //let mut outputs = Vec::new();
 
-                            let mut constant = false;
-                            let mut input = false;
-                            let mut output = false;
-                            let mut uniform = false;
+    // process external declarations
+    for decl in translation_unit.0.iter() {
+        match decl.content {
+            ExternalDeclarationData::Declaration(ref decl) => {
+                match decl.content {
+                    DeclarationData::InitDeclaratorList(ref declarator_list) => {
+                        let decl = &declarator_list.content.head;
+                        let span = decl.span.unwrap();
 
-                            if let Some(ref qualifier) = decl.ty.qualifier {
-                                for qual in qualifier.qualifiers.iter() {
-                                    match qual.content {
-                                        TypeQualifierSpecData::Storage(ref storage_qualifier) => {
-                                            match storage_qualifier.content {
-                                                StorageQualifierData::Const => {
-                                                    constant = true;
-                                                }
-                                                StorageQualifierData::InOut => {}
-                                                StorageQualifierData::In => {
-                                                    input = true;
-                                                }
-                                                StorageQualifierData::Out => {
-                                                    output = true;
-                                                }
-                                                StorageQualifierData::Centroid => {}
-                                                StorageQualifierData::Patch => {}
-                                                StorageQualifierData::Sample => {}
-                                                StorageQualifierData::Uniform => {
-                                                    uniform = true;
-                                                }
-                                                StorageQualifierData::Buffer => {}
-                                                StorageQualifierData::Shared => {}
-                                                StorageQualifierData::Coherent => {}
-                                                StorageQualifierData::Volatile => {}
-                                                StorageQualifierData::Restrict => {}
-                                                StorageQualifierData::ReadOnly => {}
-                                                StorageQualifierData::WriteOnly => {}
-                                                StorageQualifierData::Attribute => {}
-                                                StorageQualifierData::Varying => {}
-                                                StorageQualifierData::Subroutine(_) => {}
+                        let mut constant = false;
+                        let mut input = false;
+                        let mut output = false;
+                        let mut uniform = false;
+
+                        if let Some(ref qualifier) = decl.ty.qualifier {
+                            for qual in qualifier.qualifiers.iter() {
+                                match qual.content {
+                                    TypeQualifierSpecData::Storage(ref storage_qualifier) => {
+                                        match storage_qualifier.content {
+                                            StorageQualifierData::Const => {
+                                                constant = true;
                                             }
+                                            StorageQualifierData::InOut => {}
+                                            StorageQualifierData::In => {
+                                                input = true;
+                                            }
+                                            StorageQualifierData::Out => {
+                                                output = true;
+                                            }
+                                            StorageQualifierData::Centroid => {}
+                                            StorageQualifierData::Patch => {}
+                                            StorageQualifierData::Sample => {}
+                                            StorageQualifierData::Uniform => {
+                                                uniform = true;
+                                            }
+                                            StorageQualifierData::Buffer => {}
+                                            StorageQualifierData::Shared => {}
+                                            StorageQualifierData::Coherent => {}
+                                            StorageQualifierData::Volatile => {}
+                                            StorageQualifierData::Restrict => {}
+                                            StorageQualifierData::ReadOnly => {}
+                                            StorageQualifierData::WriteOnly => {}
+                                            StorageQualifierData::Attribute => {}
+                                            StorageQualifierData::Varying => {}
+                                            StorageQualifierData::Subroutine(_) => {}
                                         }
-                                        TypeQualifierSpecData::Layout(_) => {}
-                                        TypeQualifierSpecData::Precision(_) => {}
-                                        TypeQualifierSpecData::Interpolation(_) => {}
-                                        TypeQualifierSpecData::Invariant => {}
-                                        TypeQualifierSpecData::Precise => {}
                                     }
+                                    TypeQualifierSpecData::Layout(_) => {}
+                                    TypeQualifierSpecData::Precision(_) => {}
+                                    TypeQualifierSpecData::Interpolation(_) => {}
+                                    TypeQualifierSpecData::Invariant => {}
+                                    TypeQualifierSpecData::Precise => {}
                                 }
                             }
+                        }
 
-                            let ty = type_specifier_to_type_desc(
-                                &mut self.module,
-                                &decl.ty.ty.content,
-                                decl.array_specifier.as_deref(),
-                            );
+                        let ty = type_specifier_to_type_desc(m, &decl.ty.ty.content, decl.array_specifier.as_deref());
 
-                            let is_interface = uniform || input || output;
+                        let is_interface = uniform || input || output;
 
-                            if let Some(ref name) = decl.name {
-                                /*if uniform || input {
-                                    inputs.push(crate::Variable::new(name.as_str(), ty));
+                        if let Some(ref name) = decl.name {
+                            /*if uniform || input {
+                                inputs.push(crate::Variable::new(name.as_str(), ty));
+                            } else if output {
+                                outputs.push(crate::Variable::new(name.as_str(), ty));
+                            }
+
+                            for tail_decl in declarator_list.tail.iter() {
+                                let ty = type_ctx.type_specifier_to_type_desc(
+                                    &decl.ty.ty.content,
+                                    tail_decl.ident.array_spec.as_deref(),
+                                )?;
+
+                                if uniform || input {
+                                    inputs
+                                        .push(crate::Variable::new(tail_decl.ident.ident.as_str(), ty));
                                 } else if output {
-                                    outputs.push(crate::Variable::new(name.as_str(), ty));
+                                    outputs
+                                        .push(crate::Variable::new(tail_decl.ident.ident.as_str(), ty));
                                 }
-
-                                for tail_decl in declarator_list.tail.iter() {
-                                    let ty = type_ctx.type_specifier_to_type_desc(
-                                        &decl.ty.ty.content,
-                                        tail_decl.ident.array_spec.as_deref(),
-                                    )?;
-
-                                    if uniform || input {
-                                        inputs
-                                            .push(crate::Variable::new(tail_decl.ident.ident.as_str(), ty));
-                                    } else if output {
-                                        outputs
-                                            .push(crate::Variable::new(tail_decl.ident.ident.as_str(), ty));
-                                    }
-                                }*/
-                            }
+                            }*/
                         }
-                        DeclarationData::FunctionPrototype(ref proto) => {
-                            //decl_map.insert(proto.content.name.to_string(), proto.span.unwrap());
-                        }
-                        DeclarationData::Precision(_, _) => {}
-                        DeclarationData::Block(_) => {}
-                        DeclarationData::Invariant(_) => {}
                     }
+                    DeclarationData::FunctionPrototype(ref proto) => {
+                        //decl_map.insert(proto.content.name.to_string(), proto.span.unwrap());
+                    }
+                    DeclarationData::Precision(_, _) => {}
+                    DeclarationData::Block(_) => {}
+                    DeclarationData::Invariant(_) => {}
                 }
-                ExternalDeclarationData::FunctionDefinition(ref def) => {
-                    self.translate_function_definition(def);
-                    /*if def.prototype.name.as_str() == "main" {
-                    } else {
-                    }*/
-                }
-                _ => {}
             }
+            ExternalDeclarationData::FunctionDefinition(ref def) => {
+                translate_function_definition(m, diag, def);
+                /*if def.prototype.name.as_str() == "main" {
+                } else {
+                }*/
+            }
+            _ => {}
         }
-    }
-
-    fn translate_glsl(&mut self, source: &str, source_id: &str, pp: &mut Preprocessor) {
-        // setup preprocessor and construct the lexer input
-        let input_file = pp.open_source(source, "").with_state(
-            ProcessorState::builder()
-                .extension(ext_name!("GL_GOOGLE_include_directive"), ExtensionBehavior::Enable)
-                .finish(),
-        );
-
-        // parse the GLSL into a translation unit
-        let mut translation_unit = TranslationUnit::parse_with_options::<Lexer<Vfs>>(
-            input_file,
-            &ParseOptions {
-                target_vulkan: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        self.translate_translation_unit(&translation_unit.0);
     }
 }
 
 pub fn translate_glsl(
     module: &mut ast::Module,
+    diag_writer: &mut dyn WriteColor,
+    aux_sources: &SourceFiles,
     source: &str,
     source_id: &str,
-    pp: &mut Preprocessor,
-) -> Result<(), Vec<String>> {
-    let mut translator = GlslTranslator { module, errors: vec![] };
-    translator.translate_glsl(source, source_id, pp);
-    if !translator.errors.is_empty() {
-        Err(translator.errors)
-    } else {
-        Ok(())
-    }
+) -> Result<(), ()> {
+    let mut pp = Preprocessor::new_with_fs(&aux_sources);
+    // setup preprocessor and construct the lexer input
+    let input_file = pp.open_source(source, "").with_state(
+        ProcessorState::builder()
+            .extension(ext_name!("GL_GOOGLE_include_directive"), ExtensionBehavior::Enable)
+            .finish(),
+    );
+
+    // parse the GLSL into a translation unit
+    let mut translation_unit = TranslationUnit::parse_with_options::<Lexer<&SourceFiles>>(
+        input_file,
+        &ParseOptions {
+            target_vulkan: true,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+    .0;
+
+    let diag_config = term::Config::default();
+    let mut diag_sink = DiagnosticSink::new(diag_writer, diag_config, &aux_sources, &pp);
+    translate_translation_unit(module, &mut diag_sink, &translation_unit);
+    Ok(())
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1249,8 +1535,9 @@ pub fn translate_glsl(
 mod tests {
     use crate::{
         ast,
-        glsl::{translate_glsl, GlslTranslator, Preprocessor, Vfs},
+        glsl::{translate_glsl, DiagnosticSink, Preprocessor, SourceFiles},
     };
+    use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
     use glsl_lang::{
         lexer::v2_full::fs::{Lexer, PreprocessorExt},
         parse::Parse,
@@ -1297,12 +1584,11 @@ mod tests {
         struct MyStruct { Foo b; };
         uniform buffer MyStruct payloads[];
 
-
-        vec4 f() {
+        vec4 f(vec4 sdf) {
             if (position) {
                 return vec4(4.0, 0.0, 0.0, 1.0);
             } else {
-                return vec4(0.0);
+                return vec4(vec2(1.0, 0.0), mat4(1.0));
             }
         }
 "#;
@@ -1336,13 +1622,13 @@ mod tests {
 
     #[test]
     fn test_glsl_frontend() {
-        let mut vfs = Vfs::new();
-        vfs.register_source("common.glsl", GLSL_COMMON);
-        vfs.register_source("stroke.glsl", STROKE_GLSL);
-        let mut pp = Preprocessor::new_with_fs(vfs);
+        let mut sources = SourceFiles::new();
+        sources.register_source("common.glsl", GLSL_COMMON);
+        sources.register_source("stroke.glsl", STROKE_GLSL);
 
         let mut module = ast::Module::new();
-        translate_glsl(&mut module, GLSL_SOURCE_1, "source_1.glsl", &mut pp).unwrap();
+        let mut diag_writer = StandardStream::stderr(ColorChoice::Always);
+        translate_glsl(&mut module, &mut diag_writer, &sources, GLSL_SOURCE_1, "source_1.glsl").unwrap();
         eprintln!("module: \n{module:#?}");
     }
 
