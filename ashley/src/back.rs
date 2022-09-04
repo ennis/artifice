@@ -119,6 +119,11 @@ impl<'a> SpirvEmitter<'a> {
                     .collect::<Vec<_>>();
                 self.builder.type_function(return_type, arguments)
             }
+            TypeDesc::Error => {
+                // Modules always contain the error type, but as long as it's never referenced it's OK
+                // Just use a dummy type
+                self.builder.type_void()
+            }
         }
     }
 
@@ -141,9 +146,10 @@ impl<'a> SpirvEmitter<'a> {
             let remap = |id: Id<Expr>| -> u32 { map[id.index()] };
 
             let result_id = match *expr {
-                Expr::Argument { ty, output, ref name } => {
-                    let param_type = self.type_result_id(ty);
-                    self.builder.function_parameter(param_type).unwrap()
+                Expr::Argument { index } => {
+                    todo!()
+                    //let param_type = self.type_result_id(ty);
+                    //self.builder.function_parameter(param_type).unwrap()
                 }
                 Expr::AccessField { place, index } => {
                     let place = remap(place);
@@ -174,9 +180,6 @@ impl<'a> SpirvEmitter<'a> {
                     continue;
                 }
                 Expr::Apply { .. } => {
-                    todo!()
-                }
-                Expr::Minus { .. } => {
                     todo!()
                 }
                 Expr::Not { .. } => {
@@ -302,6 +305,15 @@ impl<'a> SpirvEmitter<'a> {
                     todo!()
                 }
                 Expr::EndFunction => break,
+                Expr::FNeg { .. } => {
+                    todo!()
+                }
+                Expr::SNeg { .. } => {
+                    todo!()
+                }
+                Expr::Global { .. } => {
+                    todo!()
+                }
             };
             map[i] = result_id;
         }

@@ -3,15 +3,42 @@ use smallvec::SmallVec;
 use smol_str::SmolStr;
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     fmt,
-    fmt::Formatter,
     hash::{Hash, Hasher},
     marker::PhantomData,
     num::NonZeroU32,
     ops::{Index, IndexMut, Range},
-    sync::{atomic, atomic::AtomicUsize, Arc},
 };
+use thiserror::Error;
+
+// Problem with composing shaders
+// -> shader uniforms are visible to all functions
+// -> but with composition, if the uniform is bound to the output of another shader, must write the result in a global variable
+//    or rewrite all functions to replace the uniform references
+//
+// Solutions:
+// - pass uniforms & inputs as parameters, and build a struct that is passed around to all functions
+// - functions can be defined inside "shaders", which define inputs outputs & uniform variables
+//   accessible to every function defined inside the shader.
+//      - Problem: makes the AST complicated
+//
+// Decision:
+// - build a struct type containing all globals
+//      -> problem: this struct will necessarily end up as a parameter of *every* function because we can't know in advance if a function will use a global variable
+//          -> solution: emit one parameter for each global, replace them with no-op if they are not used
+//              -> problem: possible to call a function for which only a forward declaration is available -> don't know if it needs any global
+//
+//      -> solution: don't do it while parsing the GLSL source
+//          * parse the GLSL source normally
+//          * once the AST is built, rewrite to downgrade all globals to function parameters
+//              Q: how easy is that?
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("name already in use")]
+    NameConflict,
+}
 
 #[repr(transparent)]
 pub struct Id<T>(NonZeroU32, PhantomData<fn() -> T>);
@@ -207,23 +234,26 @@ pub enum PrimitiveType {
 }
 
 impl PrimitiveType {
-    pub fn display_glsl(&self) -> impl fmt::Display {
-        PrimitiveTypeDisplayGlsl(*self)
-    }
-}
-
-struct PrimitiveTypeDisplayGlsl(PrimitiveType);
-
-impl fmt::Display for PrimitiveTypeDisplayGlsl {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0 {
-            PrimitiveType::Int => write!(f, "int"),
-            PrimitiveType::UnsignedInt => write!(f, "uint"),
-            PrimitiveType::Float => write!(f, "float"),
-            PrimitiveType::Double => write!(f, "double"),
-            PrimitiveType::Bool => write!(f, "bool"),
+    pub fn display(&self) -> &'static str {
+        match *self {
+            PrimitiveType::Int => "int",
+            PrimitiveType::UnsignedInt => "uint",
+            PrimitiveType::Float => "float",
+            PrimitiveType::Double => "double",
+            PrimitiveType::Bool => "bool",
         }
     }
+
+    /*// TODO move this out of ast
+    pub fn display_glsl_prefix(&self) -> &'static str {
+        match self.0 {
+            PrimitiveType::Int => "i",
+            PrimitiveType::UnsignedInt => "u",
+            PrimitiveType::Float => "",
+            PrimitiveType::Double => "d",
+            PrimitiveType::Bool => "b",
+        }
+    }*/
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -266,6 +296,31 @@ pub enum ImageDimension {
     Dim2DArray,
 }
 
+impl ImageDimension {
+    pub fn display(&self) -> &'static str {
+        match self {
+            ImageDimension::Dim1D => "1D",
+            ImageDimension::Dim2D => "2D",
+            ImageDimension::Dim3D => "3D",
+            ImageDimension::DimCube => "cube map",
+            ImageDimension::Dim1DArray => "1D array",
+            ImageDimension::Dim2DArray => "2D array",
+        }
+    }
+
+    /*// TODO move this out of ast
+    pub fn display_glsl_image_suffix(&self) -> &'static str {
+        match self {
+            ImageDimension::Dim1D => "1D",
+            ImageDimension::Dim2D => "2D",
+            ImageDimension::Dim3D => "3D",
+            ImageDimension::DimCube => "Cube",
+            ImageDimension::Dim1DArray => "1DArray",
+            ImageDimension::Dim2DArray => "2DArray",
+        }
+    }*/
+}
+
 /// Sampled image type
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct SampledImageType {
@@ -274,6 +329,7 @@ pub struct SampledImageType {
     pub ms: bool,
 }
 
+/*
 impl SampledImageType {
     pub fn display_glsl(&self) -> impl fmt::Display + '_ {
         SampledImageTypeDisplayGlsl(self)
@@ -284,32 +340,18 @@ struct SampledImageTypeDisplayGlsl<'a>(&'a SampledImageType);
 
 impl<'a> fmt::Display for SampledImageTypeDisplayGlsl<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0.sampled_ty {
-            PrimitiveType::Int => write!(f, "i")?,
-            PrimitiveType::UnsignedInt => write!(f, "u")?,
-            PrimitiveType::Double => write!(f, "d")?,
-            PrimitiveType::Bool => write!(f, "b")?,
-            _ => {}
-        }
-
-        write!(f, "texture")?;
-
-        match self.0.dim {
-            ImageDimension::Dim1D => write!(f, "1D")?,
-            ImageDimension::Dim2D => write!(f, "2D")?,
-            ImageDimension::Dim3D => write!(f, "3D")?,
-            ImageDimension::DimCube => write!(f, "Cube")?,
-            ImageDimension::Dim1DArray => write!(f, "1DArray")?,
-            ImageDimension::Dim2DArray => write!(f, "2DArray")?,
-        }
-
+        write!(
+            f,
+            "{}texture{}",
+            self.0.sampled_ty.display_glsl_prefix(),
+            self.0.dim.display_glsl_image_suffix()
+        )?;
         if self.0.ms {
             write!(f, "MS")?
         }
-
         Ok(())
     }
-}
+}*/
 
 /// Unsampled image type
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -319,33 +361,20 @@ pub struct ImageType {
     pub ms: bool,
 }
 
+/*
 struct ImageTypeDisplayGlsl<'a>(&'a ImageType);
 
 impl<'a> fmt::Display for ImageTypeDisplayGlsl<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self.0.element_ty {
-            PrimitiveType::Int => write!(f, "i")?,
-            PrimitiveType::UnsignedInt => write!(f, "u")?,
-            PrimitiveType::Double => write!(f, "d")?,
-            PrimitiveType::Bool => write!(f, "b")?,
-            _ => {}
-        }
-
-        write!(f, "image")?;
-
-        match self.0.dim {
-            ImageDimension::Dim1D => write!(f, "1D")?,
-            ImageDimension::Dim2D => write!(f, "2D")?,
-            ImageDimension::Dim3D => write!(f, "3D")?,
-            ImageDimension::DimCube => write!(f, "Cube")?,
-            ImageDimension::Dim1DArray => write!(f, "1DArray")?,
-            ImageDimension::Dim2DArray => write!(f, "2DArray")?,
-        }
-
+        write!(
+            f,
+            "{}image{}",
+            self.0.element_ty.display_glsl_prefix(),
+            self.0.dim.display_glsl_image_suffix()
+        )?;
         if self.0.ms {
             write!(f, "MS")?
         }
-
         Ok(())
     }
 }
@@ -354,7 +383,7 @@ impl ImageType {
     pub fn display_glsl(&self) -> impl fmt::Display + '_ {
         ImageTypeDisplayGlsl(self)
     }
-}
+}*/
 
 /// Describes the data type of a value.
 ///
@@ -404,6 +433,7 @@ pub enum TypeDesc {
         arguments: Vec<Id<TypeDesc>>,
     },
     Unknown,
+    Error,
 }
 
 impl TypeDesc {
@@ -555,53 +585,71 @@ impl TypeDesc {
     }*/
 }
 
-/*struct TypeDescGlslDisplay<'a>(&'a TypeDesc);
+pub struct TypeDescDisplay<'a> {
+    module: &'a Module,
+    ty: &'a TypeDesc,
+}
 
-impl<'a> fmt::Display for TypeDescGlslDisplay<'a> {
+impl<'a> fmt::Display for TypeDescDisplay<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // most of the impl here was inferred by copilot
-        match self.0 {
+        match *self.ty {
             TypeDesc::Void => {
                 write!(f, "void")
             }
             TypeDesc::Primitive(primitive_ty) => {
-                write!(f, "{}", primitive_ty.display_glsl())
+                write!(f, "{}", primitive_ty.display())
             }
             TypeDesc::Vector { elem_ty, len } => match elem_ty {
-                PrimitiveType::Int => write!(f, "ivec{}", len),
-                PrimitiveType::UnsignedInt => write!(f, "uvec{}", len),
-                PrimitiveType::Float => write!(f, "vec{}", len),
-                PrimitiveType::Double => write!(f, "dvec{}", len),
-                PrimitiveType::Bool => write!(f, "bvec{}", len),
+                PrimitiveType::Int => write!(f, "ivec{len}"),
+                PrimitiveType::UnsignedInt => write!(f, "uvec{len}"),
+                PrimitiveType::Float => write!(f, "vec{len}"),
+                PrimitiveType::Double => write!(f, "dvec{len}"),
+                PrimitiveType::Bool => write!(f, "bvec{len}"),
             },
             TypeDesc::Matrix { elem_ty, rows, columns } => {
                 match elem_ty {
-                    PrimitiveType::Float => write!(f, "mat{}{}", rows, columns),
-                    PrimitiveType::Double => write!(f, "dmat{}{}", rows, columns),
+                    PrimitiveType::Float => write!(f, "mat{rows}{columns}"),
+                    PrimitiveType::Double => write!(f, "dmat{rows}{columns}"),
                     // those are not valid GLSL, but whatever
-                    PrimitiveType::Int => write!(f, "imat{}{}", rows, columns),
-                    PrimitiveType::UnsignedInt => write!(f, "umat{}{}", rows, columns),
-                    PrimitiveType::Bool => write!(f, "bmat{}{}", rows, columns),
+                    PrimitiveType::Int => write!(f, "imat{rows}{columns}"),
+                    PrimitiveType::UnsignedInt => write!(f, "umat{rows}{columns}"),
+                    PrimitiveType::Bool => write!(f, "bmat{rows}{columns}"),
                 }
             }
             TypeDesc::Array { elem_ty, len } => {
-                write!(f, "{}[{}]", elem_ty.display_glsl(), len)
+                let elem_ty = self.module.display_type(elem_ty);
+                write!(f, "{elem_ty}[{len}]")
             }
-            TypeDesc::RuntimeArray(ty) => {
-                write!(f, "{}[]", ty.display_glsl())
+            TypeDesc::RuntimeArray(elem_ty) => {
+                let elem_ty = self.module.display_type(elem_ty);
+                write!(f, "{elem_ty}[]")
             }
-            TypeDesc::Struct(struct_ty) => {
-                write!(f, "{}", struct_ty.display_glsl())
+            TypeDesc::Struct(ref struct_ty) => {
+                write!(f, "struct {}", struct_ty.name)
             }
-            TypeDesc::SampledImage(sampled_image_ty) => {
-                write!(f, "{}", sampled_image_ty.display_glsl())
+            TypeDesc::SampledImage(ref sampled_image_ty) => {
+                write!(
+                    f,
+                    "{}{} {} texture",
+                    if sampled_image_ty.ms { "multisampled " } else { "" },
+                    sampled_image_ty.dim.display(),
+                    sampled_image_ty.sampled_ty.display(),
+                )
             }
-            TypeDesc::Image(image_ty) => {
-                write!(f, "{}", image_ty.display_glsl())
+            TypeDesc::Image(ref image_ty) => {
+                write!(
+                    f,
+                    "{}{} {} image",
+                    if image_ty.ms { "multisampled " } else { "" },
+                    image_ty.dim.display(),
+                    image_ty.element_ty.display(),
+                )
             }
             TypeDesc::Pointer(ptr) => {
                 // not valid GLSL
-                write!(f, "{}*", ptr.display_glsl())
+                let pointee = self.module.display_type(ptr);
+                write!(f, "pointer to {}", pointee)
             }
             TypeDesc::Sampler => {
                 write!(f, "sampler")
@@ -616,21 +664,33 @@ impl<'a> fmt::Display for TypeDescGlslDisplay<'a> {
             TypeDesc::Unknown => {
                 write!(f, "unknown")
             }
+            TypeDesc::Function {
+                return_type,
+                ref arguments,
+            } => {
+                write!(f, "function(")?;
+                for &arg in arguments.iter() {
+                    let arg = self.module.display_type(arg);
+                    write!(f, "{arg}")?;
+                }
+                write!(f, ")")?;
+                if return_type != self.module.void_type {
+                    let return_type = self.module.display_type(return_type);
+                    write!(f, " -> {return_type}")?;
+                }
+                Ok(())
+            }
+            TypeDesc::Error => {
+                write!(f, "(error type)")
+            }
         }
     }
 }
-
-impl TypeDesc {
-    pub fn display_glsl(&self) -> impl fmt::Display + '_ {
-        TypeDescGlslDisplay(self)
-    }
-}*/
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
 pub struct Function {
-    //pub return_type: Id<TypeDesc>,
     pub function_type: Id<TypeDesc>,
     pub exprs: Arena<Expr>,
     pub types: Vec<Option<Id<TypeDesc>>>,
@@ -659,9 +719,10 @@ pub enum Place {
 #[derive(Clone, Debug)]
 pub enum Expr {
     Argument {
-        output: bool,
-        name: SmolStr,
-        ty: Id<TypeDesc>,
+        index: u32,
+    },
+    Global {
+        id: Id<GlobalVariable>,
     },
     AccessField {
         place: Id<Expr>,
@@ -687,12 +748,23 @@ pub enum Expr {
         func: Id<Function>,
         args: Vec<(usize, Expr)>,
     },
-    Minus {
+    /*Minus {
         expr: Id<Expr>,
-    },
+    },*/
     Not {
         expr: Id<Expr>,
     },
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // CONSTANTS
+    I32Const(i32),
+    U32Const(u32),
+    BoolConst(bool),
+    F32Const(f32),
+    F64Const(f64),
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // FP ARITHMETIC INSTRUCTIONS
     FAdd {
         left: Id<Expr>,
         right: Id<Expr>,
@@ -709,6 +781,12 @@ pub enum Expr {
         left: Id<Expr>,
         right: Id<Expr>,
     },
+    FNeg {
+        operand: Id<Expr>,
+    },
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // INT ARITHMETIC INSTRUCTIONS
     IAdd {
         left: Id<Expr>,
         right: Id<Expr>,
@@ -725,23 +803,21 @@ pub enum Expr {
         left: Id<Expr>,
         right: Id<Expr>,
     },
+    SNeg {
+        operand: Id<Expr>,
+    },
     Mod {
         left: Id<Expr>,
         right: Id<Expr>,
     },
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // BIT OPS
     Shl {
         left: Id<Expr>,
         right: Id<Expr>,
     },
     Shr {
-        left: Id<Expr>,
-        right: Id<Expr>,
-    },
-    Or {
-        left: Id<Expr>,
-        right: Id<Expr>,
-    },
-    And {
         left: Id<Expr>,
         right: Id<Expr>,
     },
@@ -757,14 +833,20 @@ pub enum Expr {
         left: Id<Expr>,
         right: Id<Expr>,
     },
-    Eq {
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // LOGICAL OPS
+    Or {
         left: Id<Expr>,
         right: Id<Expr>,
     },
-    Ne {
+    And {
         left: Id<Expr>,
         right: Id<Expr>,
     },
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // RELATIONAL OPS
     Lt {
         left: Id<Expr>,
         right: Id<Expr>,
@@ -781,6 +863,16 @@ pub enum Expr {
         left: Id<Expr>,
         right: Id<Expr>,
     },
+
+    Eq {
+        left: Id<Expr>,
+        right: Id<Expr>,
+    },
+    Ne {
+        left: Id<Expr>,
+        right: Id<Expr>,
+    },
+
     ArrayIndex {
         array: Id<Expr>,
         index: Id<Expr>,
@@ -789,11 +881,7 @@ pub enum Expr {
         ty: Id<TypeDesc>,
         components: SmallVec<[Id<Expr>; 4]>,
     },
-    I32Const(i32),
-    U32Const(u32),
-    BoolConst(bool),
-    F32Const(f32),
-    F64Const(f64),
+
     Error,
     Loop {
         body: Id<Expr>,
@@ -815,13 +903,34 @@ pub enum Expr {
     EndFunction,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct GlobalVariable {
+    pub ty: Id<TypeDesc>,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Constant {
+    pub ty: Id<TypeDesc>,
+}
+
+/// Resolves a global name.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+pub enum NameResolution {
+    GlobalVariable(Id<GlobalVariable>),
+    Constant(Id<Constant>),
+    Function(Id<Function>),
+}
+
 #[derive(Debug)]
 pub struct Module {
     pub types: UniqueArena<TypeDesc>,
     pub user_types: HashMap<SmolStr, Id<TypeDesc>>,
     pub functions: Arena<Function>,
-    pub error_type: Id<TypeDesc>,
+    pub global_variables: Arena<GlobalVariable>,
+    pub constants: Arena<Constant>,
+    pub named_globals: HashMap<SmolStr, NameResolution>,
 
+    pub error_type: Id<TypeDesc>,
     pub never_type: Id<TypeDesc>,
     pub void_type: Id<TypeDesc>,
     pub bool_type: Id<TypeDesc>,
@@ -854,7 +963,7 @@ impl Module {
     pub fn new() -> Module {
         let mut types = UniqueArena::new();
 
-        let error_type = types.add(TypeDesc::Unknown);
+        let error_type = types.add(TypeDesc::Error);
         let never_type = types.add(TypeDesc::Unknown);
         let void_type = types.add(TypeDesc::Void);
         let bool_type = types.add(TypeDesc::Primitive(PrimitiveType::Bool));
@@ -882,6 +991,9 @@ impl Module {
             user_types: Default::default(),
             never_type,
             functions: Arena::new(),
+            global_variables: Arena::new(),
+            constants: Arena::new(),
+            named_globals: Default::default(),
             error_type,
             void_type,
             bool_type,
@@ -906,7 +1018,35 @@ impl Module {
         }
     }
 
-    pub fn is_pointer_type(&self, ty: Id<TypeDesc>) -> Option<Id<TypeDesc>> {
+    pub fn resolve_name(&self, name: &str) -> Option<NameResolution> {
+        self.named_globals.get(name).cloned()
+    }
+
+    pub fn insert_global_variable(
+        &mut self,
+        name: Option<SmolStr>,
+        ty: Id<TypeDesc>,
+    ) -> Result<Id<GlobalVariable>, Error> {
+        if let Some(name) = name {
+            match self.named_globals.entry(name.into()) {
+                Entry::Occupied(_) => Err(Error::NameConflict),
+                Entry::Vacant(entry) => {
+                    let id = self.global_variables.push(GlobalVariable { ty });
+                    entry.insert(NameResolution::GlobalVariable(id));
+                    Ok(id)
+                }
+            }
+        } else {
+            let id = self.global_variables.push(GlobalVariable { ty });
+            Ok(id)
+        }
+    }
+
+    pub fn pointer_type(&mut self, ty: Id<TypeDesc>) -> Id<TypeDesc> {
+        self.types.add(TypeDesc::Pointer(ty))
+    }
+
+    pub fn pointee_type(&self, ty: Id<TypeDesc>) -> Option<Id<TypeDesc>> {
         match self.types[ty] {
             TypeDesc::Pointer(elem_ty) => Some(elem_ty),
             _ => None,
@@ -917,18 +1057,51 @@ impl Module {
         ty == self.f32_type || ty == self.f32x2_type || ty == self.f32x3_type || ty == self.f32x4_type
     }
 
-    pub fn is_integer_scalar_or_vector(&self, ty: Id<TypeDesc>) -> bool {
+    pub fn is_signed_integer_scalar_or_vector(&self, ty: Id<TypeDesc>) -> bool {
         ty == self.i32_type || ty == self.i32x2_type || ty == self.i32x3_type || ty == self.i32x4_type
     }
 
-    pub fn build_function(&mut self, name: impl Into<SmolStr>) -> FunctionBuilder {
-        let return_type = self.void_type;
+    pub fn display_type(&self, id: Id<TypeDesc>) -> TypeDescDisplay {
+        TypeDescDisplay {
+            module: self,
+            ty: &self.types[id],
+        }
+    }
+
+    pub fn build_function(&mut self, name: Option<SmolStr>, ty: Id<TypeDesc>) -> FunctionBuilder {
         FunctionBuilder {
+            name,
+            ty,
             module: self,
             exprs: Arena::new(),
             types: vec![],
             control_flow_stack: vec![],
-            return_type,
+        }
+    }
+
+    fn insert_function(&mut self, name: Option<SmolStr>, function: Function) -> Result<Id<Function>, Error> {
+        if let Some(name) = name {
+            match self.named_globals.entry(name.into()) {
+                Entry::Occupied(_) => Err(Error::NameConflict),
+                Entry::Vacant(entry) => {
+                    let id = self.functions.push(function);
+                    entry.insert(NameResolution::Function(id));
+                    Ok(id)
+                }
+            }
+        } else {
+            let id = self.functions.push(function);
+            Ok(id)
+        }
+    }
+
+    fn function_argument_type(&self, fn_ty: Id<TypeDesc>, index: u32) -> Id<TypeDesc> {
+        match self.types[fn_ty] {
+            TypeDesc::Function { ref arguments, .. } => {
+                assert!((index as usize) < arguments.len());
+                arguments[index as usize]
+            }
+            _ => panic!("expected function type ID"),
         }
     }
 
@@ -1024,7 +1197,8 @@ enum ControlFlow {
 }
 
 pub struct FunctionBuilder<'module> {
-    return_type: Id<TypeDesc>,
+    name: Option<SmolStr>,
+    ty: Id<TypeDesc>,
     pub module: &'module mut Module,
     pub exprs: Arena<Expr>,
     pub types: Vec<Option<Id<TypeDesc>>>,
@@ -1041,69 +1215,32 @@ pub struct FunctionBuilder<'module> {
 // * emit_xxx
 // *
 
+// Ma
+
 impl<'module> FunctionBuilder<'module> {
-    pub fn finish(mut self) -> Id<Function> {
+    pub fn finish(mut self) -> Result<Id<Function>, Error> {
         self.emit(Expr::EndFunction);
         let module = self.module;
-        let arg_count = self
-            .exprs
-            .items
-            .iter()
-            .position(|expr| !matches!(expr, Expr::Argument { .. }))
-            .unwrap();
-
-        // build function type
-        let function_type = TypeDesc::Function {
-            return_type: self.return_type,
-            arguments: self.exprs.items[0..arg_count]
-                .iter()
-                .map(|arg| match *arg {
-                    Expr::Argument { ty, .. } => ty,
-                    _ => unreachable!(),
-                })
-                .collect(),
-        };
-
-        let function_type = module.types.add(function_type);
-
-        module.functions.push(Function {
-            function_type,
-            exprs: self.exprs,
-            types: self.types,
-        })
+        module.insert_function(
+            self.name,
+            Function {
+                function_type: self.ty,
+                exprs: self.exprs,
+                types: self.types,
+            },
+        )
     }
 
-    pub fn argument(&mut self, name: impl Into<SmolStr>, ty: Id<TypeDesc>) -> Id<Expr> {
-        if let Some(expr) = self.exprs.last() {
-            if !matches!(expr, Expr::Argument { .. }) {
-                panic!("cannot add arguments in the current state");
-            }
-        }
-
-        self.exprs.push(Expr::Argument {
-            output: false,
-            name: name.into(),
-            ty,
-        })
-    }
-
-    pub fn output_parameter(&mut self, name: impl Into<SmolStr>, ty: Id<TypeDesc>) -> Id<Expr> {
-        if let Some(expr) = self.exprs.last() {
-            if !matches!(expr, Expr::Argument { .. }) {
-                panic!("cannot add arguments in the current state");
-            }
-        }
-
-        self.exprs.push(Expr::Argument {
-            output: true,
-            name: name.into(),
-            // FIXME should be a pointer type
-            ty,
-        })
+    pub fn argument(&mut self, index: u32) -> Id<Expr> {
+        self.exprs.push(Expr::Argument { index })
     }
 
     pub fn emit(&mut self, expr: Expr) -> Id<Expr> {
         self.exprs.push(expr)
+    }
+
+    pub fn global(&mut self, id: Id<GlobalVariable>) -> Id<Expr> {
+        self.exprs.push(Expr::Global { id })
     }
 
     pub fn const_one(&mut self, ty: Id<TypeDesc>) -> Id<Expr> {
@@ -1119,6 +1256,10 @@ impl<'module> FunctionBuilder<'module> {
     pub fn error(&mut self) -> Id<Expr> {
         self.exprs.push(Expr::Error)
     }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // FP ARITHMETIC INSTRUCTIONS
+    ////////////////////////////////////////////////////////////////////////////////////////////////
 
     pub fn fadd(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
         self.exprs.push(Expr::FAdd { left, right })
@@ -1136,6 +1277,14 @@ impl<'module> FunctionBuilder<'module> {
         self.exprs.push(Expr::FDiv { left, right })
     }
 
+    pub fn fneg(&mut self, operand: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::FNeg { operand })
+    }
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+    // INTEGER ARITHMETIC INSTRUCTIONS
+    ////////////////////////////////////////////////////////////////////////////////////////////////
+
     pub fn iadd(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
         self.exprs.push(Expr::IAdd { left, right })
     }
@@ -1150,6 +1299,10 @@ impl<'module> FunctionBuilder<'module> {
 
     pub fn idiv(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
         self.exprs.push(Expr::IDiv { left, right })
+    }
+
+    pub fn sneg(&mut self, operand: Id<Expr>) -> Id<Expr> {
+        self.exprs.push(Expr::SNeg { operand })
     }
 
     pub fn mod_(&mut self, left: Id<Expr>, right: Id<Expr>) -> Id<Expr> {
@@ -1502,6 +1655,7 @@ impl<'module> FunctionBuilder<'module> {
                     }
                 }
                 Expr::AccessIndex { place, index } => {
+                    // TODO check index
                     let ty_place = self.resolve_type(place);
                     match self.module.types[ty_place] {
                         TypeDesc::Array { elem_ty, .. } => elem_ty,
@@ -1521,17 +1675,18 @@ impl<'module> FunctionBuilder<'module> {
                 Expr::Apply { func, .. } => {
                     self.module.types[self.module.functions[func].function_type].function_return_type()
                 }
-                Expr::Minus { expr } => self.resolve_type(expr),
                 Expr::Not { expr } => self.resolve_type(expr),
                 // TODO
                 Expr::FAdd { left, right } => self.resolve_type(left),
                 Expr::FSub { left, right } => self.resolve_type(left),
                 Expr::FMul { left, right } => self.resolve_type(left),
                 Expr::FDiv { left, right } => self.resolve_type(left),
+                Expr::FNeg { operand } => self.resolve_type(operand),
                 Expr::IAdd { left, right } => self.resolve_type(left),
                 Expr::ISub { left, right } => self.resolve_type(left),
                 Expr::IMul { left, right } => self.resolve_type(left),
                 Expr::IDiv { left, right } => self.resolve_type(left),
+                Expr::SNeg { operand } => self.resolve_type(operand),
                 Expr::ArrayIndex { array, .. } => {
                     let ty_array = self.resolve_type(array);
                     match self.module.types[ty_array] {
@@ -1546,7 +1701,7 @@ impl<'module> FunctionBuilder<'module> {
                 Expr::F32Const(_) => self.module.f32_type,
                 Expr::F64Const(_) => self.module.f64_type,
                 Expr::Error => self.module.error_type,
-                Expr::Argument { ty, .. } => ty,
+                Expr::Argument { index } => self.module.function_argument_type(self.ty, index),
                 Expr::Loop { .. } => self.module.error_type,
                 Expr::Selection { .. } => self.module.error_type,
                 Expr::Merge(_) => self.module.never_type,
@@ -1598,10 +1753,9 @@ impl<'module> FunctionBuilder<'module> {
                 Expr::BitXor { .. } => {
                     todo!()
                 }
-                Expr::CompositeConstruct { .. } => {
-                    todo!()
-                }
+                Expr::CompositeConstruct { ty, .. } => ty,
                 Expr::EndFunction => self.module.error_type,
+                Expr::Global { id } => self.module.global_variables[id].ty,
             };
             self.types[expr.index()] = Some(result);
             result

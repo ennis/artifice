@@ -2,7 +2,7 @@
 //! Parsing of shader programs (GLSL snippets).
 use crate::{
     ast,
-    ast::{Id, TypeDesc},
+    ast::{Constant, Function, GlobalVariable, Id, Module, NameResolution, TypeDesc},
 };
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label, LabelStyle, Severity},
@@ -15,10 +15,10 @@ use glsl_lang::{
     ast::{
         ArraySpecifierData, ArraySpecifierDimensionData, AssignmentOpData, BinaryOpData, CompoundStatement,
         ConditionData, DeclarationData, Expr, ExprData, ExternalDeclarationData, ForInitStatementData,
-        FunIdentifierData, FunctionDefinition, FunctionParameterDeclarationData, InitDeclaratorList, Initializer,
-        InitializerData, IterationStatementData, JumpStatementData, Node, NodeSpan, SelectionRestStatementData,
-        Statement, StatementData, StorageQualifierData, TranslationUnit, TypeQualifierSpecData, TypeSpecifierData,
-        TypeSpecifierNonArrayData, UnaryOpData,
+        FunIdentifierData, FunctionDefinition, FunctionParameterDeclarationData, Identifier, InitDeclaratorList,
+        Initializer, InitializerData, IterationStatementData, JumpStatementData, Node, NodeSpan,
+        SelectionRestStatementData, Statement, StatementData, StorageQualifierData, TranslationUnit,
+        TypeQualifierSpecData, TypeSpecifierData, TypeSpecifierNonArrayData, UnaryOpData,
     },
     lexer::v2_full::fs::{FileSystem, Lexer, PreprocessorExt},
     parse::{Parse, ParseOptions},
@@ -32,14 +32,14 @@ use glsl_lang_pp::{
     ext_name,
     processor::{fs::Processor, nodes::ExtensionBehavior, ProcessorState},
 };
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use lang_util::located::FileIdResolver;
 use smallvec::smallvec;
 use smol_str::SmolStr;
 use std::{
     borrow::Cow,
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt,
     fmt::Display,
     ops::Range,
@@ -112,6 +112,10 @@ impl SourceFiles {
         }
     }
 
+    pub fn file_count(&self) -> usize {
+        self.files.len()
+    }
+
     /// Registers a file.
     pub fn register_source(&mut self, name: impl Into<SmolStr>, src: impl Into<String>) -> usize {
         let name = name.into();
@@ -144,53 +148,66 @@ impl<'a> FileSystem for &'a SourceFiles {
 
 pub type Preprocessor<'a> = Processor<&'a SourceFiles>;
 
-impl<'a> codespan_reporting::files::Files<'a> for &'a SourceFiles {
-    type FileId = usize;
+struct Files<'a> {
+    main_source: &'a SourceFile,
+    other_sources: &'a SourceFiles,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+enum FileOrSourceId {
+    File(usize),
+    Source,
+}
+
+impl<'a> codespan_reporting::files::Files<'a> for Files<'a> {
+    type FileId = FileOrSourceId;
     type Name = SmolStr;
     type Source = &'a str;
 
-    fn name(&'a self, id: usize) -> Result<Self::Name, codespan_reporting::files::Error> {
-        if id < self.files.len() {
-            Ok(self.files[id].name.clone())
-        } else {
-            Err(codespan_reporting::files::Error::FileMissing)
+    fn name(&'a self, id: FileOrSourceId) -> Result<Self::Name, codespan_reporting::files::Error> {
+        match id {
+            FileOrSourceId::Source => Ok(self.main_source.name.clone()),
+            FileOrSourceId::File(index) => Ok(self.other_sources.files[index].name.clone()),
         }
     }
 
-    fn source(&'a self, id: usize) -> Result<&'a str, codespan_reporting::files::Error> {
-        if id < self.files.len() {
-            Ok(&self.files[id].text)
-        } else {
-            Err(codespan_reporting::files::Error::FileMissing)
+    fn source(&'a self, id: FileOrSourceId) -> Result<&'a str, codespan_reporting::files::Error> {
+        match id {
+            FileOrSourceId::Source => Ok(&self.main_source.text),
+            FileOrSourceId::File(index) => Ok(&self.other_sources.files[index].text),
         }
     }
 
-    fn line_index(&'a self, id: usize, byte_index: usize) -> Result<usize, codespan_reporting::files::Error> {
-        if id < self.files.len() {
-            let source: &SourceFile = &self.files[id];
-            let line = match source.line_starts.binary_search(&byte_index) {
-                Ok(line) => line,
-                Err(next_line) => next_line - 1,
-            };
-            Ok(line)
-        } else {
-            Err(codespan_reporting::files::Error::FileMissing)
-        }
+    fn line_index(&'a self, id: FileOrSourceId, byte_index: usize) -> Result<usize, codespan_reporting::files::Error> {
+        let source = match id {
+            FileOrSourceId::Source => self.main_source,
+            FileOrSourceId::File(index) => &self.other_sources.files[index],
+        };
+
+        let line = match source.line_starts.binary_search(&byte_index) {
+            Ok(line) => line,
+            Err(next_line) => next_line - 1,
+        };
+        Ok(line)
     }
 
-    fn line_range(&'a self, id: usize, line_index: usize) -> Result<Range<usize>, codespan_reporting::files::Error> {
-        if id < self.files.len() {
-            let source: &SourceFile = &self.files[id];
-            let line_start = source.line_starts[line_index];
-            let next_line_start = source
-                .line_starts
-                .get(line_index + 1)
-                .cloned()
-                .unwrap_or(source.text.len());
-            Ok(line_start..next_line_start)
-        } else {
-            Err(codespan_reporting::files::Error::FileMissing)
-        }
+    fn line_range(
+        &'a self,
+        id: FileOrSourceId,
+        line_index: usize,
+    ) -> Result<Range<usize>, codespan_reporting::files::Error> {
+        let source = match id {
+            FileOrSourceId::Source => self.main_source,
+            FileOrSourceId::File(index) => &self.other_sources.files[index],
+        };
+
+        let line_start = source.line_starts[line_index];
+        let next_line_start = source
+            .line_starts
+            .get(line_index + 1)
+            .cloned()
+            .unwrap_or(source.text.len());
+        Ok(line_start..next_line_start)
     }
 }
 
@@ -198,12 +215,16 @@ impl<'a> codespan_reporting::files::Files<'a> for &'a SourceFiles {
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct DiagnosticBuilder<'a, 'b> {
+pub struct DiagnosticBuilder<'a, 'b> {
     sink: &'a mut DiagnosticSink<'b>,
-    diag: Diagnostic<usize>,
+    diag: Diagnostic<FileOrSourceId>,
 }
 
-fn span_to_range_and_file_index(pp: &Preprocessor, sources: &SourceFiles, span: NodeSpan) -> (Range<usize>, usize) {
+fn span_to_range_and_file_index(
+    pp: &Preprocessor,
+    sources: &SourceFiles,
+    span: NodeSpan,
+) -> (Range<usize>, FileOrSourceId) {
     let start: usize = span.range().start().into();
     let end: usize = span.range().end().into();
     // roundabout way of getting our file index
@@ -213,16 +234,13 @@ fn span_to_range_and_file_index(pp: &Preprocessor, sources: &SourceFiles, span: 
     let file_index = if let Some(path) = path {
         // hmpf...
         if let Some((index, _, _)) = sources.files.get_full(&*path.to_string_lossy()) {
-            index
+            FileOrSourceId::File(index)
         } else {
             eprintln!("unknown source file: `{}`", path.display());
-            // generate invalid index
-            sources.files.len() + span.source_id().number() as usize
+            FileOrSourceId::Source
         }
     } else {
-        eprintln!("unknown source ID {}", span.source_id());
-        // generate invalid index
-        sources.files.len() + span.source_id().number() as usize
+        FileOrSourceId::Source
     };
     (start..end, file_index)
 }
@@ -274,7 +292,11 @@ impl<'a, 'b> DiagnosticBuilder<'a, 'b> {
             }
             _ => {}
         }
-        term::emit(self.sink.writer, &self.sink.config, &self.sink.files, &self.diag).expect("diagnostic output failed")
+        let files = Files {
+            main_source: self.sink.main_source,
+            other_sources: self.sink.files,
+        };
+        term::emit(self.sink.writer, &self.sink.config, &files, &self.diag).expect("diagnostic output failed")
     }
 }
 
@@ -282,6 +304,7 @@ pub struct DiagnosticSink<'a> {
     writer: &'a mut dyn WriteColor,
     config: codespan_reporting::term::Config,
     files: &'a SourceFiles,
+    main_source: &'a SourceFile,
     pp: &'a Preprocessor<'a>,
     bug_count: usize,
     error_count: usize,
@@ -289,20 +312,29 @@ pub struct DiagnosticSink<'a> {
 }
 
 impl<'a> DiagnosticSink<'a> {
-    pub fn new(
+    fn new(
         writer: &'a mut dyn WriteColor,
         config: codespan_reporting::term::Config,
         files: &'a SourceFiles,
+        main_source: &'a SourceFile,
         pp: &'a Preprocessor<'a>,
     ) -> DiagnosticSink {
         DiagnosticSink {
             writer,
             config,
             files,
+            main_source,
             pp,
             bug_count: 0,
             error_count: 0,
             warning_count: 0,
+        }
+    }
+
+    pub fn bug<'b>(&'b mut self, message: impl Into<String>) -> DiagnosticBuilder<'b, 'a> {
+        DiagnosticBuilder {
+            sink: self,
+            diag: Diagnostic::new(Severity::Bug).with_message(message.into()),
         }
     }
 
@@ -367,6 +399,7 @@ fn apply_array_specifier(
 /// Converts a GLSL type specifier into a `TypeDesc`.
 fn type_specifier_to_type_desc(
     module: &mut ast::Module,
+    diag: &mut DiagnosticSink,
     spec: &TypeSpecifierData,
     array_spec: Option<&ArraySpecifierData>,
 ) -> Id<ast::TypeDesc> {
@@ -664,6 +697,7 @@ fn type_specifier_to_type_desc(
                     let field_name = ident.ident.to_string();
                     let field_ty = type_specifier_to_type_desc(
                         module,
+                        diag,
                         &f.ty.content,
                         ident.content.array_spec.as_ref().map(|spec| &spec.content),
                     );
@@ -697,8 +731,21 @@ fn type_specifier_to_type_desc(
 
             id
         }
-        TypeSpecifierNonArrayData::TypeName(ref name) => module.user_type(name.as_str()),
-        _ => module.error_type,
+        TypeSpecifierNonArrayData::TypeName(ref name) => {
+            let ty = module.user_type(name.as_str());
+            if ty == module.error_type {
+                diag.error("unknown type")
+                    .primary_label(name.span, "unknown type")
+                    .emit()
+            }
+            ty
+        }
+        _ => {
+            diag.bug("unsupported type")
+                .primary_label(spec.ty.span, "unknown type")
+                .emit();
+            module.error_type
+        }
     };
 
     // array specifier attached to the type
@@ -810,24 +857,53 @@ fn get_storage_qualifiers(ty: &FullySpecifiedTypeData) -> StorageQualifiers {
 
 type Scope = HashMap<SmolStr, Id<ast::Expr>>;
 
-struct ScopeStack(Vec<Scope>);
+struct ScopeStack {
+    arguments: HashMap<SmolStr, u32>,
+    scopes: Vec<Scope>,
+}
 
 impl ScopeStack {
-    fn new(root_scope: Scope) -> ScopeStack {
-        ScopeStack(vec![root_scope])
+    fn new(arguments: HashMap<SmolStr, u32>) -> ScopeStack {
+        ScopeStack {
+            arguments,
+            scopes: vec![Scope::new()],
+        }
     }
 
     fn enter(&mut self) {
-        let new_scope = self.0.last().unwrap().clone();
-        self.0.push(new_scope);
+        let new_scope = self.scopes.last().unwrap().clone();
+        self.scopes.push(new_scope);
     }
 
     fn exit(&mut self) {
-        self.0.pop().expect("unbalanced scopes");
+        self.scopes.pop().expect("unbalanced scopes");
     }
 
     fn find_variable(&self, name: &str) -> Option<Id<ast::Expr>> {
-        self.0.last().unwrap().get(name).cloned()
+        self.scopes.last().unwrap().get(name).cloned()
+    }
+
+    fn declare(&mut self, name: impl Into<SmolStr>, variable: Id<ast::Expr>) {
+        self.scopes.last_mut().unwrap().insert(name.into(), variable);
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+enum LocalNameResolution {
+    Local(Id<ast::Expr>),
+    Argument(u32),
+    Global(ast::NameResolution),
+}
+
+fn resolve_name(name: &str, m: &ast::Module, s: &ScopeStack) -> Option<LocalNameResolution> {
+    if let Some(&var) = s.scopes.last().unwrap().get(name) {
+        Some(LocalNameResolution::Local(var))
+    } else if let Some(&index) = s.arguments.get(name) {
+        Some(LocalNameResolution::Argument(index))
+    } else if let Some(global) = m.resolve_name(name) {
+        Some(LocalNameResolution::Global(global))
+    } else {
+        None
     }
 }
 
@@ -837,15 +913,41 @@ fn translate_place(
     diag: &mut DiagnosticSink,
     expr: &Expr,
 ) -> Id<ast::Expr> {
+    let span = expr.span;
     match expr.content {
         ExprData::Variable(ref var) => {
-            let span = var.span;
-            let var = s.find_variable(var.as_str());
-            if let Some(var) = var {
-                var
-            } else {
-                //Report::build(ReportKind::Error, self.source_id, glsl_var.span.unwrap().)
-                b.error()
+            let name = var.as_str();
+            match resolve_name(name, b.module, s) {
+                None => {
+                    diag.error(format!("unresolved name `{name}`"))
+                        .primary_label(span, "")
+                        .emit();
+                    b.error()
+                }
+                Some(LocalNameResolution::Local(var)) => {
+                    // TODO: check that this is a pointer
+                    var
+                }
+                Some(LocalNameResolution::Global(ast::NameResolution::Constant(_))) => {
+                    diag.error(format!("cannot assign to a constant"))
+                        .primary_label(span, "this is a constant")
+                        .emit();
+                    b.error()
+                }
+                Some(LocalNameResolution::Argument(index)) => {
+                    // TODO: check that this is a pointer
+                    b.argument(index)
+                }
+                Some(LocalNameResolution::Global(ast::NameResolution::GlobalVariable(variable))) => {
+                    // TODO: check that this is a pointer and that is it assignable
+                    b.global(variable)
+                }
+                Some(LocalNameResolution::Global(ast::NameResolution::Function(_))) => {
+                    diag.error(format!("cannot assign to a function"))
+                        .primary_label(span, "this is a function")
+                        .emit();
+                    b.error()
+                }
             }
         }
         ExprData::Bracket(ref array, ref index) => {
@@ -879,7 +981,13 @@ fn translate_place(
                 _ => b.error(),
             }
         }
-        _ => b.error(),
+        _ => {
+            diag.error("expression is not a place")
+                .primary_label(span, "")
+                .note("expected a variable identifier, array index expression, or field access expression")
+                .emit();
+            b.error()
+        }
     }
 }
 
@@ -896,11 +1004,39 @@ fn translate_expr(
     let span = expr.span;
     match expr.content {
         ExprData::Variable(ref var) => {
-            let var = s.find_variable(var.as_str());
-            if let Some(var) = var {
-                b.load(var)
-            } else {
-                b.error()
+            let name = var.as_str();
+            match resolve_name(name, b.module, s) {
+                None => {
+                    diag.error(format!("unresolved name `{name}`"))
+                        .primary_label(span, "")
+                        .emit();
+                    b.error()
+                }
+                Some(LocalNameResolution::Local(var)) => b.load(var),
+                Some(LocalNameResolution::Global(ast::NameResolution::Constant(_))) => {
+                    todo!("constants")
+                }
+                Some(LocalNameResolution::Argument(index)) => {
+                    let id = b.argument(index);
+                    let ty = b.resolve_type(id);
+                    // auto-deref the argument if it's a pointer (reference) type
+                    if b.module.pointee_type(ty).is_some() {
+                        b.load(id)
+                    } else {
+                        id
+                    }
+                }
+                Some(LocalNameResolution::Global(ast::NameResolution::GlobalVariable(variable))) => {
+                    let expr = b.global(variable);
+                    // TODO this assumes that all globals are pointers, is that the case?
+                    b.load(expr)
+                }
+                Some(LocalNameResolution::Global(ast::NameResolution::Function(_))) => {
+                    diag.bug("unexpected function expression")
+                        .primary_label(span, "")
+                        .emit();
+                    b.error()
+                }
             }
         }
         ExprData::IntConst(v) => b.i32_const(v),
@@ -916,22 +1052,45 @@ fn translate_expr(
                 todo!()
             }
             UnaryOpData::Add => todo!(),
-            UnaryOpData::Minus => todo!(),
+            UnaryOpData::Minus => {
+                let t_expr = translate_expr(b, s, diag, expr);
+                let ty = b.resolve_type(t_expr);
+                if b.module.is_float_scalar_or_vector(ty) {
+                    b.fneg(t_expr)
+                } else if b.module.is_signed_integer_scalar_or_vector(ty) {
+                    b.sneg(t_expr)
+                } else {
+                    let display_type = b.module.display_type(ty);
+                    diag.error("invalid type for unary operator `-`")
+                        .primary_label(expr.span, format!("this is of type {display_type}"))
+                        .note(format!(
+                            "expected signed integer or floating-point scalar or vector value"
+                        ))
+                        .emit();
+                    b.error()
+                }
+            }
             UnaryOpData::Not => todo!(),
             UnaryOpData::Complement => todo!(),
         },
         ExprData::Binary(ref op, ref left, ref right) => {
             let t_left = translate_expr(b, s, diag, left);
             let t_right = translate_expr(b, s, diag, right);
+            let left_type = b.resolve_type(t_left);
+            let right_type = b.resolve_type(t_right);
+            if left_type == b.module.error_type || right_type == b.module.error_type {
+                // propagate error types silently
+                return b.error();
+            }
 
             match op.content {
                 BinaryOpData::Add | BinaryOpData::Sub | BinaryOpData::Mult | BinaryOpData::Div => {
-                    let left_type = b.resolve_type(t_left);
-                    let right_type = b.resolve_type(t_right);
                     if left_type != right_type {
+                        let display_left_type = b.module.display_type(left_type);
+                        let display_right_type = b.module.display_type(right_type);
                         diag.error("type mismatch")
-                            .primary_label(left.span, format!("this is of type {:?}", b.module.types[left_type]))
-                            .primary_label(right.span, format!("this is of type {:?}", b.module.types[right_type]))
+                            .primary_label(left.span, format!("this is of type {display_left_type}"))
+                            .primary_label(right.span, format!("this is of type {display_right_type}"))
                             .emit();
                         return b.error();
                     }
@@ -943,7 +1102,7 @@ fn translate_expr(
                             BinaryOpData::Div => b.fdiv(t_left, t_right),
                             _ => unreachable!(),
                         }
-                    } else if b.module.is_integer_scalar_or_vector(left_type) {
+                    } else if b.module.is_signed_integer_scalar_or_vector(left_type) {
                         match op.content {
                             BinaryOpData::Add => b.iadd(t_left, t_right),
                             BinaryOpData::Sub => b.isub(t_left, t_right),
@@ -952,9 +1111,11 @@ fn translate_expr(
                             _ => unreachable!(),
                         }
                     } else {
+                        let display_left_type = b.module.display_type(left_type);
+                        let display_right_type = b.module.display_type(right_type);
                         diag.error("invalid types for arithmetic operation")
-                            .primary_label(left.span, format!("this is of type {:?}", b.module.types[left_type]))
-                            .primary_label(right.span, format!("this is of type {:?}", b.module.types[right_type]))
+                            .primary_label(left.span, format!("this is of type {display_left_type}"))
+                            .primary_label(right.span, format!("this is of type {display_right_type}"))
                             .emit();
                         b.error()
                     }
@@ -984,19 +1145,26 @@ fn translate_expr(
         ExprData::Assignment(ref place, ref op, ref expr) => {
             let t_place = translate_place(b, s, diag, place);
             let t_expr = translate_expr(b, s, diag, expr);
+            let place_type = b.resolve_type(t_place);
+            let right_type = b.resolve_type(t_expr);
+            if place_type == b.module.error_type || right_type == b.module.error_type {
+                return b.error();
+            }
+
             match op.content {
                 AssignmentOpData::Mult | AssignmentOpData::Div | AssignmentOpData::Add | AssignmentOpData::Sub => {
                     let place_type = b.resolve_type(t_place);
-                    let left_type = if let Some(elem_type) = b.module.is_pointer_type(place_type) {
+                    let left_type = if let Some(elem_type) = b.module.pointee_type(place_type) {
                         elem_type
                     } else {
                         b.module.error_type
                     };
-                    let right_type = b.resolve_type(t_expr);
                     if left_type != right_type {
+                        let display_left_type = b.module.display_type(left_type);
+                        let display_right_type = b.module.display_type(right_type);
                         diag.error("type mismatch")
-                            .primary_label(place.span, format!("this is of type {:?}", b.module.types[left_type]))
-                            .primary_label(expr.span, format!("this is of type {:?}", b.module.types[right_type]))
+                            .primary_label(place.span, format!("this is of type {display_left_type}"))
+                            .primary_label(expr.span, format!("this is of type {display_right_type}"))
                             .emit();
                         return b.error();
                     }
@@ -1011,7 +1179,7 @@ fn translate_expr(
                         };
                         b.store(t_place, result);
                         result
-                    } else if b.module.is_integer_scalar_or_vector(left_type) {
+                    } else if b.module.is_signed_integer_scalar_or_vector(left_type) {
                         let val = b.load(t_place);
                         let result = match op.content {
                             AssignmentOpData::Add => b.iadd(val, t_expr),
@@ -1023,9 +1191,11 @@ fn translate_expr(
                         b.store(t_place, result);
                         result
                     } else {
+                        let display_left_type = b.module.display_type(left_type);
+                        let display_right_type = b.module.display_type(right_type);
                         diag.error("invalid types for arithmetic operation")
-                            .primary_label(place.span, format!("this is of type {:?}", b.module.types[left_type]))
-                            .primary_label(expr.span, format!("this is of type {:?}", b.module.types[right_type]))
+                            .primary_label(place.span, format!("this is of type {display_left_type}"))
+                            .primary_label(expr.span, format!("this is of type {display_right_type}"))
                             .emit();
                         b.error()
                     }
@@ -1058,7 +1228,7 @@ fn translate_expr(
         }
         ExprData::FunCall(ref ident, ref args) => match ident.content {
             FunIdentifierData::TypeSpecifier(ref type_spec) => {
-                let ty = type_specifier_to_type_desc(b.module, type_spec, None);
+                let ty = type_specifier_to_type_desc(b.module, diag, type_spec, None);
                 let mut components = vec![];
                 for expr in args {
                     let component = translate_expr(b, s, diag, expr);
@@ -1066,8 +1236,21 @@ fn translate_expr(
                 }
                 b.construct(ty, &components)
             }
-            FunIdentifierData::Expr(_) => {
-                todo!()
+            FunIdentifierData::Expr(ref expr) => {
+                match expr.content {
+                    ExprData::Variable(ref ident) => {
+                        // find function
+                        //if let Some(function) = b.module.functions_by_name.get(ident)
+                        b.error()
+                    }
+                    _ => {
+                        diag.error("invalid function call expression")
+                            .primary_label(expr.span, "")
+                            .note("expected a function identifier")
+                            .emit();
+                        b.error()
+                    }
+                }
             }
         },
         ExprData::Dot(_, _) => {
@@ -1152,7 +1335,22 @@ fn translate_init_declarator_list(
         }
     }
 
-    let ty = type_specifier_to_type_desc(&mut b.module, &head.ty.ty.content, head.array_specifier.as_deref());
+    let ty = if constant {
+        type_specifier_to_type_desc(
+            &mut b.module,
+            diag,
+            &head.ty.ty.content,
+            head.array_specifier.as_deref(),
+        )
+    } else {
+        let base_ty = type_specifier_to_type_desc(
+            &mut b.module,
+            diag,
+            &head.ty.ty.content,
+            head.array_specifier.as_deref(),
+        );
+        b.module.pointer_type(base_ty)
+    };
 
     if let Some(ref name) = head.name {
         let init = if let Some(ref initializer) = head.initializer {
@@ -1160,11 +1358,12 @@ fn translate_init_declarator_list(
         } else {
             None
         };
-        b.emit(ast::Expr::LocalVariable {
+        let var = b.emit(ast::Expr::LocalVariable {
             name: Some(name.as_str().into()),
             ty,
             init,
         });
+        s.declare(name.0.clone(), var);
 
         for tail_decl in init_declarator_list.tail.iter() {
             let init = if let Some(ref initializer) = tail_decl.initializer {
@@ -1172,11 +1371,12 @@ fn translate_init_declarator_list(
             } else {
                 None
             };
-            b.emit(ast::Expr::LocalVariable {
+            let var = b.emit(ast::Expr::LocalVariable {
                 name: Some(tail_decl.ident.ident.as_str().into()),
                 ty,
                 init,
             });
+            s.declare(tail_decl.ident.ident.0.clone(), var);
         }
     }
 }
@@ -1331,8 +1531,11 @@ fn translate_function_definition(
     function_definition: &FunctionDefinition,
 ) {
     let name = function_definition.prototype.name.as_str();
-    let mut function_builder = m.build_function(name);
-    let mut root_scope = Scope::new();
+
+    // build function type
+    let mut arguments = Vec::new();
+    let mut arg_names = HashMap::new();
+    let return_type = m.void_type;
 
     for param in function_definition.prototype.parameters.iter() {
         match param.content {
@@ -1362,14 +1565,22 @@ fn translate_function_definition(
                     }
                 }
                 let ty = type_specifier_to_type_desc(
-                    &mut function_builder.module,
+                    m,
+                    diag,
                     &declarator.ty.content,
                     declarator.ident.array_spec.as_deref(),
                 );
+                arguments.push(ty);
 
-                let name = SmolStr::from(declarator.ident.ident.as_str());
-                let arg = function_builder.argument(name.clone(), ty);
-                root_scope.insert(name.clone(), arg);
+                let index = (arguments.len() - 1) as u32;
+                if arg_names.insert(SmolStr::from(name), index).is_some() {
+                    diag.error("duplicate argument name")
+                        .primary_label(
+                            declarator.ident.ident.span,
+                            "an argument with the same name already exists",
+                        )
+                        .emit();
+                }
             }
             FunctionParameterDeclarationData::Unnamed(_, _) => {
                 todo!("unnamed function parameters")
@@ -1377,14 +1588,24 @@ fn translate_function_definition(
         }
     }
 
-    let mut scope_stack = ScopeStack::new(root_scope);
+    let function_type = TypeDesc::Function { return_type, arguments };
+    let function_type = m.types.add(function_type);
+
+    let mut function_builder = m.build_function(Some(name.into()), function_type);
+    let mut scope_stack = ScopeStack::new(arg_names);
     translate_compound_statement(
         &mut function_builder,
         &mut scope_stack,
         diag,
         &function_definition.statement,
     );
-    function_builder.finish();
+    match function_builder.finish() {
+        Ok(_) => {}
+        Err(ast::Error::NameConflict) => diag
+            .error(format!("a function with the name `{name}` has already been defined"))
+            .primary_label(function_definition.prototype.name.span, "")
+            .emit(),
+    }
 }
 
 fn translate_translation_unit(m: &mut ast::Module, diag: &mut DiagnosticSink, translation_unit: &TranslationUnit) {
@@ -1449,31 +1670,40 @@ fn translate_translation_unit(m: &mut ast::Module, diag: &mut DiagnosticSink, tr
                             }
                         }
 
-                        let ty = type_specifier_to_type_desc(m, &decl.ty.ty.content, decl.array_specifier.as_deref());
+                        // helper function to create a global var
+                        let do_insert_global =
+                            |m: &mut Module, diag: &mut DiagnosticSink, name: &Identifier, ty| match m
+                                .insert_global_variable(Some(name.0.clone()), ty)
+                            {
+                                Ok(_) => {}
+                                Err(ast::Error::NameConflict) => diag
+                                    .error(format!(
+                                        "a global variable with the name `{}` has already been defined",
+                                        name.as_str()
+                                    ))
+                                    .primary_label(name.span, "")
+                                    .emit(),
+                            };
 
+                        // call type_specifier_to_type_desc even if there's no variable declared, because we might be declaring a user defined type at the same time
+                        let ty =
+                            type_specifier_to_type_desc(m, diag, &decl.ty.ty.content, decl.array_specifier.as_deref());
+                        let pointer_ty = m.pointer_type(ty);
                         let is_interface = uniform || input || output;
 
                         if let Some(ref name) = decl.name {
-                            /*if uniform || input {
-                                inputs.push(crate::Variable::new(name.as_str(), ty));
-                            } else if output {
-                                outputs.push(crate::Variable::new(name.as_str(), ty));
-                            }
+                            do_insert_global(m, diag, name, pointer_ty);
 
                             for tail_decl in declarator_list.tail.iter() {
-                                let ty = type_ctx.type_specifier_to_type_desc(
+                                let ty = type_specifier_to_type_desc(
+                                    m,
+                                    diag,
                                     &decl.ty.ty.content,
                                     tail_decl.ident.array_spec.as_deref(),
-                                )?;
-
-                                if uniform || input {
-                                    inputs
-                                        .push(crate::Variable::new(tail_decl.ident.ident.as_str(), ty));
-                                } else if output {
-                                    outputs
-                                        .push(crate::Variable::new(tail_decl.ident.ident.as_str(), ty));
-                                }
-                            }*/
+                                );
+                                let pointer_ty = m.pointer_type(ty);
+                                do_insert_global(m, diag, name, pointer_ty);
+                            }
                         }
                     }
                     DeclarationData::FunctionPrototype(ref proto) => {
@@ -1503,8 +1733,10 @@ pub fn translate_glsl(
     source_id: &str,
 ) -> Result<(), ()> {
     let mut pp = Preprocessor::new_with_fs(&aux_sources);
+    let main_source = SourceFile::new(source_id.into(), source.to_string());
+
     // setup preprocessor and construct the lexer input
-    let input_file = pp.open_source(source, "").with_state(
+    let input_file = pp.open_source(&main_source.text, "").with_state(
         ProcessorState::builder()
             .extension(ext_name!("GL_GOOGLE_include_directive"), ExtensionBehavior::Enable)
             .finish(),
@@ -1522,7 +1754,7 @@ pub fn translate_glsl(
     .0;
 
     let diag_config = term::Config::default();
-    let mut diag_sink = DiagnosticSink::new(diag_writer, diag_config, &aux_sources, &pp);
+    let mut diag_sink = DiagnosticSink::new(diag_writer, diag_config, &aux_sources, &main_source, &pp);
     translate_translation_unit(module, &mut diag_sink, &translation_unit);
     Ok(())
 }

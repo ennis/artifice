@@ -1,4 +1,4 @@
-mod ast;
+pub mod ast;
 mod back;
-mod glsl;
+pub mod glsl;
 //mod lexer;
